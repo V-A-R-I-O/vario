@@ -1,0 +1,83 @@
+# ==========================================
+# Operating System Files (macOS & Windows)
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ==========================================
+# Environment Variables & Secrets (CRITICAL)
+# ==========================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+*.env
+secrets.json
+
+# ==========================================
+# JavaScript / React / Next.js
+# ==========================================
+# Dependencies
+node_modules/
+jspm_packages/
+
+# Next.js build output
+.next/
+out/
+
+# Build outputs and caches
+build/
+dist/
+.eslintcache
+.stylelintcache
+.prettiercache
+.turbo/
+
+# Vercel deployment artifacts
+.vercel
+
+# ==========================================
+# Python
+# ==========================================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Poetry, Pipenv, and packaging
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+
+# ==========================================
+# Editor / IDE Settings (Optional but Helpful)
+# ==========================================
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
