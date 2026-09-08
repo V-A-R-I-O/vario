@@ -18,5 +18,9 @@ Existing solutions are usually single-purpose chatbots. When an organization wan
 A single, reusable assistant framework whose core conversational engine is shared across roles, while each role's specific knowledge and workflows remain independently configurable via pluggable "role packs". It will support both text and voice interactions and use a swappable integration-adapter layer to connect with departmental tools (HRMS, ITSM, Admissions software).
 
 ## Open questions
-- Which NLU framework (Rasa Open Source vs. spaCy-based classifier) will ultimately be chosen and provide the best accuracy for the project's scope?
-- How exactly will the mock internal-tool APIs (HRMS, ITSM, Admissions) be structured to ensure a seamless transition to real enterprise systems in the future?
+
+> [!NOTE]
+> This is an early discovery doc. Both questions below have since been **resolved** — kept here for historical context. See `docs/ADD.md` for the current decisions.
+
+- ~~Which NLU framework (Rasa Open Source vs. spaCy-based classifier) will ultimately be chosen and provide the best accuracy for the project's scope?~~ **Resolved:** Rasa Open Source, run as 3 isolated instances (one per role pack). See `docs/ADD.md`.
+- ~~How exactly will the mock internal-tool APIs (HRMS, ITSM, Admissions) be structured to ensure a seamless transition to real enterprise systems in the future?~~ **Resolved:** behind a common Integration Adapter interface (one adapter per system), with mock FastAPI services in dev — swappable to real backends without touching Rasa or the router. See `docs/ADD.md` and `docs/api-contract.md`.

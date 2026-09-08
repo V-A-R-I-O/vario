@@ -10,130 +10,23 @@ All endpoints are prefixed with `/api`. All responses use a standard envelope:
 }
 ```
 
-Authentication is via `Authorization: Bearer <jwt>` header on all protected routes. The JWT payload contains `{ user_id, role, email }`.
+Authentication is delegated to the organization's identity provider via an Auth Adapter. VARIO issues its own JWT after the org validates the user. Protected routes require an `Authorization: Bearer <jwt>` header. The JWT payload contains `{ user_id, role, email }`.
 
 ---
 
 ## Auth
 
-### `POST /api/auth/register`
-
-Register a new end user. Always assigns `end_user` role — there is no way to self-register as an admin. Account is created with `email_verified = false`. A verification email is sent via Gmail SMTP. The user **cannot log in until verified**.
-
-**Auth:** None
-
-**Request:**
-```json
-{
-  "email": "john@example.com",
-  "password": "securepassword",
-  "full_name": "John Doe",
-  "external_id": "EMP-1042"
-}
-```
-
-**Response:** `201 Created`
-```json
-{
-  "status": "success",
-  "data": {
-    "user_id": "uuid",
-    "email": "john@example.com",
-    "full_name": "John Doe",
-    "role": "end_user",
-    "email_verified": false,
-    "message": "Registration successful. Please check your email to verify your account."
-  },
-  "error": null
-}
-```
-
-**Side effects:**
-- Creates an `auth_tokens` entry with `type: "email_verification"` and 24-hour expiry
-- Sends a verification email with a link: `https://<frontend-url>/verify-email?token=<raw-token>`
-
-**Errors:**
-- `409` — Email already registered
-- `422` — Validation error (missing/invalid fields)
-
----
-
-### `POST /api/auth/verify-email`
-
-Verify a user's email address using the token from the verification link.
-
-**Auth:** None
-
-**Request:**
-```json
-{
-  "token": "raw-token-from-email-link"
-}
-```
-
-**Response:** `200 OK`
-```json
-{
-  "status": "success",
-  "data": {
-    "message": "Email verified successfully. You can now log in."
-  },
-  "error": null
-}
-```
-
-**Side effects:**
-- Sets `email_verified = true` on the user
-- Marks the token as `used = true`
-
-**Errors:**
-- `400` — Token is invalid, expired, or already used
-
----
-
-### `POST /api/auth/resend-verification`
-
-Resend the verification email. Invalidates any previous verification tokens for this user.
-
-**Auth:** None
-
-**Request:**
-```json
-{
-  "email": "john@example.com"
-}
-```
-
-**Response:** `200 OK` (always, even if email not found — prevents enumeration)
-```json
-{
-  "status": "success",
-  "data": {
-    "message": "If an unverified account with that email exists, a new verification link has been sent."
-  },
-  "error": null
-}
-```
-
-**Side effects:**
-- Invalidates previous verification tokens for this user
-- Creates a new `auth_tokens` entry with `type: "email_verification"` and 24-hour expiry
-- Sends a new verification email
-- Does nothing if the email doesn't exist or is already verified
-
----
-
 ### `POST /api/auth/login`
 
-Login for both end users and admins.
+Authenticate a user via the organization's identity provider. VARIO forwards credentials to the org's Auth Adapter (Mock Auth Service in dev/demo), and issues a VARIO JWT on success.
 
 **Auth:** None
 
 **Request:**
 ```json
 {
-  "email": "john@example.com",
-  "password": "securepassword"
+  "email": "john.doe@example.com",
+  "password": "password123"
 }
 ```
 
@@ -143,107 +36,22 @@ Login for both end users and admins.
   "status": "success",
   "data": {
     "user_id": "uuid",
-    "email": "john@example.com",
+    "email": "john.doe@example.com",
     "full_name": "John Doe",
     "role": "end_user | hr_admin | it_admin | admissions_admin",
+    "external_id": "EMP-1001",
     "token": "jwt-string"
   },
   "error": null
 }
 ```
 
-**Errors:**
-- `401` — Invalid email or password
-- `403` — Email not verified. Response includes a message prompting the user to check their inbox or resend:
-```json
-{
-  "status": "error",
-  "data": {
-    "email_verified": false
-  },
-  "error": "Email not verified. Please check your inbox or request a new verification link."
-}
-```
-- `423` — Account locked. Response includes `locked_until` and `retry_after_seconds`:
-```json
-{
-  "status": "error",
-  "data": {
-    "locked_until": "2026-09-07T10:15:00Z",
-    "retry_after_seconds": 900
-  },
-  "error": "Account locked due to 3 failed login attempts. Try again in 15 minutes."
-}
-```
-
-On each failed login, `failed_login_attempts` is incremented. After 3 consecutive failures, the account is locked for 15 minutes. A successful login resets the counter to 0.
-
----
-
-### `POST /api/auth/forgot-password`
-
-Request a password reset link. Sends an email with a time-limited reset token via Gmail SMTP. Always returns 200 regardless of whether the email exists (to prevent email enumeration).
-
-**Auth:** None
-
-**Request:**
-```json
-{
-  "email": "john@example.com"
-}
-```
-
-**Response:** `200 OK` (always, even if email not found)
-```json
-{
-  "status": "success",
-  "data": {
-    "message": "If an account with that email exists, a reset link has been sent."
-  },
-  "error": null
-}
-```
-
 **Side effects:**
-- Generates a random token, stores its hash in `auth_tokens` with `type: "password_reset"` and a 15-minute expiry
-- Sends an email with a link: `https://<frontend-url>/reset-password?token=<raw-token>`
-- Previous unused tokens for this user are invalidated
-
----
-
-### `POST /api/auth/reset-password`
-
-Reset the user's password using a valid reset token.
-
-**Auth:** None
-
-**Request:**
-```json
-{
-  "token": "raw-token-from-email-link",
-  "new_password": "newsecurepassword"
-}
-```
-
-**Response:** `200 OK`
-```json
-{
-  "status": "success",
-  "data": {
-    "message": "Password has been reset successfully."
-  },
-  "error": null
-}
-```
-
-**Side effects:**
-- Updates the user's `password_hash`
-- Marks the token as `used = true`
-- Resets `failed_login_attempts = 0` and `locked_until = null`
+- Upserts a record in the `users` table (creates on first login, updates on subsequent)
+- Issues a JWT with `{user_id, role, email}` claims
 
 **Errors:**
-- `400` — Token is invalid, expired, or already used
-- `422` — Validation error (password too short, etc.)
+- `401` — Invalid credentials (org's auth rejected the login)
 
 ---
 
@@ -269,6 +77,7 @@ List all conversations for the authenticated user, ordered by most recent.
         "id": "uuid",
         "role_pack": "hr",
         "title": "Leave balance inquiry",
+        "last_message_preview": "You have 12 days of leave remaining.",
         "status": "active",
         "created_at": "2026-09-07T10:00:00Z",
         "last_message_at": "2026-09-07T10:05:00Z"
@@ -283,7 +92,7 @@ List all conversations for the authenticated user, ordered by most recent.
 
 ### `POST /api/conversations`
 
-Start a new conversation with a selected role pack.
+Start a new conversation with a selected role pack. In the UI this is triggered by clicking a role-pack card (see `docs/ui-reference.md` page 3), which sends only `role_pack`.
 
 **Auth:** Any authenticated user
 
@@ -294,6 +103,8 @@ Start a new conversation with a selected role pack.
   "title": "Leave balance inquiry"
 }
 ```
+
+`title` is **optional**. If omitted, the server auto-generates a placeholder (e.g. `"New HR conversation"`) and replaces it with a title derived from the first user message once the conversation has content.
 
 **Response:** `201 Created`
 ```json
@@ -391,7 +202,7 @@ Send a message in an existing conversation. This is the main endpoint — it rou
     "session": {
       "current_form": null,
       "current_step": null,
-      "active_slots": {}
+      "slots": {}
     }
   },
   "error": null
@@ -412,7 +223,7 @@ Send a message in an existing conversation. This is the main endpoint — it rou
     "session": {
       "current_form": null,
       "current_step": null,
-      "active_slots": {}
+      "slots": {}
     },
     "tts_available": true
   },
@@ -429,42 +240,6 @@ When TTS credits are exhausted, `tts_available` is `false` and `audio_base64` is
 
 ---
 
-## Admin — User Management
-
-### `POST /api/admin/users`
-
-Create a new admin account. The new admin is automatically scoped to the same department as the creator.
-
-**Auth:** Admin only (`hr_admin`, `it_admin`, or `admissions_admin`)
-
-**Request:**
-```json
-{
-  "email": "newadmin@example.com",
-  "password": "securepassword",
-  "full_name": "Jane Smith"
-}
-```
-
-**Response:** `201 Created`
-```json
-{
-  "status": "success",
-  "data": {
-    "user_id": "uuid",
-    "email": "newadmin@example.com",
-    "full_name": "Jane Smith",
-    "role": "hr_admin"
-  },
-  "error": null
-}
-```
-
-**Errors:**
-- `403` — Not an admin
-- `409` — Email already registered
-
----
 
 ## Admin — Intents
 
@@ -487,6 +262,7 @@ List all intents for the admin's role pack. Includes training phrases, response 
       {
         "id": "uuid",
         "name": "check_leave_balance",
+        "intent_type": "dynamic_workflow",
         "needs_retrain": false,
         "updated_at": "2026-09-07T10:00:00Z",
         "training_phrases": [
@@ -503,9 +279,10 @@ List all intents for the admin's role pack. Includes training phrases, response 
         ],
         "response_template": {
           "id": "uuid",
-          "template_key": "leave_balance_response",
+          "template_key": "check_leave_balance_response",
           "base_text": "You have {balance} days of leave remaining.",
           "allow_rephrasing": true,
+          "available_variables": ["balance"],
           "variants": [
             {
               "id": "uuid",
@@ -525,22 +302,22 @@ List all intents for the admin's role pack. Includes training phrases, response 
 
 ### `POST /api/admin/intents`
 
-Create a new intent with training phrases, a response template, and auto-generated variants. This is a synchronous call — the response includes the generated variants (~3–5 seconds due to Gemini API round-trip).
+Create a new intent with training phrases, a response template, and auto-generated variants. **Note:** Intents created via this endpoint are always created as `intent_type: "static_faq"` with an empty `available_variables` array, because Admins cannot create dynamic workflows from the UI (those are pre-seeded by developers). This is a synchronous call — the response includes the generated variants (~3–5 seconds due to Gemini API round-trip).
 
 **Auth:** Admin only (scoped to own role pack)
 
 **Request:**
 ```json
 {
-  "name": "check_leave_balance",
+  "name": "ask_wfh_policy",
   "training_phrases": [
-    "What's my leave balance?",
-    "How many leaves do I have?",
-    "Show me my remaining leaves",
-    "Do I have any leave left?"
+    "What is the WFH policy?",
+    "Can I work from home?",
+    "How many remote days do we get?",
+    "Tell me about working from home"
   ],
   "response_template": {
-    "base_text": "You have {balance} days of leave remaining.",
+    "base_text": "Employees are allowed to work from home up to 3 days per week.",
     "allow_rephrasing": true
   }
 }
@@ -553,26 +330,28 @@ Create a new intent with training phrases, a response template, and auto-generat
   "data": {
     "intent": {
       "id": "uuid",
-      "name": "check_leave_balance",
+      "name": "ask_wfh_policy",
       "role_pack": "hr",
+      "intent_type": "static_faq",
       "needs_retrain": true,
       "training_phrases": [
-        { "id": "uuid", "phrase_text": "What's my leave balance?" },
-        { "id": "uuid", "phrase_text": "How many leaves do I have?" },
-        { "id": "uuid", "phrase_text": "Show me my remaining leaves" },
-        { "id": "uuid", "phrase_text": "Do I have any leave left?" }
+        { "id": "uuid", "phrase_text": "What is the WFH policy?" },
+        { "id": "uuid", "phrase_text": "Can I work from home?" },
+        { "id": "uuid", "phrase_text": "How many remote days do we get?" },
+        { "id": "uuid", "phrase_text": "Tell me about working from home" }
       ],
       "response_template": {
         "id": "uuid",
-        "template_key": "check_leave_balance_response",
-        "base_text": "You have {balance} days of leave remaining.",
+        "template_key": "ask_wfh_policy_response",
+        "base_text": "Employees are allowed to work from home up to 3 days per week.",
         "allow_rephrasing": true,
+        "available_variables": [],
         "variants": [
-          { "id": "uuid", "variant_text": "You have {balance} days of leave remaining." },
-          { "id": "uuid", "variant_text": "Your current leave balance is {balance} days." },
-          { "id": "uuid", "variant_text": "You've got {balance} leave days left." },
-          { "id": "uuid", "variant_text": "There are {balance} days of leave available for you." },
-          { "id": "uuid", "variant_text": "Your remaining leave stands at {balance} days." }
+          { "id": "uuid", "variant_text": "Employees are allowed to work from home up to 3 days per week." },
+          { "id": "uuid", "variant_text": "You can work remotely for a maximum of 3 days a week." },
+          { "id": "uuid", "variant_text": "Our policy permits up to 3 work-from-home days weekly." },
+          { "id": "uuid", "variant_text": "Staff may choose to work from home 3 days each week." },
+          { "id": "uuid", "variant_text": "You're eligible for up to 3 days of remote work per week." }
         ]
       }
     }
@@ -581,7 +360,9 @@ Create a new intent with training phrases, a response template, and auto-generat
 }
 ```
 
-The first variant is always the original `base_text`. The remaining 4 are generated by the Gemini API.
+The first variant is always the original `base_text`. The remaining 4 are generated by the Gemini API. (So each template has **5** `response_variants` rows: the original at index 0 plus 4 generated.)
+
+**`template_key` convention:** auto-generated by the server as `<intent_name>_response` (e.g. intent `ask_wfh_policy` → `ask_wfh_policy_response`). Admins never set it directly; the UI shows it as a read-only System Key.
 
 **Errors:**
 - `403` — Not an admin
@@ -613,6 +394,8 @@ Update an existing intent's name and/or training phrases. Sets `needs_retrain = 
 
 All fields are optional — send only what you want to change.
 
+**Note:** For a `dynamic_workflow` intent (pre-seeded by developers), the `name` is immutable — attempting to rename it returns `403`. Only its training phrases may be edited here; its response text is edited via `PUT /api/admin/templates/:id`. Renaming is allowed only for `static_faq` intents.
+
 **Response:** `200 OK`
 ```json
 {
@@ -634,7 +417,7 @@ All fields are optional — send only what you want to change.
 ```
 
 **Errors:**
-- `403` — Not an admin, or intent belongs to another role pack
+- `403` — Not an admin, intent belongs to another role pack, or attempt to rename a `dynamic_workflow` intent
 - `404` — Intent not found
 - `409` — New name already exists for this role pack
 
@@ -642,7 +425,7 @@ All fields are optional — send only what you want to change.
 
 ### `DELETE /api/admin/intents/:id`
 
-Delete an intent and all its associated training phrases, response template, and variants. Sets `needs_retrain = true` for the role pack.
+Delete an intent and all its associated training phrases, response template, and variants. Sets `needs_retrain = true` for the role pack. **Note:** Only intents with `intent_type: "static_faq"` can be deleted. Dynamic workflows are pre-seeded by developers and cannot be deleted via the API.
 
 **Auth:** Admin only (scoped to own role pack)
 
@@ -659,7 +442,7 @@ Delete an intent and all its associated training phrases, response template, and
 ```
 
 **Errors:**
-- `403` — Not an admin, or intent belongs to another role pack
+- `403` — Not an admin, intent belongs to another role pack, or intent is a `dynamic_workflow` and cannot be deleted.
 - `404` — Intent not found
 
 ---
@@ -684,6 +467,7 @@ List all response templates for the admin's role pack, with their variants.
         "template_key": "check_leave_balance_response",
         "base_text": "You have {balance} days of leave remaining.",
         "allow_rephrasing": true,
+        "available_variables": ["balance"],
         "updated_at": "2026-09-07T10:00:00Z",
         "variants": [
           {
@@ -810,19 +594,66 @@ Delete a specific response variant. The original base_text variant (first one) c
 
 ---
 
-## Admin — Retraining
+## Admin — Training Phrase Generation
 
-### `POST /api/admin/retrain`
+### `POST /api/admin/intents/:id/generate-phrases`
 
-Trigger manual retraining for a role pack. Reads all intents and training phrases from the DB, converts to Rasa YAML, trains, and reloads the model. This is a long-running operation (~30–120 seconds depending on training data size).
+Generate additional training phrase variants for an existing intent using the rephraser service. Uses the existing training phrases as seed input.
 
 **Auth:** Admin only (scoped to own role pack)
 
 **Request:**
 ```json
 {
-  "role_pack": "hr"
+  "count": 8
 }
+```
+
+`count` is optional (default: 8). Specifies how many phrase variants to generate.
+
+**Response:** `200 OK`
+```json
+{
+  "status": "success",
+  "data": {
+    "intent_id": "uuid",
+    "generated_phrases": [
+      "How many leaves do I have left?",
+      "Can you check my leave balance?",
+      "Tell me my remaining leave days",
+      "I want to know my leave balance",
+      "How much leave do I have?",
+      "Check my leaves remaining",
+      "What is my current leave count?",
+      "Show me how many leaves are left"
+    ]
+  },
+  "error": null
+}
+```
+
+Generated phrases are NOT automatically saved. The frontend presents them to the admin for review (accept/edit/reject). Accepted phrases are then saved via `PUT /api/admin/intents/:id` with the `training_phrases.add` array.
+
+**Errors:**
+- `403` — Not an admin, or intent belongs to another role pack
+- `404` — Intent not found
+- `422` — Intent has no existing training phrases to use as seed
+
+---
+
+## Admin — Retraining
+
+### `POST /api/admin/retrain`
+
+Trigger manual retraining for the admin's role pack. Reads all intents and training phrases from the DB, converts to Rasa YAML, trains, and reloads the model. This is a long-running operation (~30–120 seconds depending on training data size).
+
+The role pack is **derived from the JWT role claim**, never from the request — an admin can only retrain their own pack. No request body is required (an empty `{}` is fine).
+
+**Auth:** Admin only (scoped to own role pack)
+
+**Request:** *(no body required)*
+```json
+{}
 ```
 
 **Response:** `202 Accepted`
@@ -861,6 +692,96 @@ Check status of a retraining job.
   "error": null
 }
 ```
+
+---
+
+## Admin — Conversation Logs
+
+These endpoints back the **Conversation Logs** admin page (see `docs/ui-reference.md` page 10) and satisfy **FR-19** (a Role Admin can view conversations handled by their role pack's bot). They are distinct from the end-user `GET /api/conversations` routes, which are scoped to the *caller's own* conversations. Here the scope is **every conversation in the admin's role pack**, read-only.
+
+### `GET /api/admin/conversations`
+
+List conversations handled by the admin's role pack, most recent first.
+
+**Auth:** Admin only (scoped to own role pack via JWT — the `role_pack` is derived from the token, never from the caller)
+
+**Query params:**
+- `actor_id` (optional) — filter by the end user who held the conversation
+- `from` / `to` (optional) — ISO 8601 date range on `started_at`
+- `limit` (optional, default 50) — number of entries
+- `offset` (optional, default 0) — pagination offset
+
+**Response:** `200 OK`
+```json
+{
+  "status": "success",
+  "data": {
+    "role_pack": "hr",
+    "total": 87,
+    "conversations": [
+      {
+        "id": "uuid",
+        "user_name": "John Doe",
+        "user_email": "john.doe@example.com",
+        "title": "Leave balance inquiry",
+        "message_count": 6,
+        "last_intent": "check_leave_balance",
+        "started_at": "2026-09-07T10:00:00Z",
+        "last_message_at": "2026-09-07T10:05:00Z"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+**Errors:**
+- `403` — Not an admin
+
+---
+
+### `GET /api/admin/conversations/:id/messages`
+
+Fetch the full, read-only transcript of one conversation in the admin's role pack. Each bot message carries the detected intent and confidence (for the "where did the bot misunderstand?" review flow).
+
+**Auth:** Admin only. The conversation must belong to the admin's role pack — an HR admin cannot read an IT conversation.
+
+**Response:** `200 OK`
+```json
+{
+  "status": "success",
+  "data": {
+    "conversation_id": "uuid",
+    "role_pack": "hr",
+    "user_name": "John Doe",
+    "messages": [
+      {
+        "id": "uuid",
+        "sender": "user",
+        "content": "What's my leave balance?",
+        "intent_name": null,
+        "confidence": null,
+        "entities": null,
+        "created_at": "2026-09-07T10:00:01Z"
+      },
+      {
+        "id": "uuid",
+        "sender": "bot",
+        "content": "You have 12 days of leave remaining.",
+        "intent_name": "check_leave_balance",
+        "confidence": 0.95,
+        "entities": { "employee_id": "EMP-1042" },
+        "created_at": "2026-09-07T10:00:03Z"
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+**Errors:**
+- `403` — Not an admin, or the conversation belongs to another role pack
+- `404` — Conversation not found
 
 ---
 
