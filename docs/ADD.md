@@ -314,7 +314,7 @@ The full endpoint contract lives in [`docs/api-contract.md`](file:///Users/juwar
 
 ## Data model
 
-10 entities — full ER diagram at [`vario_database_erd.html`](file:///Users/juwariya/dev/vario/vario_database_erd.html).
+10 entities — described inline below.
 
 - `users` — has many `conversations`, `training_phrases`, `response_templates`, `audit_log`, `auth_tokens`. Carries `email_verified` (boolean, default false), `failed_login_attempts` (integer, default 0), and `locked_until` (nullable timestamp). Seeded admins and admin-created accounts are pre-verified.
 - `conversations` — belongs to `users`, has many `messages`, has one `sessions`
