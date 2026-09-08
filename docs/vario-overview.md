@@ -203,7 +203,7 @@ Admin adds an intent + phrases + response template → Admin CRUD persists it an
 
 ---
 
-## 12. Data model (10 entities — ADD.md; full ERD referenced at `vario_database_erd.html`, not included in these docs)
+## 12. Data model (10 entities — ADD.md)
 
 | Entity | Key notes |
 |---|---|
@@ -271,5 +271,5 @@ Admin adds an intent + phrases + response template → Admin CRUD persists it an
 
 - **NLU decision:** research/PRD/SRS pose it as open; ADD has already decided (Rasa, 3 instances). Treat this as settled.
 - **Auth depth:** SRS only formally requires JWT auth for the **admin panel**; ADD builds out a full end-user auth system too (registration, email verification, lockout, password reset) — this is a reasonable elaboration since several use cases (UC-2, UC-3) require an authenticated/identified end user, but it's worth the team confirming this expanded scope is intentional and budgeted for in the timeline.
-- **ERD file:** ADD references `vario_database_erd.html` for the full diagram — that file wasn't among the four docs provided, so the 10-entity summary above is inferred from the ADD's prose description, not the diagram itself.
+- **ERD file:** The standalone `vario_database_erd.html` has been removed; the 10-entity data model is now described inline in the ADD.
 - **Open questions still genuinely unresolved:** the exact mock identity-verification mechanism for IT password reset (PRD/SRS both flag this), and the precise DB schema strategy for isolating role-pack config while sharing the sessions table.
