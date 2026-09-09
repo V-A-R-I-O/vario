@@ -1,27 +1,27 @@
 # V.A.R.I.O. (Voice Adaptive Role & Intent Orchestrator)
 
-> **Status:** Repository initialized. Active development will begin shortly.
+> **Status:** Planning complete. Development is about to begin with Sprint 1.
 
 ---
 
 ## Overview
 
-V.A.R.I.O. is an upcoming role-specific, context-aware conversational framework designed to handle organizational workflows and queries across multiple functional domains.
+V.A.R.I.O. is a role-specific, context-aware conversational framework designed to handle organizational workflows and queries across multiple functional domains (HR, IT Support, Admissions) from a single reusable core engine.
 
 ## Current Status
 
-This repository has just been set up. The initial project setup is complete, and development planning is underway.
+Planning and documentation are complete. The product requirements, architecture, API contract, and UI reference are finalized, and the work has been broken down into sprints and vertical slices. Implementation has not started yet.
 
 * **Version:** `0.1.0-dev`
-* **Development Phase:** Setup & Initialization
+* **Development Phase:** Sprint 1 — Foundations & Infrastructure
 
 ## Upcoming Milestones
 
-* Drafting the Product Requirements Document (PRD)
-* Finalizing the Architecture Design Document (ADD)
-* Breaking down project scope into Sprints and Vertical Slices
-* Setting up repository structure and environment configurations
+* Standing up the deployment pipeline and walking skeleton (Sprint 1)
+* Building the three role packs and their read flows (Sprint 2)
+* Implementing write workflows, the admin console, and voice (Sprint 3)
+* Cross-cutting services, hardening, and demo (Sprint 4)
 
 ---
 
-*Documentation, backlog planning, and environment setup instructions will follow.*
+*Planning docs live in `docs/`. Starting Sprint 1*
