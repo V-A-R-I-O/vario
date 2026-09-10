@@ -6,12 +6,12 @@
 
 The professor's constraint — **each member builds functional modules end-to-end, including UI** — is met by giving three members a **vertical domain** (Rasa instance → integration adapter → mock → chat cards → their role's admin content) and the fourth the **shared platform** (which is itself UI-heavy: login, chat shell, admin console framework, talk mode). Every member ships user-facing UI they built. Nobody is backend-only or frontend-only.
 
-| Member | Primary domain | Owns end-to-end |
-|---|---|---|
-| **A** | HR role pack | HRMS mock+adapter, Rasa-HR, HR chat cards (leave balance / request / FAQ), HR admin content, **rephraser-service** |
-| **B** | IT Support role pack | ITSM mock+adapter, Rasa-IT, IT chat cards (ticket create / status / password reset), IT admin content, **retraining-service**, **CI/CD** |
-| **C** | Admissions role pack | Admissions mock+adapter, Rasa-Admissions, Admissions cards (status / checklist / fees), Admissions admin content, **conversation-logs**, **Vercel + Neon** |
-| **D** | Platform & Core | auth + mock-auth, gateway, session/router/renderer, shared chat shell + message component library, admin console framework, talk-mode/TTS, DB schema, **Docker Compose**, **hardening/perf** |
+| Member | Primary domain | Owns end-to-end | Assignee  |
+|---|---|---|---|
+| **A** | HR role pack | HRMS mock+adapter, Rasa-HR, HR chat cards (leave balance / request / FAQ), HR admin content, **rephraser-service** | Kishor |
+| **B** | IT Support role pack | ITSM mock+adapter, Rasa-IT, IT chat cards (ticket create / status / password reset), IT admin content, **retraining-service**, **CI/CD** | Rohith |
+| **C** | Admissions role pack | Admissions mock+adapter, Rasa-Admissions, Admissions cards (status / checklist / fees), Admissions admin content, **conversation-logs**, **Vercel + Neon** | Mitesh |
+| **D** | Platform & Core | auth + mock-auth, gateway, session/router/renderer, shared chat shell + message component library, admin console framework, talk-mode/TTS, DB schema, **Docker Compose**, **hardening/perf** | Tahir |
 
 The admin console is **role-scoped**, so A/B/C each build, seed, and verify *their own* role's admin screens on top of D's framework — that is how they get admin UI without colliding.
 
