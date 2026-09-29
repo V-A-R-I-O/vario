@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vario-mock-auth-service"
+version = "0.1.0"
+description = "VARIO Mock Auth Service"
+readme = "README.md"
+requires-python = ">=3.11"
