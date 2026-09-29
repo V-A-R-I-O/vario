@@ -23,7 +23,7 @@ describe('LoginForm', () => {
 
   it('renders all elements correctly', () => {
     render(<LoginForm />);
-    expect(screen.getByText('V.A.R.I.O.')).toBeInTheDocument();
+    expect(screen.getByText('VARIO')).toBeInTheDocument();
     expect(screen.getByLabelText(/email/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /log in/i })).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe('LoginForm', () => {
     
     fireEvent.click(submitButton);
 
-    expect(submitButton).toHaveTextContent(/logging in/i);
+    expect(submitButton).toHaveTextContent(/signing in/i);
     expect(submitButton).toBeDisabled();
 
     await waitFor(() => {
@@ -56,7 +56,7 @@ describe('LoginForm', () => {
   });
 
   it('submitting invalid credentials shows error message', async () => {
-    mockLoginUser.mockRejectedValueOnce(new Error('Invalid email or password'));
+    mockLoginUser.mockRejectedValueOnce(new Error('Invalid email or password. Check your details and try again.'));
 
     render(<LoginForm />);
     
@@ -70,7 +70,7 @@ describe('LoginForm', () => {
     fireEvent.click(submitButton);
 
     await waitFor(() => {
-      expect(screen.getByText('Invalid email or password')).toBeInTheDocument();
+      expect(screen.getByText(/Invalid email or password/i)).toBeInTheDocument();
     });
     
     // Ensure button is re-enabled
