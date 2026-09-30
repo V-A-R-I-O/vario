@@ -68,7 +68,7 @@ jobs:
         run: npm run build
 
   mock-auth:
-    name: Mock Auth service build and smoke test
+    name: Mock Auth service build and tests
     runs-on: ubuntu-latest
 
     steps:
@@ -90,32 +90,6 @@ jobs:
         working-directory: mock-auth-service
         run: python -m pip install .
 
-      - name: Smoke test Mock Auth endpoints
+      - name: Run Mock Auth tests
         working-directory: mock-auth-service
-        run: |
-          python - <<'PY'
-          from fastapi.testclient import TestClient
-          from app.main import app
-
-          client = TestClient(app)
-
-          valid = client.post(
-              "/verify",
-              json={
-                  "email": "emp1@org.example.com",
-                  "password": "password123",
-              },
-          )
-          assert valid.status_code == 200
-          assert valid.json()["email"] == "emp1@org.example.com"
-          assert "password" not in valid.json()
-
-          invalid = client.post(
-              "/verify",
-              json={
-                  "email": "emp1@org.example.com",
-                  "password": "wrong-password",
-              },
-          )
-          assert invalid.status_code == 401
-          PY
+        run: python -m pytest
