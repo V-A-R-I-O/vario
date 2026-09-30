@@ -108,7 +108,7 @@ export default function LoginForm() {
       </div>
 
       <p className="text-center text-[11.5px] text-[#9AA3BD] mt-5">
-        Authentication is handled by your organization's identity provider.
+        Authentication is handled by your organization&apos;s identity provider.
       </p>
     </div>
   );
