@@ -66,3 +66,56 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+  mock-auth:
+    name: Mock Auth service build and smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: mock-auth-service/requirements.txt
+
+      - name: Install Mock Auth dependencies
+        working-directory: mock-auth-service
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      - name: Build Mock Auth package
+        working-directory: mock-auth-service
+        run: python -m pip install .
+
+      - name: Smoke test Mock Auth endpoints
+        working-directory: mock-auth-service
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          from app.main import app
+
+          client = TestClient(app)
+
+          valid = client.post(
+              "/verify",
+              json={
+                  "email": "emp1@org.example.com",
+                  "password": "password123",
+              },
+          )
+          assert valid.status_code == 200
+          assert valid.json()["email"] == "emp1@org.example.com"
+          assert "password" not in valid.json()
+
+          invalid = client.post(
+              "/verify",
+              json={
+                  "email": "emp1@org.example.com",
+                  "password": "wrong-password",
+              },
+          )
+          assert invalid.status_code == 401
+          PY
