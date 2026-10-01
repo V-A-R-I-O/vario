@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from app.database import Base
 
 def generate_uuid():
@@ -17,4 +17,8 @@ class User(Base):
     role = Column(String, nullable=False)
     external_id = Column(String, unique=True, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+    training_phrases = relationship("TrainingPhrase", back_populates="author")
+    audit_logs = relationship("AuditLog", back_populates="actor")
