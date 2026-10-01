@@ -1,0 +1,147 @@
+# V.A.R.I.O. — Local Development Stack (Docker Compose)
+#
+# Quick start:
+#   cp .env.example .env        # fill in real values
+#   docker compose up            # core stack (postgres, gateway, frontend, mock-auth)
+#   docker compose --profile full up   # all services including stubs
+#
+# See README.md → "Local Development" for full details.
+
+services:
+  # ── Database ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vario}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vario}
+      POSTGRES_DB: ${POSTGRES_DB:-vario}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vario}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Backend (FastAPI Gateway) ─────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-vario}:${POSTGRES_PASSWORD:-vario}@postgres:5432/${POSTGRES_DB:-vario}"
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      JWT_EXPIRY_MINUTES: ${JWT_EXPIRY_MINUTES:-60}
+      MOCK_AUTH_URL: http://mock-auth:9001
+      RASA_HR_URL: http://rasa-hr:5005
+      RASA_IT_URL: http://rasa-it:5005
+      RASA_ADMISSIONS_URL: http://rasa-admissions:5005
+      MOCK_HRMS_URL: http://mock-hrms:9002
+      MOCK_ITSM_URL: http://mock-itsm:9003
+      MOCK_ADMISSIONS_URL: http://mock-admissions:9004
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Frontend (Next.js) ───────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api}
+    depends_on:
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── Mock Services ────────────────────────────────────────────────────────
+  mock-auth:
+    build:
+      context: ./mock-auth-service
+    restart: unless-stopped
+    ports:
+      - "${MOCK_AUTH_PORT:-9001}:9001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9001/docs')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  # Stub — replace build context when mock-hrms-service is implemented
+  mock-hrms:
+    image: busybox:1.36
+    profiles: [full]
+    command: ["sh", "-c", "echo 'mock-hrms stub — replace with real service'; httpd -f -p 9002 -h /tmp"]
+    ports:
+      - "${MOCK_HRMS_PORT:-9002}:9002"
+
+  # Stub — replace build context when mock-itsm-service is implemented
+  mock-itsm:
+    image: busybox:1.36
+    profiles: [full]
+    command: ["sh", "-c", "echo 'mock-itsm stub — replace with real service'; httpd -f -p 9003 -h /tmp"]
+    ports:
+      - "${MOCK_ITSM_PORT:-9003}:9003"
+
+  # Stub — replace build context when mock-admissions-service is implemented
+  mock-admissions:
+    image: busybox:1.36
+    profiles: [full]
+    command: ["sh", "-c", "echo 'mock-admissions stub — replace with real service'; httpd -f -p 9004 -h /tmp"]
+    ports:
+      - "${MOCK_ADMISSIONS_PORT:-9004}:9004"
+
+  # ── Rasa NLU Instances ───────────────────────────────────────────────────
+  # Stubs — replace with trained models when role-pack slices land
+
+  rasa-hr:
+    image: rasa/rasa:3.6.20-full
+    profiles: [full]
+    ports:
+      - "5005:5005"
+    volumes:
+      - ./rasa-hr:/app
+    command: ["run", "--enable-api", "--port", "5005"]
+
+  rasa-it:
+    image: rasa/rasa:3.6.20-full
+    profiles: [full]
+    ports:
+      - "5006:5005"
+    volumes:
+      - ./rasa-it:/app
+    command: ["run", "--enable-api", "--port", "5005"]
+
+  rasa-admissions:
+    image: rasa/rasa:3.6.20-full
+    profiles: [full]
+    ports:
+      - "5007:5005"
+    volumes:
+      - ./rasa-admissions:/app
+    command: ["run", "--enable-api", "--port", "5005"]
+
+volumes:
+  pgdata:
