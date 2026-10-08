@@ -1,9 +1,10 @@
 # Sprint 1 — Deployed Walking Skeleton & CD Pipeline (Week 1)
 
 ## Goal
-Stand up the **entire delivery pipeline** and push a trivial-but-real app all the way through it to production. The skeleton does almost nothing — a user logs in and lands on an authenticated empty page — but it travels the full path: local Docker → GitHub → CI/CD → OCI backend (behind Cloudflare Tunnel) + Vercel frontend + Neon DB. Once this is live, **every merged slice from Sprint 2 onward auto-deploys**, so any change is immediately reflected in the running/demo app.
+Stand up the **entire delivery pipeline** and push a real but minimal VARIO application all the way through it to production. The public entry point is the **VARIO landing page**, followed by login and an authenticated empty page. The stack travels the full path: local Docker → GitHub → CI/CD → OCI backend (behind Cloudflare Tunnel) + Vercel frontend + Neon DB. Once this is live, **every merged slice from Sprint 2 onward auto-deploys**, so any change is immediately reflected in the running/demo app.
 
 ## Exit criteria
+- [ ] The public VARIO landing page is reachable on the production URL without authentication.
 - [ ] A seeded test user logs in via `POST /api/auth/login` on the **production URL** and receives a valid VARIO JWT.
 - [ ] Pushing a PR runs CI (lint + test + build); merging to main **auto-deploys** frontend (Vercel) and backend (OCI).
 - [ ] Backend is reachable over HTTPS via Cloudflare Tunnel; frontend talks to it through `NEXT_PUBLIC_API_BASE_URL`.
@@ -17,14 +18,15 @@ Stand up the **entire delivery pipeline** and push a trivial-but-real app all th
 |---|---|---|
 | **D** | ⚠️`slice-01-auth-login`, ⚠️`slice-02-db-schema`, `slice-27-docker-compose` | Repo/monorepo scaffold (Next.js + FastAPI), auth + mock-auth + JWT + Login UI, schema/migrations, Docker Compose |
 | **B** | ⚠️`slice-28-cicd` | GitHub Actions: lint + pytest + Jest on PRs, build + deploy on merge to main |
-| **A** | ⚠️`slice-29-oci-cloudflare` | Provision OCI Ampere A1 compute; Cloudflare Tunnel for backend HTTPS |
+| **A** | `slice-00-landing-page`, ⚠️`slice-29-oci-cloudflare` | Public VARIO landing page; provision OCI Ampere A1 compute; Cloudflare Tunnel for backend HTTPS |
 | **C** | ⚠️`slice-30-vercel-neon` | Vercel project for the frontend; Neon dev+prod DBs; env/secrets wiring |
 
 ## Dependencies & sequencing
 - **Provision accounts on day 1** (OCI, Cloudflare, Vercel, Neon, GitHub) — these have the longest lead time.
+- `slice-00-landing-page` (A) can be developed independently of the backend and authentication because it is public and frontend-only.
 - `slice-02-db-schema` (D) and `slice-30-vercel-neon` (C) coordinate on the connection string: C provisions the Neon instances, D writes and runs the migrations against them.
 - The deploy targets (A: OCI, C: Vercel) and the pipeline (B: CI/CD) converge at the end of the week: B's pipeline deploys to A's compute and C's Vercel project. Hold a Thursday integration checkpoint to wire them together.
-- The app D deploys is deliberately minimal (login → empty authenticated page). Do **not** build features this sprint — the point is the pipeline.
+- The application D deploys remains deliberately minimal (landing page → login → empty authenticated page). Do **not** build feature-domain functionality this sprint — the point is the pipeline.
 
 ## Risks / de-risking
 - **First-time infra setup is the whole risk this sprint.** OCI Always-Free provisioning and Cloudflare Tunnel are the usual time sinks — start them Monday, not Wednesday.
@@ -32,4 +34,5 @@ Stand up the **entire delivery pipeline** and push a trivial-but-real app all th
 - Domain (Rasa) work intentionally does **not** start this week; it begins Sprint 2. Keep the skeleton dumb.
 
 ## Human review
-- Every slice this sprint is ⚠️ (auth, schema, and all infra/CI/secrets) and requires human review before merge/deploy per `AGENTS.md`.
+- `slice-00-landing-page` is a normal frontend slice. Human review is required for changes touching authentication, deployment configuration, environment variables, secrets, or other sensitive areas.
+- Every existing ⚠️ slice this sprint remains subject to human review before merge/deploy per `AGENTS.md`.
