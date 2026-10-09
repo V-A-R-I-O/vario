@@ -37,7 +37,10 @@ async def test_invalid_body_422():
 
 @pytest.mark.asyncio
 async def test_rate_limiting():
-    transport = ASGITransport(app=app)
+    from app.utils.rate_limit import limiter
+    limiter.requests.clear()
+    
+    transport = ASGITransport(app=app, client=("192.168.1.100", 12345))
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Hit /api/auth/login 11 times from same IP
         for _ in range(10):
@@ -49,6 +52,8 @@ async def test_rate_limiting():
         assert data["status"] == "error"
         assert "Rate limit exceeded" in data["error"]
         assert "x-ratelimit-limit" in res.headers
+        
+    limiter.requests.clear()
 
 
 @pytest.mark.asyncio
