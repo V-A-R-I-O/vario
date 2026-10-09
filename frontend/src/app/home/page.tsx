@@ -1,43 +1,38 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getToken, clearToken } from '@/lib/auth';
 
 export default function HomePage() {
   const router = useRouter();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-    const token = getToken();
-    if (!token) {
-      router.push('/login');
-    }
-  }, [router]);
-
-  if (!mounted) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white shadow-sm px-6 py-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold text-gray-900">V.A.R.I.O.</h1>
-        <button 
-          onClick={() => {
-            clearToken();
-            router.push('/login');
-          }}
-          className="text-gray-600 hover:text-gray-900"
-        >
-          Sign out
+    <main className="canvas">
+      <div className="topbar">
+        <button className="rail-toggle" onClick={() => document.querySelector('.rail')?.classList.toggle('open')}>
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
         </button>
-      </header>
-      <main className="flex-1 p-6 flex items-center justify-center">
-        <div className="text-center text-gray-500">
-          <p className="mb-2 text-lg">Welcome to V.A.R.I.O.</p>
-          <p className="text-sm">Start your first conversation.</p>
+        <h1>Conversations</h1>
+        <div className="spacer"></div>
+        <button className="btn btn-signal" onClick={() => router.push('/home/new')}>
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+          </svg>
+          New conversation
+        </button>
+      </div>
+      <div className="content-scroll">
+        <div className="empty-state" style={{paddingTop: '110px'}}>
+          <div className="icon">
+            <svg viewBox="0 0 24 24" fill="none" style={{width: '24px', height: '24px', color: 'var(--text-faint)'}}>
+              <path d="M4 12h2.2l1.8-5.4 3 11 2.6-8.6 1.6 4.6h2.4l1.6-3 1.4 1.4h2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          <h3>Pick a conversation</h3>
+          <p>Select a conversation from the left, or start a new one with HR, IT Support, or Admissions.</p>
         </div>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }

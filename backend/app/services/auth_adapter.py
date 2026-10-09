@@ -18,6 +18,6 @@ class AuthAdapter:
                 )
                 if res.status_code == 200:
                     return res.json()
-        except httpx.RequestError:
-            pass
+        except httpx.RequestError as e:
+            raise ConnectionError(f"Auth service unavailable: {str(e)}")
         return None
