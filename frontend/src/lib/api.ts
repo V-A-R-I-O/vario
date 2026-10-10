@@ -54,3 +54,18 @@ export async function createConversation(role_pack: string, title?: string) {
     body: JSON.stringify({ role_pack, title }),
   });
 }
+
+export async function fetchMessages(conversationId: string) {
+  return authFetch(`/conversations/${conversationId}/messages`);
+}
+
+export async function sendChatMessage(
+  conversationId: string,
+  message: string,
+  mode: 'chat' | 'talk' = 'chat'
+) {
+  return authFetch(`/chat`, {
+    method: 'POST',
+    body: JSON.stringify({ conversation_id: conversationId, message, mode }),
+  });
+}
