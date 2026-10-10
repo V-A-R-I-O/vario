@@ -13,3 +13,44 @@ export async function loginUser(email: string, password: string) {
   }
   return data;
 }
+
+import { getToken } from './auth';
+
+async function authFetch(path: string, options: RequestInit = {}) {
+  const token = getToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options.headers,
+  };
+  
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+  });
+  
+  const data = await res.json();
+  if (!res.ok) {
+    if (res.status === 401 && typeof window !== 'undefined') {
+        localStorage.removeItem('vario_token');
+        window.location.href = '/login';
+    }
+    throw new Error(data.error || 'Request failed');
+  }
+  return data;
+}
+
+export async function fetchConversations(role_pack?: string, status?: string) {
+  const params = new URLSearchParams();
+  if (role_pack) params.append('role_pack', role_pack);
+  if (status) params.append('status', status);
+  const q = params.toString();
+  return authFetch(`/conversations${q ? `?${q}` : ''}`);
+}
+
+export async function createConversation(role_pack: string, title?: string) {
+  return authFetch(`/conversations`, {
+    method: 'POST',
+    body: JSON.stringify({ role_pack, title }),
+  });
+}

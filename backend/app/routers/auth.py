@@ -15,11 +15,17 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 @router.post("/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     # 1. Authenticate via Mock Auth Adapter
-    auth_data = await AuthAdapter.authenticate(req.email, req.password)
-    if not auth_data:
+    try:
+        auth_data = await AuthAdapter.authenticate(req.email, req.password)
+        if not auth_data:
+            return JSONResponse(
+                status_code=401,
+                content=error_response("Invalid email or password")
+            )
+    except ConnectionError as e:
         return JSONResponse(
-            status_code=401,
-            content=error_response("Invalid email or password")
+            status_code=503,
+            content=error_response("Authentication service is currently unavailable")
         )
     
     # 2. Upsert user in database
