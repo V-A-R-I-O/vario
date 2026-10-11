@@ -1,0 +1,65 @@
+version: "3.1"
+
+intents:
+  - check_application_status:
+      use_entities:
+        - application_id
+  - get_document_checklist:
+      use_entities:
+        - program
+  - ask_fee_deadline
+  - nlu_fallback
+  - greet
+  - goodbye
+
+entities:
+  - application_id
+  - program
+
+slots:
+  application_id:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_entity
+        entity: application_id
+
+  program:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_entity
+        entity: program
+
+  status:
+    type: any
+    influence_conversation: false
+    mappings:
+      - type: custom
+
+  next_step:
+    type: any
+    influence_conversation: false
+    mappings:
+      - type: custom
+
+responses:
+  utter_greet:
+    - text: "Hello! I am your VARIO Admissions Assistant. You can ask me to check your application status, view required documents, or inquire about fees and deadlines."
+
+  utter_goodbye:
+    - text: "Thank you for reaching out to the Admissions Office. Have a wonderful day!"
+
+  utter_ask_application_id:
+    - text: "Please provide your application reference ID (for example: APP-1001)."
+
+  utter_default_fallback:
+    - text: "I'm sorry, I didn't quite catch that. You can ask me about your application status (e.g. 'check application APP-1001'), document checklists, or fee deadlines."
+
+actions:
+  - action_check_application_status
+  - action_default_fallback
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true
