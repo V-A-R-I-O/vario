@@ -1,12 +1,20 @@
 from fastapi import FastAPI, HTTPException, status
 from typing import Dict, Any, Optional
 
-from app.seed_data import (
-    SEED_APPLICATIONS,
-    SEED_CHECKLISTS,
-    SEED_CALENDAR,
-    DEFAULT_SUGGESTED_NEXT_STEP,
-)
+try:
+    from .seed_data import (
+        SEED_APPLICATIONS,
+        SEED_CHECKLISTS,
+        SEED_CALENDAR,
+        DEFAULT_SUGGESTED_NEXT_STEP,
+    )
+except (ImportError, ValueError):
+    from app.seed_data import (
+        SEED_APPLICATIONS,
+        SEED_CHECKLISTS,
+        SEED_CALENDAR,
+        DEFAULT_SUGGESTED_NEXT_STEP,
+    )
 
 app = FastAPI(
     title="Mock Admissions Service",
