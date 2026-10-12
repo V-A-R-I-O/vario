@@ -196,3 +196,61 @@ async def test_get_calendar_backend_unavailable():
     ):
         with pytest.raises(BackendUnavailableError):
             await AdmissionsAdapter.get_calendar()
+
+
+@pytest.mark.asyncio
+async def test_get_application_status_invalid_or_empty_id():
+    # Regression test: empty or invalid ID returns not-found dict or raises typed exception
+    for invalid_id in ["", "   ", "APP/1001", "APP\\1001"]:
+        res = await AdmissionsAdapter.get_application_status(invalid_id)
+        assert res["found"] is False
+        assert "Invalid" in res["detail"] or "empty" in res["detail"]
+
+        with pytest.raises(ApplicationNotFoundError):
+            await AdmissionsAdapter.get_application_status(invalid_id, raise_for_not_found=True)
+
+
+@pytest.mark.asyncio
+async def test_get_application_status_malformed_non_json_404():
+    # Regression test: non-JSON 404 (e.g. HTML error page from proxy) handled gracefully
+    mock_response = httpx.Response(404, text="<html><body>Not Found</body></html>")
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+        res = await AdmissionsAdapter.get_application_status("APP-1001")
+        assert res["found"] is False
+        assert res["status"] == "Not Found"
+        assert "suggested_next_step" in res
+
+
+@pytest.mark.asyncio
+async def test_get_application_status_malformed_non_json_200_raises_backend_unavailable():
+    # Regression test: 200 OK with non-JSON body raises BackendUnavailableError instead of crashing
+    mock_response = httpx.Response(200, text="Bad Gateway (HTML)")
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+        with pytest.raises(BackendUnavailableError) as exc_info:
+            await AdmissionsAdapter.get_application_status("APP-1001")
+        assert "malformed" in exc_info.value.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_get_document_checklist_empty_program():
+    # Regression test: empty program query returns not-found or raises ProgramNotFoundError
+    res = await AdmissionsAdapter.get_document_checklist("  ")
+    assert res["found"] is False
+    assert "empty" in res["detail"]
+
+    with pytest.raises(ProgramNotFoundError):
+        await AdmissionsAdapter.get_document_checklist("", raise_for_not_found=True)
+
+
+@pytest.mark.asyncio
+async def test_get_document_checklist_malformed_non_json_404():
+    # Regression test: non-JSON 404 handled gracefully
+    mock_response = httpx.Response(404, text="<html>Not Found</html>")
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+        res = await AdmissionsAdapter.get_document_checklist("unknown")
+        assert res["found"] is False
+        assert "detail" in res
+

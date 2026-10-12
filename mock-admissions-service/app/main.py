@@ -28,9 +28,20 @@ def health_check() -> Dict[str, str]:
     return {"status": "ok", "service": "mock-admissions"}
 
 
+import re
+
 @app.get("/applications/{application_id}")
 def get_application(application_id: str) -> Dict[str, Any]:
-    norm_id = application_id.strip().upper()
+    norm_id = (application_id or "").strip().upper()
+    if not norm_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "message": "Application ID cannot be empty.",
+                "application_id": application_id,
+                "suggested_next_step": DEFAULT_SUGGESTED_NEXT_STEP,
+            },
+        )
     app_record = SEED_APPLICATIONS.get(norm_id)
     if not app_record:
         raise HTTPException(
@@ -46,26 +57,47 @@ def get_application(application_id: str) -> Dict[str, Any]:
 
 @app.get("/checklists/{program}")
 def get_document_checklist(program: str) -> Dict[str, Any]:
-    clean_prog = program.strip().lower()
+    clean_prog = (program or "").strip().lower()
+    available = [item["program"] for item in SEED_CHECKLISTS.values()]
 
-    # Direct key lookup or alias matching
+    # Reject empty or overly short/ambiguous queries
+    if not clean_prog or len(clean_prog) < 2:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "message": f"Invalid or empty program query '{program}'.",
+                "available_programs": available,
+            },
+        )
+
+    # 1. Direct program key lookup
     matched = None
     if clean_prog in SEED_CHECKLISTS:
         matched = SEED_CHECKLISTS[clean_prog]
-    else:
+
+    # 2. Exact match against full program name
+    if not matched:
         for entry in SEED_CHECKLISTS.values():
             if clean_prog == entry["program"].lower():
                 matched = entry
                 break
+
+    # 3. Tightened alias matching (exact alias match or word-boundary token match)
+    if not matched:
+        for entry in SEED_CHECKLISTS.values():
             for alias in entry.get("aliases", []):
-                if alias in clean_prog or clean_prog in alias:
+                alias_lower = alias.lower()
+                if clean_prog == alias_lower:
+                    matched = entry
+                    break
+                pattern = r"\b" + re.escape(alias_lower) + r"\b"
+                if re.search(pattern, clean_prog):
                     matched = entry
                     break
             if matched:
                 break
 
     if not matched:
-        available = [item["program"] for item in SEED_CHECKLISTS.values()]
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={

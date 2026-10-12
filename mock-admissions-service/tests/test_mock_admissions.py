@@ -97,3 +97,19 @@ def test_get_calendar_success():
     assert isinstance(data["fees"], list)
     assert len(data["fees"]) >= 3
     assert "refund_policy" in data
+
+
+def test_get_document_checklist_empty_or_single_char_rejected():
+    # Regression test: empty or single-character queries must return 404
+    for short_query in [" ", "a", "m", "x"]:
+        res = client.get(f"/checklists/{short_query}")
+        assert res.status_code == 404
+        assert "Invalid or empty program query" in res.json()["detail"]["message"]
+
+
+def test_get_document_checklist_broad_substring_does_not_accidentally_match():
+    # Regression test: arbitrary partial substrings must not accidentally match the first checklist
+    for invalid_query in ["admin", "techy", "datas"]:
+        res = client.get(f"/checklists/{invalid_query}")
+        assert res.status_code == 404
+
