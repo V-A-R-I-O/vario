@@ -1,0 +1,26 @@
+version: "3.1"
+
+stories:
+  - story: Direct leave balance inquiry
+    steps:
+      - intent: check_leave_balance
+      - action: action_check_leave_balance
+
+  - story: Greet then ask leave balance
+    steps:
+      - intent: greet
+      - action: utter_greet
+      - intent: check_leave_balance
+      - action: action_check_leave_balance
+
+  - story: Leave balance with specific leave type
+    steps:
+      - intent: check_leave_balance
+        entities:
+          - leave_type: "annual"
+      - action: action_check_leave_balance
+
+  - story: Goodbye flow
+    steps:
+      - intent: goodbye
+      - action: utter_goodbye

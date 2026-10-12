@@ -1,0 +1,77 @@
+version: "3.1"
+
+intents:
+  - check_leave_balance:
+      use_entities:
+        - employee_id
+        - leave_type
+  - ask_leave_status:
+      use_entities:
+        - request_id
+  - submit_leave_request:
+      use_entities:
+        - leave_type
+        - start_date
+        - end_date
+  - ask_policy_faq:
+      use_entities:
+        - policy_topic
+  - nlu_fallback
+  - greet
+  - goodbye
+
+entities:
+  - employee_id
+  - leave_type
+  - request_id
+  - start_date
+  - end_date
+  - policy_topic
+
+slots:
+  employee_id:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_entity
+        entity: employee_id
+
+  leave_type:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_entity
+        entity: leave_type
+
+  balance:
+    type: any
+    influence_conversation: false
+    mappings:
+      - type: custom
+
+  status:
+    type: any
+    influence_conversation: false
+    mappings:
+      - type: custom
+
+responses:
+  utter_greet:
+    - text: "Hello! I am your VARIO HR Assistant. You can ask me to check your leave balance, view leave request status, or ask about HR policies."
+
+  utter_goodbye:
+    - text: "Thank you for contacting HR. Have a wonderful day!"
+
+  utter_ask_leave_type:
+    - text: "Which type of leave would you like to check (annual, sick, or casual)?"
+
+  utter_default_fallback:
+    - text: "I'm sorry, I didn't quite catch that. You can ask me about your leave balance (e.g. 'what is my leave balance?'), leave application status, or HR policies."
+
+actions:
+  - action_check_leave_balance
+  - action_default_fallback
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true
