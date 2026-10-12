@@ -104,7 +104,7 @@ def health() -> Dict[str, Any]:
 
 
 @app.post("/webhooks/vario/converse", response_model=ConverseResponse)
-def converse(req: ConverseRequest) -> ConverseResponse:
+async def converse(req: ConverseRequest) -> ConverseResponse:
     """
     Primary conversation entrypoint consumed by backend dialogue-router.
     Adheres strictly to docs/decisions/ADR-002-rasa-chat-contract.md.
@@ -136,20 +136,20 @@ def converse(req: ConverseRequest) -> ConverseResponse:
     # Application status action
     if intent == "check_application_status":
         app_id = entities.get("application_id") or session.slots.get("application_id")
-        action_res = action_handler.execute_logic(app_id)
+        action_res = await action_handler.execute_logic_async(app_id)
         
         merged_slots = dict(session.slots)
-        merged_slots.update(action_res["slots"])
+        merged_slots.update(action_res.get("slots", {}))
 
         return ConverseResponse(
             intent=intent,
             confidence=confidence,
             entities=entities,
-            template_key=action_res["template_key"],
+            template_key=action_res.get("template_key"),
             slots=merged_slots,
             current_form=None,
             current_step=None,
-            response_text=None,
+            response_text=action_res.get("response_text"),
         )
 
     # Greeting / Goodbye / Stubs

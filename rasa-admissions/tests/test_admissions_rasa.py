@@ -116,3 +116,41 @@ def test_converse_webhook_fallback_roundtrip():
     assert data["template_key"] is None
     assert data["response_text"] is not None
     assert "didn't quite understand" in data["response_text"]
+
+
+def test_converse_webhook_unknown_application_id_graceful_not_found():
+    # FR-17: Graceful "not found" with suggested next step when application ID is unknown
+    payload = {
+        "sender": "user-test-456",
+        "message": "Can you check status of APP-9999?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "check_application_status"
+    assert data["confidence"] >= 0.85
+    assert data["entities"]["application_id"] == "APP-9999"
+    assert data["template_key"] == "check_application_status_not_found_response"
+    assert data["slots"]["application_id"] == "APP-9999"
+    assert data["slots"]["status"] == "Not Found"
+    assert data["slots"]["found"] is False
+    assert "suggested_next_step" in data["slots"]
+    assert "admissions@org.example.com" in data["slots"]["suggested_next_step"]
+    assert data["response_text"] is not None
+    assert "APP-9999 was not found" in data["response_text"]
+
+
+def test_action_check_application_status_not_found():
+    # Verify execute_logic directly with an unknown application ID
+    action = ActionCheckApplicationStatus()
+    result = action.execute_logic("APP-8888")
+
+    assert result["template_key"] == "check_application_status_not_found_response"
+    assert result["slots"]["status"] == "Not Found"
+    assert result["slots"]["found"] is False
+    assert "suggested_next_step" in result["slots"]
+    assert "APP-8888" in result["response_text"]
+
