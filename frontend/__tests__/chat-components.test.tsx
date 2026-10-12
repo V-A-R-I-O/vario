@@ -1,5 +1,10 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import { BotMessage, type BotMessageData } from '../src/components/chat';
+import {
+  BotMessage,
+  type BotMessageData,
+  AdmissionsStatusCard,
+  AdmissionsNotFoundCard,
+} from '../src/components/chat';
 import ChatComponentGallery from '../src/app/home/chat/gallery/page';
 
 // AC-8: all 9 bot message types render from props.
@@ -130,3 +135,34 @@ describe('Chat component gallery', () => {
     });
   });
 });
+
+describe('Admissions components (slice-24)', () => {
+  it('renders AdmissionsStatusCard with application ID, status, and next step', () => {
+    render(
+      <AdmissionsStatusCard
+        applicationId="APP-1001"
+        status="Under Review"
+        nextStep="Document verification in progress."
+        program="B.Tech Computer Science"
+      />
+    );
+    expect(screen.getByText('Application APP-1001 Status')).toBeInTheDocument();
+    expect(screen.getByText('APP-1001')).toBeInTheDocument();
+    expect(screen.getByText('Under Review')).toBeInTheDocument();
+    expect(screen.getByText('Document verification in progress.')).toBeInTheDocument();
+    expect(screen.getByText('B.Tech Computer Science')).toBeInTheDocument();
+  });
+
+  it('renders AdmissionsNotFoundCard with graceful next step (FR-17)', () => {
+    render(
+      <AdmissionsNotFoundCard
+        applicationId="APP-9999"
+        suggestedNextStep="Please contact admissions@org.example.com"
+      />
+    );
+    expect(
+      screen.getByText('Application APP-9999 not found. Suggested next step: Please contact admissions@org.example.com')
+    ).toBeInTheDocument();
+  });
+});
+

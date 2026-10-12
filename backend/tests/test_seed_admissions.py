@@ -4,6 +4,8 @@ from sqlalchemy import select
 from app.models.intent import Intent
 from app.models.training_phrase import TrainingPhrase
 from app.models.response_template import ResponseTemplate
+from app.models.response_variant import ResponseVariant
+from app.services import response_renderer
 from scripts.seed import seed_admissions_data
 
 
@@ -39,7 +41,7 @@ async def test_seed_admissions_data_creates_intents_and_template(db_session):
     assert fee_intent is not None
     assert fee_intent.role_pack == "admissions"
 
-    # 4. Verify response template
+    # 4. Verify check_application_status_response template and 5 variants
     stmt_tmpl = select(ResponseTemplate).where(
         ResponseTemplate.template_key == "check_application_status_response"
     )
@@ -50,10 +52,53 @@ async def test_seed_admissions_data_creates_intents_and_template(db_session):
     assert "{status}" in tmpl.base_text
     assert "{next_step}" in tmpl.base_text
 
+    stmt_vars = select(ResponseVariant).where(ResponseVariant.template_id == tmpl.template_id)
+    status_variants = (await db_session.execute(stmt_vars)).scalars().all()
+    assert len(status_variants) == 5
+    for var in status_variants:
+        assert "{application_id}" in var.variant_text
+        assert "{status}" in var.variant_text
+        assert "{next_step}" in var.variant_text
+
+    # 5. Verify check_application_status_not_found_response template and 5 variants (FR-17)
+    stmt_tmpl_nf = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "check_application_status_not_found_response"
+    )
+    tmpl_nf = (await db_session.execute(stmt_tmpl_nf)).scalar_one_or_none()
+    assert tmpl_nf is not None
+    assert tmpl_nf.role_pack == "admissions"
+    assert "{application_id}" in tmpl_nf.base_text
+    assert "{suggested_next_step}" in tmpl_nf.base_text
+
+    stmt_vars_nf = select(ResponseVariant).where(ResponseVariant.template_id == tmpl_nf.template_id)
+    nf_variants = (await db_session.execute(stmt_vars_nf)).scalars().all()
+    assert len(nf_variants) == 5
+    for var in nf_variants:
+        assert "{application_id}" in var.variant_text
+        assert "{suggested_next_step}" in var.variant_text
+
+    # 6. Verify response renderer renders both templates with slot values
+    rendered_status = await response_renderer.render(
+        db_session,
+        "check_application_status_response",
+        {"application_id": "APP-1001", "status": "Under Review", "next_step": "Decision in 2 weeks"},
+    )
+    assert "APP-1001" in rendered_status
+    assert "Under Review" in rendered_status
+    assert "Decision in 2 weeks" in rendered_status
+
+    rendered_nf = await response_renderer.render(
+        db_session,
+        "check_application_status_not_found_response",
+        {"application_id": "APP-9999", "suggested_next_step": "contact admissions@org.example.com"},
+    )
+    assert "APP-9999" in rendered_nf
+    assert "contact admissions@org.example.com" in rendered_nf
+
 
 @pytest.mark.asyncio
 async def test_seed_admissions_data_is_idempotent(db_session):
-    # Running seed multiple times should not create duplicate intents or templates
+    # Running seed multiple times should not create duplicate intents, templates, or variants
     await seed_admissions_data(db_session)
     await db_session.commit()
 
@@ -69,3 +114,8 @@ async def test_seed_admissions_data_is_idempotent(db_session):
     )
     tmpls = (await db_session.execute(stmt_tmpl)).scalars().all()
     assert len(tmpls) == 1
+
+    stmt_vars = select(ResponseVariant).where(ResponseVariant.template_id == tmpls[0].template_id)
+    vars = (await db_session.execute(stmt_vars)).scalars().all()
+    assert len(vars) == 5
+
