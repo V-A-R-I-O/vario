@@ -1,0 +1,110 @@
+version: "3.1"
+
+nlu:
+  - intent: check_leave_balance
+    examples: |
+      - what is my leave balance?
+      - what's my leave balance
+      - what is my current leave balance?
+      - check my leave balance
+      - how many leaves do I have left?
+      - how many vacation days do I have remaining?
+      - can you tell me my leave balance?
+      - show me my leave balance
+      - I want to check my leave balance
+      - how many days of leave do I have?
+      - how much PTO do I have left?
+      - check my PTO balance
+      - what is my remaining paid time off?
+      - how many [annual](leave_type) leave days do I have?
+      - check [annual](leave_type) leave balance
+      - how much [annual](leave_type) leave is remaining?
+      - how many [sick](leave_type) days do I have left?
+      - check [sick](leave_type) leave balance
+      - what's my [sick](leave_type) leave balance?
+      - do I have any [casual](leave_type) leave left?
+      - how many [casual](leave_type) leaves do I have?
+      - how many vacation days are available?
+      - tell me my remaining vacation balance
+      - leave balance inquiry
+      - can I check my remaining time off?
+      - how many holidays or leaves do I have left?
+      - what is my total available leave?
+      - could you check how much leave I have left?
+      - check remaining leave days for me
+      - how many paid leaves are left in my account?
+      - what is my vacation allowance balance?
+      - how many PTO hours or days do I have?
+      - I'd like to see my current leave balance
+      - please show how many leaves I have remaining
+      - check my balance for paid time off
+      - how much time off do I have left?
+      - what's my PTO balance right now?
+      - view my leave balance
+      - check my remaining vacation days
+      - how much leave can I take?
+      - how many days off do I have available?
+      - what is the leave balance for [EMP-1042](employee_id)?
+      - check leave balance for employee [EMP-1042](employee_id)
+      - how many [annual](leave_type) leaves for [EMP-1042](employee_id)?
+
+  - intent: ask_leave_status
+    examples: |
+      - what is the status of my leave request?
+      - check my leave application status
+      - has my leave been approved?
+      - did my manager approve my vacation request?
+      - check status of my time off request
+      - is my sick leave approved?
+      - status of leave request [REQ-501](request_id)
+      - track my leave request [REQ-502](request_id)
+
+  - intent: submit_leave_request
+    examples: |
+      - I want to apply for leave
+      - submit a leave request
+      - request time off for next week
+      - apply for 2 days of [sick](leave_type) leave
+      - I need to take vacation from Monday to Wednesday
+      - can I request [casual](leave_type) leave tomorrow?
+      - apply for [annual](leave_type) leave
+
+  - intent: ask_policy_faq
+    examples: |
+      - what is the company leave policy?
+      - how many annual leaves are granted per year?
+      - what is the policy for maternity leave?
+      - can I carry forward unused leaves to next year?
+      - what are the rules for taking sick leave?
+      - how many days of paternity leave do I get?
+      - tell me about the bereavement leave guidelines
+
+  - intent: nlu_fallback
+    examples: |
+      - how is the weather outside?
+      - what is the capital of France?
+      - order a pepperoni pizza for me
+      - tell me a funny joke
+      - who won the football game yesterday?
+      - what is quantum computing?
+      - play some rock music
+      - write a python script for sorting
+      - what is the stock price of Apple?
+      - how far is the moon from earth?
+
+  - intent: greet
+    examples: |
+      - hello
+      - hi
+      - hey there
+      - good morning
+      - good afternoon
+      - greetings
+
+  - intent: goodbye
+    examples: |
+      - bye
+      - goodbye
+      - see you later
+      - thanks, bye
+      - have a nice day
