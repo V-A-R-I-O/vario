@@ -1,0 +1,23 @@
+version: "3.1"
+
+stories:
+  - story: Direct application status inquiry
+    steps:
+      - intent: check_application_status
+        entities:
+          - application_id: "APP-1001"
+      - action: action_check_application_status
+
+  - story: Greet then ask application status
+    steps:
+      - intent: greet
+      - action: utter_greet
+      - intent: check_application_status
+        entities:
+          - application_id: "APP-1002"
+      - action: action_check_application_status
+
+  - story: Goodbye flow
+    steps:
+      - intent: goodbye
+      - action: utter_goodbye
