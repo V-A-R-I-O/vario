@@ -65,6 +65,9 @@ responses:
   utter_ask_leave_type:
     - text: "Which type of leave would you like to check (annual, sick, or casual)?"
 
+  utter_ask_employee_id:
+    - text: "Please provide your employee ID (e.g., EMP-1042) to check your leave balance."
+
   utter_default_fallback:
     - text: "I'm sorry, I didn't quite catch that. You can ask me about your leave balance (e.g. 'what is my leave balance?'), leave application status, or HR policies."
 

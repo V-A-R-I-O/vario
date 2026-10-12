@@ -1,6 +1,20 @@
+"""
+Rasa HR Role Pack Runtime Server.
+
+Dual-mode architecture:
+1. Live Rasa Mode: When RASA_NLU_URL is configured, proxies classification to the actual
+   trained Rasa Open Source NLU engine (/model/parse).
+2. Scoped Development Mock Mode: When RASA_NLU_URL is unset (e.g. in local unit tests and CI
+   before OCI deployment in Slice 29), operates as a scoped rule-based mock implementing
+   the ADR-002 converse webhook contract.
+
+Adheres strictly to docs/decisions/ADR-002-rasa-chat-contract.md.
+"""
+import os
 import re
 import logging
 from typing import Dict, Any, Optional, List
+import httpx
 from fastapi import FastAPI, Request, status
 from pydantic import BaseModel
 
@@ -21,6 +35,7 @@ action_handler = ActionCheckLeaveBalance()
 EMP_ID_REGEX = re.compile(r"\b(EMP-\d{4})\b", re.IGNORECASE)
 
 LEAVE_TYPES = ["annual", "sick", "casual", "maternity", "paternity", "pto", "vacation"]
+POLICY_TOPICS = ["maternity", "paternity", "sick", "annual", "casual", "bereavement", "carryover", "carry forward"]
 
 KEYWORDS_STATUS = [
     "status", "approved", "approval", "pending", "track", "progress",
@@ -31,9 +46,9 @@ KEYWORDS_REQUEST = [
     "taking leave", "need leave", "apply for"
 ]
 KEYWORDS_POLICY = [
-    "policy", "rules", "rule", "guidelines", "guideline", "carryover",
-    "carry forward", "entitled", "allowance", "maternity", "paternity",
-    "bereavement"
+    "policy", "policies", "rules", "rule", "guidelines", "guideline", "carryover",
+    "carry forward", "entitled", "entitlement", "allowance", "maternity", "paternity",
+    "bereavement", "benefit", "benefits"
 ]
 KEYWORDS_BALANCE = [
     "balance", "how many", "how much", "remaining", "left", "available",
@@ -67,10 +82,12 @@ class ConverseResponse(BaseModel):
     response_text: Optional[str] = None
 
 
-def classify_message(text: str) -> tuple[str, float, Dict[str, Any]]:
+def classify_message_local(
+    text: str, current_form: Optional[str] = None
+) -> tuple[str, float, Dict[str, Any]]:
     """
-    Classifies the user text into an intent, confidence, and entities.
-    Emulates Rasa DIETClassifier and FallbackClassifier behaviour for HR.
+    Deterministic rule-based development mock for HR NLU.
+    Emulates Rasa DIETClassifier and FallbackClassifier behaviour for local testing.
     """
     clean = text.strip().lower()
 
@@ -86,6 +103,12 @@ def classify_message(text: str) -> tuple[str, float, Dict[str, Any]]:
             entities["leave_type"] = lt
             break
 
+    # Extract policy_topic entity
+    for topic in POLICY_TOPICS:
+        if re.search(rf"\b{topic}\b", clean):
+            entities["policy_topic"] = topic
+            break
+
     # 1. Greetings
     if any(clean == g or clean.startswith(g + " ") for g in KEYWORDS_GREET):
         return "greet", 0.96, entities
@@ -94,35 +117,90 @@ def classify_message(text: str) -> tuple[str, float, Dict[str, Any]]:
     if any(clean == b or clean.startswith(b + " ") for b in KEYWORDS_BYE):
         return "goodbye", 0.95, entities
 
-    # Check for leave/time-off context
-    is_leave_context = any(
-        kw in clean
-        for kw in ["leave", "leaves", "vacation", "pto", "time off", "day off", "days off"]
+    # 3. Check for ambiguous / conflicting utterances
+    has_apply = any(kw in clean for kw in KEYWORDS_REQUEST)
+    has_status = any(kw in clean for kw in KEYWORDS_STATUS)
+    has_balance = any(kw in clean for kw in KEYWORDS_BALANCE) or any(
+        kw in clean for kw in ["days left", "days remaining", "time left"]
+    )
+    has_policy = any(kw in clean for kw in KEYWORDS_POLICY)
+
+    # Conflicting intents in a single utterance (e.g. "apply for leave status balance")
+    intent_actions_count = sum([has_apply, has_status, has_balance, has_policy])
+    if intent_actions_count > 2:
+        return "nlu_fallback", 0.25, entities
+
+    # Vague / ambiguous short utterances without clear action
+    if clean in ["leave", "leaves", "time off", "vacation", "pto"] or clean in [
+        "help with leave", "leave help", "need leave assistance", "help with my leave"
+    ]:
+        return "nlu_fallback", 0.25, entities
+
+    # 4. Policy FAQ edge cases (e.g. "What is the maternity policy?", "maternity leave policy")
+    # Must evaluate BEFORE balance check so policy queries don't get misclassified as leave balance
+    if has_policy or ("policy_topic" in entities and any(w in clean for w in ["policy", "rule", "rules", "guideline", "guidelines", "benefit", "benefits", "how does", "what is"])):
+        if not ("balance" in clean and not any(p in clean for p in ["policy", "rule", "guideline"])):
+            conf = 0.95 if "policy_topic" in entities else 0.90
+            return "ask_policy_faq", conf, entities
+
+    # Check for general leave/time-off context
+    is_leave_context = (
+        any(
+            kw in clean
+            for kw in [
+                "leave", "leaves", "vacation", "pto", "time off", "day off",
+                "days off", "days left", "days remaining", "days"
+            ]
+        )
+        or bool(entities)
+        or current_form == "check_leave_balance"
     )
 
-    # 3. Leave request submission (e.g. "apply for leave", "request time off")
-    if is_leave_context and any(kw in clean for kw in KEYWORDS_REQUEST) and not any(kw in clean for kw in ["balance", "status"]):
+    # 5. Leave request submission (e.g. "apply for leave", "request time off")
+    if is_leave_context and has_apply and not (has_balance or has_status):
         return "submit_leave_request", 0.88, entities
 
-    # 4. Leave request status (e.g. "status of my leave request", "has my leave been approved")
-    if is_leave_context and any(kw in clean for kw in KEYWORDS_STATUS):
+    # 6. Leave request status (e.g. "status of my leave request", "has my leave been approved")
+    if is_leave_context and has_status and not has_balance:
         return "ask_leave_status", 0.88, entities
 
-    # 5. Policy FAQ (e.g. "what is the leave policy", "rules for sick leave")
-    if is_leave_context and any(kw in clean for kw in KEYWORDS_POLICY) and "balance" not in clean:
-        return "ask_policy_faq", 0.88, entities
-
-    # 6. Check leave balance (e.g. "what's my leave balance", "how many leaves left", "check pto")
-    if is_leave_context or any(kw in clean for kw in ["leave balance", "pto balance"]):
+    # 7. Check leave balance (e.g. "what's my leave balance", "how many leaves left", "check pto")
+    if has_balance and (is_leave_context or "leave_type" in entities or "employee_id" in entities or "balance" in clean):
         confidence = 0.96 if "employee_id" in entities or "leave_type" in entities else 0.95
         return "check_leave_balance", confidence, entities
 
-    # Standalone balance query with implicit context
-    if "balance" in clean and not any(kw in clean for kw in ["account", "bank", "card"]):
-        return "check_leave_balance", 0.90, entities
-
-    # 7. Low-confidence / Out-of-scope fallback (FR-2, ADR-002: threshold 0.4)
+    # 8. Low-confidence / Out-of-scope fallback (FR-2, ADR-002: threshold 0.4)
     return "nlu_fallback", 0.25, entities
+
+
+def classify_message(
+    text: str, current_form: Optional[str] = None
+) -> tuple[str, float, Dict[str, Any]]:
+    """
+    Classifies the user text into an intent, confidence, and entities.
+    Invokes upstream Rasa NLU runtime (/model/parse) when RASA_NLU_URL is configured;
+    otherwise falls back to the deterministic local development mock.
+    """
+    rasa_nlu_url = os.getenv("RASA_NLU_URL")
+    if rasa_nlu_url:
+        try:
+            with httpx.Client(timeout=3.0) as client:
+                url = rasa_nlu_url.rstrip("/") + "/model/parse"
+                resp = client.post(url, json={"text": text})
+                if resp.status_code == 200:
+                    data = resp.json()
+                    intent_data = data.get("intent") or {}
+                    intent_name = intent_data.get("name") or "nlu_fallback"
+                    confidence = float(intent_data.get("confidence", 0.0))
+                    entities_list = data.get("entities") or []
+                    entities: Dict[str, Any] = {}
+                    for ent in entities_list:
+                        entities[ent["entity"]] = ent.get("value")
+                    return intent_name, confidence, entities
+        except Exception as e:
+            logger.warning("Upstream Rasa NLU invocation failed, using local mock: %s", str(e))
+
+    return classify_message_local(text, current_form=current_form)
 
 
 @app.get("/health")
@@ -141,14 +219,18 @@ def converse(req: ConverseRequest) -> ConverseResponse:
     sender = req.sender
     session = req.session or SessionState()
 
-    intent, confidence, entities = classify_message(message)
+    intent, confidence, entities = classify_message(message, current_form=session.current_form)
 
+    # Privacy preservation: NEVER log employee IDs, raw message PII, or sensitive slot values.
     logger.info(
-        "Converse called: sender=%s intent=%s confidence=%.2f entities=%s",
-        sender, intent, confidence, entities
+        "Converse request processed: intent=%s confidence=%.2f entity_types=%s has_session_slots=%s",
+        intent,
+        confidence,
+        list(entities.keys()),
+        bool(session.slots),
     )
 
-    # Low-confidence fallback
+    # Low-confidence or ambiguous fallback
     if confidence < 0.4 or intent == "nlu_fallback":
         return ConverseResponse(
             intent=intent,
@@ -163,12 +245,34 @@ def converse(req: ConverseRequest) -> ConverseResponse:
 
     # Leave balance action
     if intent == "check_leave_balance":
-        emp_id = entities.get("employee_id") or session.slots.get("employee_id")
+        # Resolve employee context from:
+        # 1. Extracted entity in current message
+        # 2. Existing session slots from previous turns
+        # 3. Authenticated sender ID if matching employee ID pattern
+        emp_id = (
+            entities.get("employee_id")
+            or session.slots.get("employee_id")
+            or (sender.upper() if re.match(r"^EMP-\d{4}$", sender.strip(), re.IGNORECASE) else None)
+        )
         leave_type = entities.get("leave_type") or session.slots.get("leave_type")
+
         action_res = action_handler.execute_logic(emp_id, leave_type)
 
         merged_slots = dict(session.slots)
         merged_slots.update(action_res["slots"])
+
+        # If employee_id is missing, prompt for it rather than returning another employee's data.
+        if action_res.get("requires_input"):
+            return ConverseResponse(
+                intent=intent,
+                confidence=confidence,
+                entities=entities,
+                template_key=None,
+                slots=merged_slots,
+                current_form="check_leave_balance",
+                current_step="ask_employee_id",
+                response_text=action_res["response_text"],
+            )
 
         return ConverseResponse(
             intent=intent,

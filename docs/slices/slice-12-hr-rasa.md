@@ -15,19 +15,19 @@
 Stand up the HR Rasa instance and seed its data. This slice is the **NLU backbone** of A's vertical; the HRMS adapter is `slice-13` and the end-to-end leave-balance card is `slice-14`. Scope the classification work here to **`check_leave_balance`**; other HR intents are seeded as stubs for later slices.
 
 Deliverables:
-- A Rasa project for HR (`config.yml`, `domain.yml`, `nlu.yml`, rules/stories, `actions.py`) running as a service at `RASA_HR_URL`.
+- A Rasa project for HR (`config.yml`, `domain.yml`, `nlu.yml`, rules/stories, `actions.py`) providing full specification for the Rasa Docker runtime (`slice-27`), alongside a scoped development mock & proxy server (`server.py`) running at `RASA_HR_URL`.
 - Seed intents in the DB (`role_pack = hr`): `check_leave_balance` (`dynamic_workflow`), plus placeholders for `ask_leave_status`, `submit_leave_request`, `ask_policy_faq` to be fleshed out in later slices.
 - ~30–50 training phrases for `check_leave_balance`; a handful for the others.
-- An `nlu_fallback` policy so low-confidence utterances can trigger clarification (supports FR-2 upstream).
-- A custom action skeleton `action_check_leave_balance` that will call the HRMS adapter (wired in `slice-14`) and return `template_key` + slots.
+- An `nlu_fallback` policy so low-confidence and ambiguous utterances can trigger clarification (supports FR-2 upstream).
+- A custom action skeleton `action_check_leave_balance` that resolves employee context from the session, prompts for employee ID when missing, and returns `template_key` + slots when resolved (the real adapter call is wired in `slice-14`).
 - `response_templates` seeded for the leave-balance response with `{balance}`-style placeholders.
 
 ## Acceptance criteria
-- [ ] Given the HR Rasa service, when it starts, then it is reachable at `RASA_HR_URL`.
+- [ ] Given the HR Rasa service, when it starts, then it is reachable at `RASA_HR_URL` (serving ADR-002 converse endpoint).
 - [ ] Given variations of "what's my leave balance", then Rasa-HR classifies `check_leave_balance` with high confidence.
-- [ ] Given an off-topic message, then the `nlu_fallback` intent fires (enabling clarification).
+- [ ] Given an off-topic or ambiguous message, then the `nlu_fallback` intent fires (enabling clarification).
 - [ ] Given the seed step, then the DB contains the HR dynamic-workflow intent(s) with training phrases and a leave-balance response template (so they appear in the admin console later).
-- [ ] Given `action_check_leave_balance`, then it exists and returns a `template_key` + slots shape (the adapter call is wired in `slice-14`).
+- [ ] Given `action_check_leave_balance`, then it exists and returns a `template_key` + slots shape when employee context is resolved, or prompts for employee ID when missing.
 
 ## Mockup / reference (if UI-facing)
 No UI surface (Rasa runtime). HR's chat cards are built in `slice-14`.

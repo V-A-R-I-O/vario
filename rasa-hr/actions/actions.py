@@ -1,3 +1,4 @@
+import re
 from typing import Any, Text, Dict, List, Optional
 
 try:
@@ -29,12 +30,16 @@ class ActionCheckLeaveBalance(Action):
     """
 
     TEMPLATE_KEY = "check_leave_balance_response"
+    ASK_EMPLOYEE_ID_PROMPT = "Please provide your employee ID (e.g., EMP-1042) to check your leave balance."
 
     def name(self) -> Text:
         return "action_check_leave_balance"
 
-    def extract_employee_id(self, tracker: Any) -> Optional[str]:
-        """Extracts employee_id from slot or extracted entities."""
+    def extract_employee_id(self, tracker: Any, sender: Optional[str] = None) -> Optional[str]:
+        """
+        Extracts employee_id from slot, extracted entities, or authenticated session context.
+        Does NOT silently fall back to a hardcoded employee ID.
+        """
         # 1. Try tracker slot if available
         if hasattr(tracker, "get_slot"):
             emp_id = tracker.get_slot("employee_id")
@@ -50,11 +55,16 @@ class ActionCheckLeaveBalance(Action):
 
         # 3. Direct dictionary access fallback
         if isinstance(tracker, dict):
-            if "employee_id" in tracker.get("slots", {}):
-                return str(tracker["slots"]["employee_id"]).strip().upper()
+            slots = tracker.get("slots", {})
+            if slots and "employee_id" in slots and slots["employee_id"]:
+                return str(slots["employee_id"]).strip().upper()
             for ent in tracker.get("entities", []):
                 if ent.get("entity") == "employee_id":
                     return str(ent.get("value", "")).strip().upper()
+
+        # 4. Resolve from authenticated session sender if formatted as an employee ID
+        if sender and re.match(r"^EMP-\d{4}$", sender.strip(), re.IGNORECASE):
+            return sender.strip().upper()
 
         return None
 
@@ -86,20 +96,36 @@ class ActionCheckLeaveBalance(Action):
         leave_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Executes action logic and returns the template_key + slots shape.
-        In slice-12, this is the skeleton returning template_key + slots shape.
-        In slice-14, this connects to HRMSAdapter.get_leave_balance().
+        Executes action logic.
+        If employee_id is missing, prompts for the required ID rather than silently
+        returning another employee's data or hardcoded leave balance.
         """
-        emp_id_clean = employee_id or "EMP-1042"
         leave_type_clean = leave_type or "annual"
 
+        if not employee_id:
+            return {
+                "template_key": None,
+                "slots": {
+                    "leave_type": leave_type_clean,
+                },
+                "requires_input": True,
+                "missing_slot": "employee_id",
+                "response_text": self.ASK_EMPLOYEE_ID_PROMPT,
+            }
+
+        # When employee_id is resolved (from message or authenticated session),
+        # return the template_key + slots shape for the response-renderer.
+        # Live adapter call to get_leave_balance() is wired in slice-14.
         return {
             "template_key": self.TEMPLATE_KEY,
             "slots": {
                 "balance": 12,
                 "leave_type": leave_type_clean,
-                "employee_id": emp_id_clean,
+                "employee_id": employee_id,
             },
+            "requires_input": False,
+            "missing_slot": None,
+            "response_text": None,
         }
 
     async def run(
@@ -117,8 +143,11 @@ class ActionCheckLeaveBalance(Action):
             events.append(SlotSet(key, val))
 
         if hasattr(dispatcher, "utter_message"):
-            dispatcher.utter_message(
-                text=f"Template: {result['template_key']} Slots: {result['slots']}"
-            )
+            if result.get("requires_input"):
+                dispatcher.utter_message(text=result["response_text"])
+            else:
+                dispatcher.utter_message(
+                    text=f"Template: {result['template_key']} Slots: {result['slots']}"
+                )
 
         return events

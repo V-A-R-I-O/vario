@@ -42,7 +42,7 @@ class VarioInputChannel(InputChannel):
             text = payload.get("message")
             session = payload.get("session", {})
 
-            logger.info("Received converse request from sender=%s: %s", sender_id, text)
+            logger.info("Received converse request on vario channel (length=%d)", len(text or ""))
             # Response contract shape per ADR-002
             response_payload = {
                 "intent": "check_leave_balance",
