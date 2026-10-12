@@ -61,10 +61,19 @@ class ActionCheckApplicationStatus(Action):
     def execute_logic(self, application_id: Optional[str]) -> Dict[str, Any]:
         """
         Executes the action logic and returns the template_key + slots shape.
+        If application_id is missing, requests the missing ID instead of silently defaulting.
         In slice-22, this is the skeleton returning template_key + slots shape.
         In slice-24, this connects to AdmissionsAdapter.
         """
-        app_id_clean = application_id or "APP-1001"
+        if not application_id or not str(application_id).strip():
+            return {
+                "template_key": None,
+                "slots": {},
+                "missing_slot": "application_id",
+                "response_text": "Please provide your application ID (e.g. APP-1001) so I can check your status.",
+            }
+
+        app_id_clean = str(application_id).strip().upper()
         return {
             "template_key": self.TEMPLATE_KEY,
             "slots": {
@@ -72,6 +81,8 @@ class ActionCheckApplicationStatus(Action):
                 "status": "Under Review",
                 "next_step": "Application is being reviewed by the admissions committee.",
             },
+            "missing_slot": None,
+            "response_text": None,
         }
 
     async def run(
@@ -84,12 +95,15 @@ class ActionCheckApplicationStatus(Action):
         result = self.execute_logic(app_id)
 
         events = []
-        for key, val in result["slots"].items():
+        for key, val in result.get("slots", {}).items():
             events.append(SlotSet(key, val))
 
         if hasattr(dispatcher, "utter_message"):
-            dispatcher.utter_message(
-                text=f"Template: {result['template_key']} Slots: {result['slots']}"
-            )
+            if result.get("response_text"):
+                dispatcher.utter_message(text=result["response_text"])
+            else:
+                dispatcher.utter_message(
+                    text=f"Template: {result.get('template_key')} Slots: {result.get('slots')}"
+                )
 
         return events

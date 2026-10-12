@@ -116,3 +116,57 @@ def test_converse_webhook_fallback_roundtrip():
     assert data["template_key"] is None
     assert data["response_text"] is not None
     assert "didn't quite understand" in data["response_text"]
+
+
+def test_action_check_application_status_missing_id():
+    # Regression test: missing ID must not default to APP-1001
+    action = ActionCheckApplicationStatus()
+    for empty_id in [None, "", "   "]:
+        result = action.execute_logic(empty_id)
+        assert result["template_key"] is None
+        assert "application_id" not in result["slots"]
+        assert result["missing_slot"] == "application_id"
+        assert "Please provide your application ID" in result["response_text"]
+
+
+def test_converse_webhook_missing_id_requests_application_id():
+    # Regression test: user asking for status without ID must be prompted for ID
+    payload = {
+        "sender": "user-test-no-id",
+        "message": "what is the status of my application?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "check_application_status"
+    assert data["template_key"] is None
+    assert data["current_form"] == "check_application_status_form"
+    assert data["current_step"] == "await_application_id"
+    assert "Please provide your application ID" in data["response_text"]
+    assert data["slots"].get("application_id") is None
+
+
+def test_ambiguous_classification_triggers_fallback():
+    # Regression test: FallbackClassifier triggers nlu_fallback when confidences are within ambiguity_threshold
+    ambiguous_queries = [
+        "what about documents and fees?",
+        "can you tell me about documents and fees?",
+        "tuition fees and required documents checklist",
+        "document checklist and fee deadline",
+    ]
+
+    for q in ambiguous_queries:
+        intent, conf, _ = classify_message(q)
+        assert intent == "nlu_fallback", f"Ambiguous query '{q}' should trigger nlu_fallback"
+
+        # Also test roundtrip via webhook
+        res = client.post("/webhooks/vario/converse", json={"sender": "amb-user", "message": q})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["intent"] == "nlu_fallback"
+        assert data["template_key"] is None
+        assert "didn't quite understand" in data["response_text"]
+

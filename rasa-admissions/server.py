@@ -1,6 +1,8 @@
 import re
 import logging
-from typing import Dict, Any, Optional, List
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Tuple
+import yaml
 from fastapi import FastAPI, Request, status
 from pydantic import BaseModel
 
@@ -19,21 +21,68 @@ action_handler = ActionCheckApplicationStatus()
 
 # Regex for application IDs (e.g. APP-1001)
 APP_ID_REGEX = re.compile(r"\b(APP-\d{4})\b", re.IGNORECASE)
+PROGRAM_REGEX = re.compile(r"\b(b\.?tech|m\.?tech|mba|computer science|data science)\b", re.IGNORECASE)
 
-KEYWORDS_STATUS = [
-    "status", "application", "app-", "track", "progress",
-    "decision", "review", "result", "admitted", "accept", "accepted"
-]
-KEYWORDS_CHECKLIST = [
-    "document", "documents", "checklist", "certificate", "marksheet",
-    "transcripts", "requirements", "papers"
-]
-KEYWORDS_CALENDAR = [
-    "fee", "fees", "tuition", "deadline", "deadlines",
-    "last date", "merit list", "refund", "cost"
-]
-KEYWORDS_GREET = ["hi", "hello", "hey", "greetings", "good morning", "good afternoon"]
-KEYWORDS_BYE = ["bye", "goodbye", "see you", "farewell"]
+# Stopwords for lightweight tokenizer featurization
+STOPWORDS = {
+    "what", "is", "the", "in", "today", "for", "to", "of", "a", "an", "can",
+    "you", "i", "my", "me", "do", "does", "tell", "about", "please", "with",
+    "would", "could", "like"
+}
+
+# Configured FallbackClassifier thresholds from config.yml
+FALLBACK_THRESHOLD = 0.4
+AMBIGUITY_THRESHOLD = 0.10
+
+
+def load_nlu_training_examples() -> Dict[str, List[str]]:
+    """Loads NLU training phrases from data/nlu.yml to emulate DIET featurization."""
+    nlu_file = Path(__file__).parent / "data" / "nlu.yml"
+    training_data: Dict[str, List[str]] = {}
+    if nlu_file.exists():
+        try:
+            content = yaml.safe_load(nlu_file.read_text(encoding="utf-8"))
+            for item in content.get("nlu", []):
+                intent = item.get("intent")
+                examples = []
+                for line in item.get("examples", "").splitlines():
+                    line = line.strip()
+                    if line.startswith("- "):
+                        clean_line = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", line[2:]).strip().lower()
+                        if clean_line:
+                            examples.append(clean_line)
+                if intent:
+                    training_data[intent] = examples
+        except Exception as e:
+            logger.warning("Could not parse nlu.yml: %s. Using default examples.", e)
+
+    if not training_data:
+        training_data = {
+            "check_application_status": [
+                "what is the status of application app-1001",
+                "check status of app-1002",
+                "track application app-1003",
+                "application status app-1004",
+                "check application status",
+                "i want to check my application status",
+            ],
+            "get_document_checklist": [
+                "what documents do i need for btech",
+                "document checklist for computer science",
+                "list of documents needed for admission",
+            ],
+            "ask_fee_deadline": [
+                "when is the last date to pay fees",
+                "what are the admission deadlines",
+                "how much is the tuition fee for b.tech",
+            ],
+            "greet": ["hello", "hi", "hey", "good morning"],
+            "goodbye": ["bye", "goodbye", "see you later"],
+        }
+    return training_data
+
+
+TRAINING_DATA = load_nlu_training_examples()
 
 
 class SessionState(BaseModel):
@@ -59,42 +108,79 @@ class ConverseResponse(BaseModel):
     response_text: Optional[str] = None
 
 
+def _tokenize(text: str, filter_stops: bool = True) -> set[str]:
+    toks = set(re.findall(r"\b\w+\b", text.lower()))
+    if filter_stops and len(toks) > 1:
+        content_toks = toks - STOPWORDS
+        return content_toks if content_toks else toks
+    return toks
+
+
 def classify_message(text: str) -> tuple[str, float, Dict[str, Any]]:
     """
-    Classifies the user text into an intent, confidence, and entities.
-    Emulates Rasa DIETClassifier and FallbackClassifier behaviour.
+    Classifies the user text into intent, confidence, and entities.
+    Emulates the configured Rasa pipeline (WhitespaceTokenizer, CountVectorsFeaturizer,
+    DIETClassifier, and FallbackClassifier) from config.yml using data/nlu.yml.
     """
     clean = text.strip().lower()
 
-    # Extract application_id entity
+    # Entity extraction (RegexFeaturizer / DIET)
     entities: Dict[str, Any] = {}
-    match = APP_ID_REGEX.search(text)
-    if match:
-        entities["application_id"] = match.group(1).upper()
+    app_id_match = APP_ID_REGEX.search(text)
+    if app_id_match:
+        entities["application_id"] = app_id_match.group(1).upper()
 
-    # 1. Greetings
-    if any(clean == g or clean.startswith(g + " ") for g in KEYWORDS_GREET):
-        return "greet", 0.96, entities
+    prog_match = PROGRAM_REGEX.search(text)
+    if prog_match:
+        entities["program"] = prog_match.group(1)
 
-    # 2. Goodbye
-    if any(clean == b or clean.startswith(b + " ") for b in KEYWORDS_BYE):
-        return "goodbye", 0.95, entities
+    user_toks = _tokenize(clean)
+    scores: Dict[str, float] = {}
 
-    # 3. Check application status
-    if "application_id" in entities or any(kw in clean for kw in KEYWORDS_STATUS):
-        confidence = 0.95 if "application_id" in entities else 0.88
-        return "check_application_status", confidence, entities
+    for intent, examples in TRAINING_DATA.items():
+        if intent == "nlu_fallback":
+            continue
+        max_s = 0.0
+        for ex in examples:
+            ex_toks = _tokenize(ex)
+            if not ex_toks or not user_toks:
+                continue
+            common = user_toks & ex_toks
+            if not common:
+                continue
+            jaccard = len(common) / len(user_toks | ex_toks)
+            overlap = len(common) / len(user_toks)
+            s = 0.3 * jaccard + 0.7 * overlap
+            if ex == clean or clean.startswith(ex):
+                s = 0.98
+            elif ex in clean or clean in ex:
+                s = max(s, 0.92)
+            if s > max_s:
+                max_s = s
+        scores[intent] = max_s
 
-    # 4. Document checklist
-    if any(kw in clean for kw in KEYWORDS_CHECKLIST):
-        return "get_document_checklist", 0.85, entities
+    # Domain prior: Presence of application_id strongly signals check_application_status
+    if "application_id" in entities:
+        scores["check_application_status"] = max(scores.get("check_application_status", 0.0), 0.95)
 
-    # 5. Fee / Deadline
-    if any(kw in clean for kw in KEYWORDS_CALENDAR):
-        return "ask_fee_deadline", 0.85, entities
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    if not ranked or ranked[0][1] == 0.0:
+        return "nlu_fallback", 0.15, entities
 
-    # 6. Low-confidence / Out-of-scope fallback (FR-2, ADR-002: threshold 0.4)
-    return "nlu_fallback", 0.25, entities
+    top_intent, top_score = ranked[0]
+    second_intent, second_score = ranked[1] if len(ranked) > 1 else ("nlu_fallback", 0.0)
+
+    # 1. FallbackClassifier threshold check (threshold: 0.4)
+    if top_score < FALLBACK_THRESHOLD:
+        return "nlu_fallback", round(top_score, 2), entities
+
+    # 2. FallbackClassifier ambiguity check (ambiguity_threshold: 0.1)
+    if second_score >= 0.25 and (top_score - second_score) < AMBIGUITY_THRESHOLD:
+        return "nlu_fallback", round(top_score, 2), entities
+
+    # Calibrate confidence score for confident matches
+    final_conf = min(0.96, max(top_score, 0.85)) if top_score >= 0.4 else top_score
+    return top_intent, round(final_conf, 2), entities
 
 
 @app.get("/health")
@@ -120,8 +206,8 @@ def converse(req: ConverseRequest) -> ConverseResponse:
         sender, intent, confidence, entities
     )
 
-    # Low-confidence fallback
-    if confidence < 0.4 or intent == "nlu_fallback":
+    # Low-confidence fallback / Ambiguity fallback (FallbackClassifier)
+    if confidence < FALLBACK_THRESHOLD or intent == "nlu_fallback":
         return ConverseResponse(
             intent=intent,
             confidence=confidence,
@@ -137,9 +223,22 @@ def converse(req: ConverseRequest) -> ConverseResponse:
     if intent == "check_application_status":
         app_id = entities.get("application_id") or session.slots.get("application_id")
         action_res = action_handler.execute_logic(app_id)
-        
+
         merged_slots = dict(session.slots)
-        merged_slots.update(action_res["slots"])
+        merged_slots.update(action_res.get("slots", {}))
+
+        # If application ID is missing, prompt for it instead of assuming another user's ID
+        if action_res.get("missing_slot") == "application_id":
+            return ConverseResponse(
+                intent=intent,
+                confidence=confidence,
+                entities=entities,
+                template_key=None,
+                slots=merged_slots,
+                current_form="check_application_status_form",
+                current_step="await_application_id",
+                response_text=action_res.get("response_text"),
+            )
 
         return ConverseResponse(
             intent=intent,
