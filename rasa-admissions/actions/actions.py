@@ -131,6 +131,7 @@ class ActionCheckApplicationStatus(Action):
             return {
                 "template_key": None,
                 "slots": {},
+                "missing_slot": "application_id",
                 "response_text": "Please provide your application ID (e.g. APP-1001) so I can check your status.",
             }
 
@@ -215,7 +216,7 @@ class ActionCheckApplicationStatus(Action):
         result = await self.execute_logic_async(app_id)
 
         events = []
-        for key, val in result["slots"].items():
+        for key, val in result.get("slots", {}).items():
             events.append(SlotSet(key, val))
 
         if hasattr(dispatcher, "utter_message"):
@@ -223,7 +224,7 @@ class ActionCheckApplicationStatus(Action):
                 dispatcher.utter_message(text=result["response_text"])
             else:
                 dispatcher.utter_message(
-                    text=f"Template: {result['template_key']} Slots: {result['slots']}"
+                    text=f"Template: {result.get('template_key')} Slots: {result.get('slots')}"
                 )
 
         return events

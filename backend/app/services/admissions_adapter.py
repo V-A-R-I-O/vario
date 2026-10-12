@@ -1,4 +1,6 @@
+import json
 import httpx
+from urllib.parse import quote
 from typing import Optional, Dict, Any, List
 from app.config import settings
 
@@ -65,41 +67,45 @@ class AdmissionsAdapter:
             raise_for_not_found: If True, raises ApplicationNotFoundError instead of returning not-found dict.
 
         Returns:
-            Dict containing application details:
-            - If found:
-                {
-                    "found": True,
-                    "application_id": "APP-1001",
-                    "applicant_name": "...",
-                    "program": "...",
-                    "status": "Under Review",
-                    "next_step": "...",
-                    "submission_date": "...",
-                    "fee_status": "..."
-                }
-            - If not found:
-                {
-                    "found": False,
-                    "application_id": "APP-9999",
-                    "status": "Not Found",
-                    "suggested_next_step": "...",
-                    "detail": "..."
-                }
+            Dict containing application details.
 
         Raises:
             ApplicationNotFoundError: If raise_for_not_found is True and ID is not found.
-            BackendUnavailableError: If mock service is down, unreachable, or times out.
+            BackendUnavailableError: If mock service is down, unreachable, times out, or returns malformed response.
         """
-        url = f"{cls._base_url()}/applications/{application_id.strip()}"
+        clean_id = (application_id or "").strip().upper()
+        if not clean_id or any(char in clean_id for char in ["/", "\\", "?", "#", " "]):
+            err_msg = f"Invalid application ID: '{application_id}'." if clean_id else "Application ID cannot be empty."
+            suggested = "Please verify your application ID format (e.g. APP-1001) or contact admissions@org.example.com."
+            if raise_for_not_found:
+                raise ApplicationNotFoundError(
+                    application_id=clean_id,
+                    message=err_msg,
+                    suggested_next_step=suggested,
+                )
+            return {
+                "found": False,
+                "application_id": clean_id,
+                "status": "Not Found",
+                "suggested_next_step": suggested,
+                "detail": err_msg,
+            }
+
+        url = f"{cls._base_url()}/applications/{quote(clean_id, safe='')}"
         try:
             async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
                 res = await client.get(url)
 
                 if res.status_code == 200:
-                    data = res.json()
+                    try:
+                        data = res.json()
+                    except (ValueError, json.JSONDecodeError):
+                        raise BackendUnavailableError(
+                            "Admissions service returned a malformed response (non-JSON payload)."
+                        )
                     return {
                         "found": True,
-                        "application_id": data.get("application_id", application_id),
+                        "application_id": data.get("application_id", clean_id),
                         "applicant_name": data.get("applicant_name"),
                         "program": data.get("program"),
                         "status": data.get("status"),
@@ -109,10 +115,14 @@ class AdmissionsAdapter:
                     }
 
                 if res.status_code == 404:
-                    err_data = res.json()
+                    try:
+                        err_data = res.json()
+                    except (ValueError, json.JSONDecodeError):
+                        err_data = {"detail": res.text or f"Application '{clean_id}' not found."}
+
                     detail = err_data.get("detail", {})
                     if isinstance(detail, dict):
-                        msg = detail.get("message", f"Application '{application_id}' not found.")
+                        msg = detail.get("message", f"Application '{clean_id}' not found.")
                         suggested_next_step = detail.get(
                             "suggested_next_step",
                             "Please verify your application ID or contact admissions@org.example.com.",
@@ -125,14 +135,14 @@ class AdmissionsAdapter:
 
                     if raise_for_not_found:
                         raise ApplicationNotFoundError(
-                            application_id=application_id,
+                            application_id=clean_id,
                             message=msg,
                             suggested_next_step=suggested_next_step,
                         )
 
                     return {
                         "found": False,
-                        "application_id": application_id,
+                        "application_id": clean_id,
                         "status": "Not Found",
                         "suggested_next_step": suggested_next_step,
                         "detail": msg,
@@ -159,23 +169,41 @@ class AdmissionsAdapter:
             raise_for_not_found: If True, raises ProgramNotFoundError if program is not found.
 
         Returns:
-            Dict containing:
-            - If found:
-                {"found": True, "program": "...", "required_documents": [...]}
-            - If not found:
-                {"found": False, "program": program, "available_programs": [...], "detail": "..."}
+            Dict containing checklist details.
 
         Raises:
-            ProgramNotFoundError: If raise_for_not_found is True and program is unknown.
-            BackendUnavailableError: If mock service is down or times out.
+            ProgramNotFoundError: If raise_for_not_found is True and program is unknown or empty.
+            BackendUnavailableError: If mock service is down, times out, or returns malformed response.
         """
-        url = f"{cls._base_url()}/checklists/{program.strip()}"
+        clean_prog = (program or "").strip().lower()
+        if not clean_prog:
+            msg = "Program query cannot be empty."
+            available = ["Computer Science (B.Tech)", "Data Science (M.Tech)", "MBA"]
+            if raise_for_not_found:
+                raise ProgramNotFoundError(
+                    program="",
+                    message=msg,
+                    available_programs=available,
+                )
+            return {
+                "found": False,
+                "program": "",
+                "available_programs": available,
+                "detail": msg,
+            }
+
+        url = f"{cls._base_url()}/checklists/{quote(clean_prog, safe='')}"
         try:
             async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
                 res = await client.get(url)
 
                 if res.status_code == 200:
-                    data = res.json()
+                    try:
+                        data = res.json()
+                    except (ValueError, json.JSONDecodeError):
+                        raise BackendUnavailableError(
+                            "Admissions service returned a malformed response (non-JSON payload)."
+                        )
                     return {
                         "found": True,
                         "program": data.get("program"),
@@ -183,10 +211,14 @@ class AdmissionsAdapter:
                     }
 
                 if res.status_code == 404:
-                    err_data = res.json()
+                    try:
+                        err_data = res.json()
+                    except (ValueError, json.JSONDecodeError):
+                        err_data = {"detail": res.text or f"Program '{clean_prog}' not found."}
+
                     detail = err_data.get("detail", {})
                     if isinstance(detail, dict):
-                        msg = detail.get("message", f"Program '{program}' not found.")
+                        msg = detail.get("message", f"Program '{clean_prog}' not found.")
                         available = detail.get("available_programs", [])
                     else:
                         msg = str(detail)
@@ -194,14 +226,14 @@ class AdmissionsAdapter:
 
                     if raise_for_not_found:
                         raise ProgramNotFoundError(
-                            program=program,
+                            program=clean_prog,
                             message=msg,
                             available_programs=available,
                         )
 
                     return {
                         "found": False,
-                        "program": program,
+                        "program": clean_prog,
                         "available_programs": available,
                         "detail": msg,
                     }
@@ -224,14 +256,19 @@ class AdmissionsAdapter:
             Dict containing academic_year, deadlines, fees, refund_policy, and contact information.
 
         Raises:
-            BackendUnavailableError: If mock service is down or times out.
+            BackendUnavailableError: If mock service is down, times out, or returns malformed response.
         """
         url = f"{cls._base_url()}/calendar"
         try:
             async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
                 res = await client.get(url)
                 if res.status_code == 200:
-                    return res.json()
+                    try:
+                        return res.json()
+                    except (ValueError, json.JSONDecodeError):
+                        raise BackendUnavailableError(
+                            "Admissions service returned a malformed response (non-JSON payload)."
+                        )
 
                 raise BackendUnavailableError(
                     f"Admissions service returned unexpected HTTP status {res.status_code}."
