@@ -8,8 +8,15 @@ from app.config import settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def get_async_db_url(url: str) -> str:
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    return url
+
 # Engine and sessionmaker
-engine = create_async_engine(settings.DATABASE_URL, echo=False)
+engine = create_async_engine(get_async_db_url(settings.DATABASE_URL), echo=False)
 AsyncSessionLocal = sessionmaker(
     engine, class_=AsyncSession, expire_on_commit=False
 )
@@ -30,6 +37,7 @@ from sqlalchemy import select
 from app.models.intent import Intent
 from app.models.training_phrase import TrainingPhrase
 from app.models.response_template import ResponseTemplate
+from app.models.response_variant import ResponseVariant
 
 ADMISSIONS_PHRASES = [
     "what is the status of application APP-1001?",
@@ -67,6 +75,22 @@ ADMISSIONS_PHRASES = [
     "check if APP-1001 has been admitted",
     "my application ID is APP-1002, what is the status?",
     "regarding APP-1003, has a decision been made?",
+]
+
+ADMISSIONS_STATUS_VARIANTS = [
+    "Your application {application_id} is currently {status}. Next step: {next_step}",
+    "Application {application_id} status: {status}. Next step is: {next_step}",
+    "The status for application {application_id} is {status}. What to do next: {next_step}",
+    "Currently, application {application_id} is marked as {status}. Your next step: {next_step}",
+    "Regarding your application {application_id}, it is {status}. Next step: {next_step}",
+]
+
+ADMISSIONS_NOT_FOUND_VARIANTS = [
+    "Application {application_id} was not found. Suggested next step: {suggested_next_step}",
+    "We couldn't find an application with ID {application_id}. Suggested next step: {suggested_next_step}",
+    "No records found for application {application_id}. Next step: {suggested_next_step}",
+    "Application reference {application_id} could not be located. What to do next: {suggested_next_step}",
+    "Unable to locate application {application_id}. Suggested next step: {suggested_next_step}",
 ]
 
 async def seed_admissions_data(session: AsyncSession):
@@ -130,12 +154,13 @@ async def seed_admissions_data(session: AsyncSession):
         session.add(TrainingPhrase(intent_id=fee_intent.intent_id, phrase_text="what is the tuition fee for BTech?"))
         logger.info("Created stub intent: ask_fee_deadline")
 
-    # 4. Response Template: check_application_status_response
+    # 4. Response Template: check_application_status_response + 5 variants
     stmt_tmpl = select(ResponseTemplate).where(
         ResponseTemplate.template_key == "check_application_status_response"
     )
     res_tmpl = await session.execute(stmt_tmpl)
-    if not res_tmpl.scalar_one_or_none():
+    tmpl = res_tmpl.scalar_one_or_none()
+    if not tmpl:
         tmpl = ResponseTemplate(
             role_pack="admissions",
             template_key="check_application_status_response",
@@ -144,7 +169,46 @@ async def seed_admissions_data(session: AsyncSession):
             available_variables=["application_id", "status", "next_step"],
         )
         session.add(tmpl)
+        await session.flush()
         logger.info("Created response template: check_application_status_response")
+
+    # Seed 5 variants for check_application_status_response
+    for var_text in ADMISSIONS_STATUS_VARIANTS:
+        stmt_var = select(ResponseVariant).where(
+            ResponseVariant.template_id == tmpl.template_id,
+            ResponseVariant.variant_text == var_text,
+        )
+        existing_var = (await session.execute(stmt_var)).scalar_one_or_none()
+        if not existing_var:
+            session.add(ResponseVariant(template_id=tmpl.template_id, variant_text=var_text))
+
+    # 5. Response Template: check_application_status_not_found_response + 5 variants (FR-17)
+    stmt_tmpl_nf = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "check_application_status_not_found_response"
+    )
+    res_tmpl_nf = await session.execute(stmt_tmpl_nf)
+    tmpl_nf = res_tmpl_nf.scalar_one_or_none()
+    if not tmpl_nf:
+        tmpl_nf = ResponseTemplate(
+            role_pack="admissions",
+            template_key="check_application_status_not_found_response",
+            base_text="Application {application_id} was not found. Suggested next step: {suggested_next_step}",
+            allow_rephrasing=True,
+            available_variables=["application_id", "suggested_next_step"],
+        )
+        session.add(tmpl_nf)
+        await session.flush()
+        logger.info("Created response template: check_application_status_not_found_response")
+
+    # Seed 5 variants for check_application_status_not_found_response
+    for var_text in ADMISSIONS_NOT_FOUND_VARIANTS:
+        stmt_var_nf = select(ResponseVariant).where(
+            ResponseVariant.template_id == tmpl_nf.template_id,
+            ResponseVariant.variant_text == var_text,
+        )
+        existing_var_nf = (await session.execute(stmt_var_nf)).scalar_one_or_none()
+        if not existing_var_nf:
+            session.add(ResponseVariant(template_id=tmpl_nf.template_id, variant_text=var_text))
 
 async def main():
     logger.info(f"Connecting to database at {settings.DATABASE_URL}")
