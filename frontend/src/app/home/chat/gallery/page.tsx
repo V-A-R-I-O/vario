@@ -74,27 +74,6 @@ const SAMPLES: { label: string; message: BotMessageData }[] = [
       items: ['Leave policy acknowledgment form', 'Manager approval email', 'Updated emergency contact form'],
     },
   },
-  {
-    label: 'admissions_status_card',
-    message: {
-      type: 'data_card',
-      title: 'Application APP-1001 Status',
-      rows: [
-        { label: 'Application ID', value: 'APP-1001' },
-        { label: 'Status', value: 'Under Review' },
-        { label: 'Next Step', value: 'Document verification in progress. Decision expected by Nov 15.' },
-        { label: 'Program', value: 'B.Tech Computer Science' },
-        { label: 'Fee Status', value: 'Paid' },
-      ],
-    },
-  },
-  {
-    label: 'admissions_not_found',
-    message: {
-      type: 'not_found',
-      text: 'Application APP-9999 not found. Suggested next step: Please verify your application ID or contact admissions@org.example.com.',
-    },
-  },
 ];
 
 export default function ChatComponentGallery() {
