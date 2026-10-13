@@ -1,0 +1,102 @@
+version: "3.1"
+
+nlu:
+  - intent: check_application_status
+    examples: |
+      - what is the status of application [APP-1001](application_id)?
+      - check status of [APP-1002](application_id)
+      - can you check my application [APP-1003](application_id)?
+      - what happened to application [APP-1004](application_id)?
+      - status of [APP-1001](application_id)
+      - I want to check my admission status for [APP-1002](application_id)
+      - track application [APP-1003](application_id)
+      - application status [APP-1004](application_id)
+      - is [APP-1001](application_id) accepted?
+      - did [APP-1002](application_id) get approved?
+      - tell me the progress on my application [APP-1003](application_id)
+      - check [APP-1004](application_id)
+      - what is the update on [APP-1001](application_id)?
+      - any news on application [APP-1002](application_id)?
+      - could you look up [APP-1003](application_id) for me?
+      - lookup application [APP-1004](application_id)
+      - please check my application ID [APP-1001](application_id)
+      - application [APP-1002](application_id) status please
+      - status check for [APP-1003](application_id)
+      - verify application status for [APP-1004](application_id)
+      - has my application [APP-1001](application_id) been reviewed?
+      - admission status for reference [APP-1002](application_id)
+      - where does application [APP-1003](application_id) stand?
+      - how is my application [APP-1004](application_id) progressing?
+      - what are the next steps for my application [APP-1001](application_id)?
+      - status of my registration [APP-1002](application_id)
+      - query status for [APP-1003](application_id)
+      - I need to check the decision on [APP-1004](application_id)
+      - check application progress [APP-1001](application_id)
+      - what is the admission decision for [APP-1002](application_id)?
+      - can I get a status update on [APP-1003](application_id)?
+      - please check if [APP-1004](application_id) is under review
+      - check if [APP-1001](application_id) has been admitted
+      - my application ID is [APP-1002](application_id), what is the status?
+      - regarding [APP-1003](application_id), has a decision been made?
+      - tell me about application [APP-1004](application_id)
+      - status of app [APP-1001](application_id)
+      - [APP-1002](application_id) status
+      - check application status
+      - I want to check my application status
+      - can I check the status of my admission application?
+
+  - intent: get_document_checklist
+    examples: |
+      - what documents do I need for [btech](program)?
+      - document checklist for [Computer Science](program)
+      - which certificates are required for [mtech](program)?
+      - checklist of documents for [mba](program)
+      - what do I need to submit for [Data Science](program)?
+      - document requirements for [btech](program)
+      - list of documents needed for admission
+      - show me the checklist for [mba](program)
+      - what papers are required for [mtech](program) admission?
+      - mandatory documents for [Computer Science (B.Tech)](program)
+
+  - intent: ask_fee_deadline
+    examples: |
+      - when is the last date to pay fees?
+      - what are the admission deadlines?
+      - how much is the tuition fee for B.Tech?
+      - what is the last date to submit the application?
+      - admission fee structure and payment dates
+      - when does the merit list come out?
+      - what is the refund policy for admission fees?
+      - when is the document verification deadline?
+      - tuition fee for MBA program
+      - what is the application fee?
+
+  - intent: nlu_fallback
+    examples: |
+      - how is the weather outside?
+      - what is the capital of France?
+      - order a pizza for me
+      - tell me a joke
+      - who won the football match?
+      - what is quantum computing?
+      - play some jazz music
+      - write a python script for sorting
+      - what is the stock price of Apple?
+      - how far is the moon?
+
+  - intent: greet
+    examples: |
+      - hello
+      - hi
+      - hey there
+      - good morning
+      - good afternoon
+      - greetings
+
+  - intent: goodbye
+    examples: |
+      - bye
+      - goodbye
+      - see you later
+      - thanks, bye
+      - have a nice day

@@ -9,6 +9,10 @@ interface ThreadMessage {
   id: string;
   sender: 'user' | 'bot';
   content: string;
+  intent_name?: string | null;
+  confidence?: number | null;
+  entities?: Record<string, any> | null;
+  slots?: Record<string, any> | null;
   // Talk mode (slice-06): audio attached to a bot reply, replayable via speaker.
   audioBase64?: string | null;
   audioContentType?: string | null;
@@ -63,6 +67,9 @@ export default function ChatPage({ params }: { params: { id: string } }) {
               id: m.id,
               sender: m.sender,
               content: m.content,
+              intent_name: m.intent_name,
+              confidence: m.confidence,
+              entities: m.entities,
             }))
           );
         }
@@ -96,6 +103,10 @@ export default function ChatPage({ params }: { params: { id: string } }) {
             id: `bot-${Date.now()}`,
             sender: 'bot',
             content: res.data.response_text,
+            intent_name: res.data.intent,
+            confidence: res.data.confidence,
+            entities: res.data.entities,
+            slots: res.data.session?.slots,
             // Only keep audio when TTS actually succeeded.
             audioBase64: res.data.tts_available ? res.data.audio_base64 ?? null : null,
             audioContentType: res.data.audio_content_type ?? null,
@@ -203,6 +214,86 @@ export default function ChatPage({ params }: { params: { id: string } }) {
 
   const toThreadRow = (m: ThreadMessage) => {
     if (m.sender === 'user') return <UserMessage key={m.id} text={m.content} />;
+
+    // 1. Not Found warning card (FR-17)
+    const isNotFound =
+      m.slots?.found === false ||
+      m.slots?.status === 'Not Found' ||
+      m.content.toLowerCase().includes('not found') ||
+      m.content.toLowerCase().includes('could not be located') ||
+      m.content.toLowerCase().includes("couldn't find");
+
+    if (isNotFound && (role === 'admissions' || m.intent_name === 'check_application_status')) {
+      return (
+        <BotMessage
+          key={m.id}
+          message={{
+            type: 'not_found',
+            text: m.content,
+          }}
+        />
+      );
+    }
+
+    // 2. Admissions Status Card (Data Card composition)
+    const isStatusCheck =
+      m.intent_name === 'check_application_status' ||
+      Boolean(m.slots?.application_id) ||
+      /\bAPP-\d{4}\b/i.test(m.content);
+
+    if (isStatusCheck && (role === 'admissions' || m.intent_name === 'check_application_status')) {
+      const appId =
+        m.slots?.application_id ||
+        m.entities?.application_id ||
+        m.content.match(/\b(APP-\d{4})\b/i)?.[1]?.toUpperCase();
+
+      if (m.slots?.status && m.slots?.next_step && appId) {
+        const rows = [
+          { label: 'Application ID', value: appId },
+          { label: 'Status', value: m.slots.status },
+          { label: 'Next Step', value: m.slots.next_step },
+        ];
+        if (m.slots.applicant_name) rows.push({ label: 'Applicant', value: m.slots.applicant_name });
+        if (m.slots.program) rows.push({ label: 'Program', value: m.slots.program });
+        if (m.slots.fee_status) rows.push({ label: 'Fee Status', value: m.slots.fee_status });
+
+        return (
+          <BotMessage
+            key={m.id}
+            message={{
+              type: 'data_card',
+              title: `Application ${appId} Status`,
+              rows,
+            }}
+          />
+        );
+      }
+
+      // Parse from rendered template text
+      const nextStepMatch = m.content.match(/(?:Next step(?: is)?:|What to do next:|Your next step:)\s*([^.]+.*)$/i);
+      const statusMatch = m.content.match(/(?:is currently|status:?|is marked as|is)\s+([A-Za-z ]+?)(?:\.|$)/i);
+
+      if (appId && (nextStepMatch || statusMatch)) {
+        const statusVal = statusMatch ? statusMatch[1].trim() : 'Under Review';
+        const nextStepVal = nextStepMatch ? nextStepMatch[1].trim() : 'Under committee review.';
+
+        return (
+          <BotMessage
+            key={m.id}
+            message={{
+              type: 'data_card',
+              title: `Application ${appId} Status`,
+              rows: [
+                { label: 'Application ID', value: appId },
+                { label: 'Status', value: statusVal },
+                { label: 'Next Step', value: nextStepVal },
+              ],
+            }}
+          />
+        );
+      }
+    }
+
     const data: BotMessageData = { type: 'plain_text', text: m.content };
     const onReplay = m.audioBase64
       ? () => playAudio(m.audioBase64 as string, m.audioContentType)
