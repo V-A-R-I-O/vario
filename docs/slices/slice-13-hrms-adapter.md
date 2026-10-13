@@ -20,11 +20,11 @@ Deliverables:
 - Optional: an artificial delay flag on the mock to exercise the "excluding mock API delays" performance carve-out.
 
 ## Acceptance criteria
-- [ ] Given the Mock HRMS, when it starts, then it is seeded with several employees each having casual/sick/earned balances.
-- [ ] Given a seeded `employee_id`, when `get_leave_balance` is called, then it returns a structured balance (total + per-type breakdown).
-- [ ] Given an unknown `employee_id`, then the adapter returns a not-found result (not an exception that crashes the caller).
-- [ ] Given the mock service is down, when the adapter is called, then it raises a typed "backend unavailable" error and returns promptly.
-- [ ] Given the adapter interface, then no code outside the adapter references mock-specific details (swappable to a real HRMS later).
+- [x] Given the Mock HRMS, when it starts, then it is seeded with several employees each having casual/sick/earned balances.
+- [x] Given a seeded `employee_id`, when `get_leave_balance` is called, then it returns a structured balance (total + per-type breakdown).
+- [x] Given an unknown `employee_id`, then the adapter returns a not-found result (not an exception that crashes the caller).
+- [x] Given the mock service is down, when the adapter is called, then it raises a typed "backend unavailable" error and returns promptly.
+- [x] Given the adapter interface, then no code outside the adapter references mock-specific details (swappable to a real HRMS later).
 
 ## Mockup / reference (if UI-facing)
 No UI surface.
