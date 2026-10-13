@@ -69,3 +69,29 @@ export async function sendChatMessage(
     body: JSON.stringify({ conversation_id: conversationId, message, mode }),
   });
 }
+
+// --- Admin console (slice-07) ---------------------------------------------
+
+// Intent list framework data (endpoint built in slice-08; scoped to the
+// admin's role pack by the backend).
+export async function fetchIntents() {
+  return authFetch(`/admin/intents`);
+}
+
+export interface AuditLogFilters {
+  action_type?: string;
+  actor_id?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchAuditLog(filters: AuditLogFilters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') params.append(k, String(v));
+  });
+  const q = params.toString();
+  return authFetch(`/admin/audit-log${q ? `?${q}` : ''}`);
+}
