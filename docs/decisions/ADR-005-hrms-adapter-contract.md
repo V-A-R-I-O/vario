@@ -1,4 +1,4 @@
-# ADR 003: HRMS Adapter & Mock HRMS Service Contract
+# ADR 005: HRMS Adapter & Mock HRMS Service Contract
 
 **Date:** 2026-10-13  
 **Status:** Accepted  

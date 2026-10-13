@@ -1,0 +1,22 @@
+version: "3.1"
+
+rules:
+  - rule: Check leave balance rule
+    steps:
+      - intent: check_leave_balance
+      - action: action_check_leave_balance
+
+  - rule: Say greet
+    steps:
+      - intent: greet
+      - action: utter_greet
+
+  - rule: Say goodbye
+    steps:
+      - intent: goodbye
+      - action: utter_goodbye
+
+  - rule: Handle low confidence fallback
+    steps:
+      - intent: nlu_fallback
+      - action: utter_default_fallback

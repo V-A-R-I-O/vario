@@ -246,3 +246,91 @@ async def test_renderer_substitutes_and_picks_a_stored_variant():
 async def test_renderer_returns_none_for_unknown_template():
     async with TestingSessionLocal() as s:
         assert await response_renderer.render(s, "no_such_template", {}) is None
+
+
+# --- Talk mode (slice-06) ---------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_talk_mode_returns_audio_when_tts_available():
+    """AC: mode=talk with TTS available → audio_base64, audio_content_type, tts_available:true."""
+    import base64
+
+    await seed_template(
+        "check_leave_balance_response",
+        ["You have {balance} days of leave remaining."],
+    )
+    async with _client() as client:
+        conv_id = await make_conversation(client, headers_for("u1"))
+        with patch(
+            "app.services.dialogue_router._post_to_rasa",
+            new=AsyncMock(return_value=rasa_payload()),
+        ), patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", "/fake/sa.json"), patch(
+            "app.services.tts_service._synthesize_bytes", return_value=b"SPOKEN-AUDIO"
+        ):
+            res = await client.post(
+                "/api/chat",
+                json={"conversation_id": conv_id, "message": "balance?", "mode": "talk"},
+                headers=headers_for("u1"),
+            )
+
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["tts_available"] is True
+    assert data["audio_content_type"] == "audio/mp3"
+    assert base64.b64decode(data["audio_base64"]) == b"SPOKEN-AUDIO"
+    # The text reply is present alongside the audio.
+    assert data["response_text"] == "You have 12 days of leave remaining."
+
+
+@pytest.mark.asyncio
+async def test_talk_mode_degrades_to_text_when_tts_fails():
+    """AC: TTS failure/credits exhausted → tts_available:false, audio null, text still returned."""
+    await seed_template(
+        "check_leave_balance_response",
+        ["You have {balance} days of leave remaining."],
+    )
+    async with _client() as client:
+        conv_id = await make_conversation(client, headers_for("u1"))
+        with patch(
+            "app.services.dialogue_router._post_to_rasa",
+            new=AsyncMock(return_value=rasa_payload()),
+        ), patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", "/fake/sa.json"), patch(
+            "app.services.tts_service._synthesize_bytes",
+            side_effect=RuntimeError("credits exhausted"),
+        ):
+            res = await client.post(
+                "/api/chat",
+                json={"conversation_id": conv_id, "message": "balance?", "mode": "talk"},
+                headers=headers_for("u1"),
+            )
+
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["tts_available"] is False
+    assert data["audio_base64"] is None
+    # No crash — the text reply is still delivered.
+    assert data["response_text"] == "You have 12 days of leave remaining."
+
+
+@pytest.mark.asyncio
+async def test_chat_mode_has_no_audio_fields_populated():
+    """Chat mode is unchanged: talk fields stay null (TTS is never invoked)."""
+    await seed_template("check_leave_balance_response", ["You have {balance} days left."])
+    async with _client() as client:
+        conv_id = await make_conversation(client, headers_for("u1"))
+        with patch(
+            "app.services.dialogue_router._post_to_rasa",
+            new=AsyncMock(return_value=rasa_payload()),
+        ), patch("app.services.tts_service._synthesize_bytes") as seam:
+            res = await client.post(
+                "/api/chat",
+                json={"conversation_id": conv_id, "message": "balance?", "mode": "chat"},
+                headers=headers_for("u1"),
+            )
+
+    data = res.json()["data"]
+    assert data["tts_available"] is None
+    assert data["audio_base64"] is None
+    assert data["audio_content_type"] is None
+    seam.assert_not_called()

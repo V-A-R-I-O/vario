@@ -1,0 +1,7 @@
+# Endpoints configuration for Rasa HR
+action_endpoint:
+  url: "http://localhost:5055/webhook"
+
+models:
+  url: ""
+  wait_time_between_pulls: 10
