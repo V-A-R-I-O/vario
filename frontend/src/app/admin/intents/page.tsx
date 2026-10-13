@@ -1,11 +1,11 @@
 'use client';
 
-// Intent List page framework (slice-07): the table shell for the admin's role
-// pack with type badges, needs-retrain badge, a retrain-status banner, and
-// loading / empty / error states. Row data comes from GET /api/admin/intents
-// (built in slice-08); intent CRUD / Create-Edit live in slice-08 too.
+// Intent List page (slice-07 framework; slice-08 wires CRUD): the table for the
+// admin's role pack with type badges, needs-retrain badge, retrain-status banner,
+// Add FAQ / Edit navigation, Delete (static-FAQ only), and loading/empty/error.
 import { useEffect, useState } from 'react';
-import { fetchIntents } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { fetchIntents, deleteIntent } from '@/lib/api';
 import { useAdmin } from '@/lib/adminAuth';
 import { AdminTopbar } from '@/components/admin/AdminTopbar';
 
@@ -33,9 +33,12 @@ function phraseCount(i: Intent): number {
 }
 
 export default function IntentListPage() {
+  const router = useRouter();
   const { admin } = useAdmin();
   const [state, setState] = useState<LoadState>('loading');
   const [intents, setIntents] = useState<Intent[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<Intent | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = () => {
     setState('loading');
@@ -53,6 +56,20 @@ export default function IntentListPage() {
   };
 
   useEffect(load, []);
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      await deleteIntent(pendingDelete.id);
+      setPendingDelete(null);
+      load();
+    } catch {
+      // Keep the modal open on failure.
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const retrainCount = intents.filter((i) => i.needs_retrain).length;
 
@@ -115,6 +132,15 @@ export default function IntentListPage() {
                   </span>
                 </div>
               )}
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
+                <div style={{ flex: 1 }} />
+                <button className="btn btn-signal" type="button" onClick={() => router.push('/admin/intents/new')}>
+                  <svg viewBox="0 0 24 24" fill="none" style={{ width: 14, height: 14 }}>
+                    <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                  </svg>
+                  Add FAQ
+                </button>
+              </div>
             </div>
             <div className="panel" style={{ margin: '0 28px 28px' }}>
               <table>
@@ -151,7 +177,11 @@ export default function IntentListPage() {
                         </td>
                         <td style={{ color: 'var(--text-muted)' }}>{formatDate(i.updated_at)}</td>
                         <td style={{ textAlign: 'right' }}>
-                          <button className="btn btn-outline btn-sm" type="button">
+                          <button
+                            className="btn btn-outline btn-sm"
+                            type="button"
+                            onClick={() => router.push(`/admin/intents/${i.id}`)}
+                          >
                             Edit
                           </button>
                           <button
@@ -160,6 +190,7 @@ export default function IntentListPage() {
                             style={{ color: 'var(--danger-dark)' }}
                             disabled={isWorkflow}
                             title={isWorkflow ? 'Dynamic workflows cannot be deleted' : undefined}
+                            onClick={() => !isWorkflow && setPendingDelete(i)}
                           >
                             Delete
                           </button>
@@ -173,6 +204,26 @@ export default function IntentListPage() {
           </>
         )}
       </div>
+
+      {pendingDelete && (
+        <div className="modal-scrim" role="dialog" aria-modal="true">
+          <div className="modal">
+            <h3>Delete &ldquo;{pendingDelete.name}&rdquo;?</h3>
+            <p>
+              This removes the intent and all of its training phrases. This can&apos;t be undone. The bot
+              will no longer recognize this question until it&apos;s re-created and retrained.
+            </p>
+            <div className="actions">
+              <button className="btn btn-outline" type="button" onClick={() => setPendingDelete(null)} disabled={deleting}>
+                Cancel
+              </button>
+              <button className="btn btn-danger" type="button" onClick={confirmDelete} disabled={deleting}>
+                {deleting ? 'Deleting…' : 'Delete intent'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

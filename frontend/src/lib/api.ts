@@ -95,3 +95,50 @@ export async function fetchAuditLog(filters: AuditLogFilters = {}) {
   const q = params.toString();
   return authFetch(`/admin/audit-log${q ? `?${q}` : ''}`);
 }
+
+// --- Admin intent/template/variant CRUD (slice-08) ------------------------
+
+export interface IntentCreatePayload {
+  name: string;
+  training_phrases: string[];
+  response_template: { base_text: string; allow_rephrasing: boolean };
+}
+
+export async function createIntent(payload: IntentCreatePayload) {
+  return authFetch(`/admin/intents`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export interface IntentUpdatePayload {
+  name?: string;
+  training_phrases?: { add?: string[]; remove?: string[] };
+}
+
+export async function updateIntent(id: string, payload: IntentUpdatePayload) {
+  return authFetch(`/admin/intents/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+export async function deleteIntent(id: string) {
+  return authFetch(`/admin/intents/${id}`, { method: 'DELETE' });
+}
+
+export async function updateTemplate(
+  id: string,
+  payload: { base_text?: string; allow_rephrasing?: boolean }
+) {
+  return authFetch(`/admin/templates/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+export async function updateVariant(id: string, variant_text: string) {
+  return authFetch(`/admin/variants/${id}`, { method: 'PUT', body: JSON.stringify({ variant_text }) });
+}
+
+export async function deleteVariant(id: string) {
+  return authFetch(`/admin/variants/${id}`, { method: 'DELETE' });
+}
+
+export async function generatePhrases(intentId: string, count = 8) {
+  return authFetch(`/admin/intents/${intentId}/generate-phrases`, {
+    method: 'POST',
+    body: JSON.stringify({ count }),
+  });
+}
