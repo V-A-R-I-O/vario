@@ -4,6 +4,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "dev-secret-change-me"
     JWT_EXPIRY_MINUTES: int = 60
     MOCK_AUTH_URL: str = "http://localhost:9001"
+    MOCK_HRMS_URL: str = "http://localhost:9002"
     DATABASE_URL: str = "sqlite+aiosqlite:///:memory:" # Default to in-memory for dev/tests
 
     # Rasa role-pack instances (one per role pack) — see docs/decisions/ADR-002-rasa-chat-contract.md
