@@ -9,8 +9,10 @@ Flow (ADD chat-mode diagram):
     → update session
     → return {response_text, intent, confidence, entities, session}
 
-Talk mode (TTS) is a later slice; the `mode` field is accepted but only `chat`
-is handled here.
+For `mode: "talk"` (slice-06) the rendered text is additionally sent to the
+tts-service for synthesis; the reply then carries `audio_base64`,
+`audio_content_type`, and `tts_available`. TTS degrades gracefully — on failure
+the text reply is still returned with `tts_available: false`.
 """
 import logging
 from datetime import datetime
@@ -24,7 +26,9 @@ from app.database import get_db
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.schemas.chat import ChatRequest, ChatResponse, SessionState
-from app.services import dialogue_router, response_renderer, session_manager
+from app.services import dialogue_router, response_renderer, session_manager, tts_service
+
+TALK_MODE = "talk"
 
 logger = logging.getLogger("vario.chat")
 
@@ -123,6 +127,14 @@ async def chat(
 
     await db.commit()
 
+    # --- 7. Talk mode — synthesize the reply to audio (degrades gracefully) ---
+    audio_base64 = audio_content_type = tts_available = None
+    if payload.mode == TALK_MODE:
+        tts = await tts_service.synthesize(response_text)
+        tts_available = tts.available
+        audio_base64 = tts.audio_base64
+        audio_content_type = tts.audio_content_type
+
     return ChatResponse(
         response_text=response_text,
         intent=rasa_result.intent,
@@ -133,4 +145,7 @@ async def chat(
             current_step=session.current_step,
             slots=session.slots or {},
         ),
+        audio_base64=audio_base64,
+        audio_content_type=audio_content_type,
+        tts_available=tts_available,
     )

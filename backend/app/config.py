@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     # How long a conversation session stays live before expiring (minutes).
     SESSION_TTL_MINUTES: int = 60
 
+    # Text-to-Speech (talk mode, slice-06). Path to the Google Cloud service-account
+    # JSON with Text-to-Speech access. Empty → talk mode degrades to text-only.
+    GOOGLE_APPLICATION_CREDENTIALS: str = ""
+
     class Config:
         env_file = ".env"
 
