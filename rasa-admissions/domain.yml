@@ -43,6 +43,12 @@ slots:
     mappings:
       - type: custom
 
+  required_documents:
+    type: any
+    influence_conversation: false
+    mappings:
+      - type: custom
+
 responses:
   utter_greet:
     - text: "Hello! I am your VARIO Admissions Assistant. You can ask me to check your application status, view required documents, or inquire about fees and deadlines."
@@ -53,11 +59,15 @@ responses:
   utter_ask_application_id:
     - text: "Please provide your application reference ID (for example: APP-1001)."
 
+  utter_ask_program:
+    - text: "Which program would you like the document checklist for? (e.g. B.Tech, M.Tech, MBA)"
+
   utter_default_fallback:
     - text: "I'm sorry, I didn't quite catch that. You can ask me about your application status (e.g. 'check application APP-1001'), document checklists, or fee deadlines."
 
 actions:
   - action_check_application_status
+  - action_get_document_checklist
   - action_default_fallback
 
 session_config:
