@@ -68,12 +68,44 @@ function BotAvatar() {
   );
 }
 
-// Full chat-thread row: bot avatar + message content, left-aligned.
-export function BotMessage({ message }: { message: BotMessageData }) {
+// Speaker button that replays a bot reply's audio in talk mode (slice-06).
+function ReplayButton({ onReplay }: { onReplay: () => void }) {
+  return (
+    <button
+      className="icon-btn btn-sm"
+      type="button"
+      style={{ width: 26, height: 26, flex: 'none' }}
+      title="Replay audio"
+      aria-label="Replay audio"
+      onClick={onReplay}
+    >
+      <svg viewBox="0 0 24 24" fill="none" style={{ width: 12, height: 12 }}>
+        <path
+          d="M11 5 6 9H3v6h3l5 4V5ZM16 8a5 5 0 0 1 0 8"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
+// Full chat-thread row: bot avatar + message content, left-aligned. In talk mode
+// an optional `onReplay` adds a speaker button that replays the reply's audio.
+export function BotMessage({
+  message,
+  onReplay,
+}: {
+  message: BotMessageData;
+  onReplay?: () => void;
+}) {
   return (
     <div className="msg-row bot">
       <BotAvatar />
       <BotMessageContent message={message} />
+      {onReplay && <ReplayButton onReplay={onReplay} />}
     </div>
   );
 }
