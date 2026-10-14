@@ -339,6 +339,113 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       }
     }
 
+    // 4. HR Leave Request Workflow (Slice-15) - Slot Prompt, Confirmation, Result
+    const isLeaveRequest = m.intent_name === 'submit_leave_request' || m.slots?.requested_slot;
+
+    if (isLeaveRequest && role === 'hr') {
+      // Slot prompt for leave_type
+      if (m.slots?.requested_slot === 'leave_type') {
+        return (
+          <BotMessage
+            key={m.id}
+            message={{
+              type: 'slot_prompt',
+              text: 'What type of leave would you like to request?',
+              options: [
+                { label: 'Casual', value: 'casual' },
+                { label: 'Sick', value: 'sick' },
+                { label: 'Earned', value: 'earned' },
+              ],
+              onSelect: (value: string) => {
+                sendMessage(value, 'chat');
+              },
+            }}
+          />
+        );
+      }
+
+      // Slot prompt for start_date
+      if (m.slots?.requested_slot === 'start_date') {
+        return (
+          <BotMessage
+            key={m.id}
+            message={{
+              type: 'plain_text',
+              text: m.content || 'When should your leave start? (YYYY-MM-DD)',
+            }}
+          />
+        );
+      }
+
+      // Slot prompt for end_date
+      if (m.slots?.requested_slot === 'end_date') {
+        return (
+          <BotMessage
+            key={m.id}
+            message={{
+              type: 'plain_text',
+              text: m.content || 'When should your leave end? (YYYY-MM-DD)',
+            }}
+          />
+        );
+      }
+
+      // Slot prompt for reason
+      if (m.slots?.requested_slot === 'reason') {
+        return (
+          <BotMessage
+            key={m.id}
+            message={{
+              type: 'plain_text',
+              text: m.content || 'Please provide a reason for your leave request.',
+            }}
+          />
+        );
+      }
+
+      // Confirmation step
+      if (m.slots?.confirmation_pending && m.slots?.leave_type && m.slots?.start_date && m.slots?.end_date) {
+        const rows = [
+          { label: 'Leave Type', value: m.slots.leave_type },
+          { label: 'Start Date', value: m.slots.start_date },
+          { label: 'End Date', value: m.slots.end_date },
+          { label: 'Reason', value: m.slots.reason || 'N/A' },
+        ];
+        return (
+          <BotMessage
+            key={m.id}
+            message={{
+              type: 'confirmation',
+              title: 'Confirm Leave Request',
+              rows,
+              confirmLabel: 'Confirm',
+              cancelLabel: 'Cancel',
+              onConfirm: () => {
+                sendMessage('confirm', 'chat');
+              },
+              onCancel: () => {
+                sendMessage('cancel', 'chat');
+              },
+            }}
+          />
+        );
+      }
+
+      // Result card after successful submission
+      if (m.slots?.reference_id && !m.slots?.confirmation_pending) {
+        return (
+          <BotMessage
+            key={m.id}
+            message={{
+              type: 'result',
+              text: 'Leave request submitted successfully! Reference ID:',
+              referenceId: m.slots.reference_id,
+            }}
+          />
+        );
+      }
+    }
+
     const data: BotMessageData = { type: 'plain_text', text: m.content };
     const onReplay = m.audioBase64
       ? () => playAudio(m.audioBase64 as string, m.audioContentType)

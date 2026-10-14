@@ -18,7 +18,7 @@ import httpx
 from fastapi import FastAPI, Request, status
 from pydantic import BaseModel
 
-from actions.actions import ActionCheckLeaveBalance
+from actions.actions import ActionCheckLeaveBalance, ActionSubmitLeaveRequest
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rasa_hr_server")
@@ -30,6 +30,7 @@ app = FastAPI(
 )
 
 action_handler = ActionCheckLeaveBalance()
+leave_request_handler = ActionSubmitLeaveRequest()
 
 # Regex for employee IDs (e.g. EMP-1042)
 EMP_ID_REGEX = re.compile(r"\b(EMP-\d{4})\b", re.IGNORECASE)
@@ -43,7 +44,8 @@ KEYWORDS_STATUS = [
 ]
 KEYWORDS_REQUEST = [
     "apply", "submit", "request", "book", "take off", "take vacation",
-    "taking leave", "need leave", "apply for"
+    "taking leave", "need leave", "apply for", "need to take", "want to take",
+    "like to take", "take leave"
 ]
 KEYWORDS_POLICY = [
     "policy", "policies", "rules", "rule", "guidelines", "guideline", "carryover",
@@ -80,6 +82,7 @@ class ConverseResponse(BaseModel):
     current_form: Optional[str] = None
     current_step: Optional[str] = None
     response_text: Optional[str] = None
+    audit_event: Optional[Dict[str, Any]] = None
 
 
 def classify_message_local(
@@ -219,7 +222,15 @@ def converse(req: ConverseRequest) -> ConverseResponse:
     sender = req.sender
     session = req.session or SessionState()
 
-    intent, confidence, entities = classify_message(message, current_form=session.current_form)
+    # Check if we're in an active form and need to capture slot values
+    # or handle confirmation instead of re-classifying the intent
+    if session.current_form == "submit_leave_request":
+        # We're in the leave request form - stay in form handler
+        intent = "submit_leave_request"
+        confidence = 1.0
+        entities = {}
+    else:
+        intent, confidence, entities = classify_message(message, current_form=session.current_form)
 
     # Privacy preservation: NEVER log employee IDs, raw message PII, or sensitive slot values.
     logger.info(
@@ -283,6 +294,74 @@ def converse(req: ConverseRequest) -> ConverseResponse:
             current_form=None,
             current_step=None,
             response_text=action_res.get("response_text"),
+        )
+
+    # Leave request submission (slice-15)
+    if intent == "submit_leave_request":
+        # Resolve employee context
+        emp_id = (
+            entities.get("employee_id")
+            or session.slots.get("employee_id")
+            or (sender.upper() if re.match(r"^EMP-\d{4}$", sender.strip(), re.IGNORECASE) else None)
+        )
+
+        # Extract entities and merge with session slots
+        leave_type = entities.get("leave_type") or session.slots.get("leave_type")
+        start_date = entities.get("start_date") or session.slots.get("start_date")
+        end_date = entities.get("end_date") or session.slots.get("end_date")
+        reason = session.slots.get("reason")
+        confirmation_pending = session.slots.get("confirmation_pending", False)
+
+        # Check for user action (Confirm/Cancel)
+        user_action = None
+        msg_lower = message.lower().strip()
+        if msg_lower in ("confirm", "yes", "proceed", "submit", "ok"):
+            user_action = "confirm"
+        elif msg_lower in ("cancel", "no", "stop", "abort"):
+            user_action = "cancel"
+        else:
+            # Capture user input as slot value for the requested slot
+            requested_slot = session.slots.get("requested_slot")
+            if requested_slot and not confirmation_pending:
+                if requested_slot == "leave_type":
+                    # Normalize leave type
+                    leave_type_input = message.strip().lower()
+                    if leave_type_input in ["casual", "sick", "earned", "vacation", "pto"]:
+                        leave_type = leave_type_input
+                elif requested_slot == "start_date":
+                    start_date = message.strip()
+                elif requested_slot == "end_date":
+                    end_date = message.strip()
+                elif requested_slot == "reason":
+                    reason = message.strip()
+
+        action_res = leave_request_handler.execute_logic(
+            employee_id=emp_id,
+            leave_type=leave_type,
+            start_date=start_date,
+            end_date=end_date,
+            reason=reason,
+            confirmation_pending=confirmation_pending,
+            user_action=user_action,
+        )
+
+        merged_slots = dict(session.slots)
+        merged_slots.update(action_res["slots"])
+
+        # Determine current_form and current_step
+        current_form_val = "submit_leave_request" if action_res.get("requires_input") else None
+        current_step_val = action_res.get("missing_slot") if action_res.get("requires_input") else None
+
+        return ConverseResponse(
+            intent=intent,
+            confidence=confidence,
+            entities=entities,
+            template_key=action_res.get("template_key"),
+            slots=merged_slots,
+            current_form=current_form_val,
+            current_step=current_step_val,
+            response_text=action_res.get("response_text"),
+            audit_event=action_res.get("audit_event"),
         )
 
     # Greeting / Goodbye / Stubs

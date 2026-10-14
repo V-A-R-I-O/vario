@@ -55,6 +55,38 @@ slots:
     mappings:
       - type: custom
 
+  start_date:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_entity
+        entity: start_date
+
+  end_date:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_entity
+        entity: end_date
+
+  reason:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_text
+
+  requested_slot:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+
+  confirmation_pending:
+    type: bool
+    influence_conversation: false
+    mappings:
+      - type: custom
+
 responses:
   utter_greet:
     - text: "Hello! I am your VARIO HR Assistant. You can ask me to check your leave balance, view leave request status, or ask about HR policies."
@@ -73,6 +105,7 @@ responses:
 
 actions:
   - action_check_leave_balance
+  - action_submit_leave_request
   - action_default_fallback
 
 session_config:

@@ -21,11 +21,11 @@ Deliverables:
 - On Cancel: end the workflow cleanly, nothing submitted.
 
 ## Acceptance criteria
-- [ ] Given a leave-request intent, when the workflow runs, then it collects `leave_type`, `start_date`, `end_date`, and `reason` across turns, with slots persisting.
-- [ ] Given all slots filled, then a confirmation summary with Confirm / Cancel is shown before any submission.
-- [ ] Given Confirm, then the leave is submitted via the adapter and a result card shows the returned reference ID.
-- [ ] Given Cancel, then nothing is submitted and the workflow ends gracefully.
-- [ ] Given a submission, then an `audit_log` entry (`leave_submitted`, actor, reference id, details) is written (FR-9, safety NFR).
+- [x] Given a leave-request intent, when the workflow runs, then it collects `leave_type`, `start_date`, `end_date`, and `reason` across turns, with slots persisting.
+- [x] Given all slots filled, then a confirmation summary with Confirm / Cancel is shown before any submission.
+- [x] Given Confirm, then the leave is submitted via the adapter and a result card shows the returned reference ID.
+- [x] Given Cancel, then nothing is submitted and the workflow ends gracefully.
+- [x] Given a submission, then an `audit_log` entry (`leave_submitted`, actor, reference id, details) is written (FR-9, safety NFR).
 
 ## Mockup / reference (if UI-facing)
 `docs/design/chat-view.html` — **slot prompt** + **confirmation** + **result** examples (matches `docs/ui-reference.md` §4).

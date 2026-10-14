@@ -334,3 +334,51 @@ async def test_chat_mode_has_no_audio_fields_populated():
     assert data["audio_base64"] is None
     assert data["audio_content_type"] is None
     seam.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_chat_records_audit_log_on_leave_submitted():
+    """Slice-15 AC 5: Given a submission, an audit_log entry is written (FR-9, safety NFR)."""
+    from sqlalchemy import select
+    from app.models.audit_log import AuditLog
+
+    await seed_template("submit_leave_result", ["Leave request submitted! Reference {reference_id}."])
+    rasa_resp = rasa_payload(
+        intent="submit_leave_request",
+        template_key="submit_leave_result",
+        slots={"reference_id": "LEAVE-9090", "leave_type": "casual"},
+        audit_event={
+            "action_type": "leave_submitted",
+            "reference_id": "LEAVE-9090",
+            "details": {"leave_type": "casual", "days": 2},
+        },
+    )
+
+    async with _client() as client:
+        conv_id = await make_conversation(client, headers_for("u-audit-1"))
+        with patch(
+            "app.services.dialogue_router._post_to_rasa",
+            new=AsyncMock(return_value=rasa_resp),
+        ):
+            res = await client.post(
+                "/api/chat",
+                json={"conversation_id": conv_id, "message": "confirm", "mode": "chat"},
+                headers=headers_for("u-audit-1"),
+            )
+
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert data["session"]["slots"]["reference_id"] == "LEAVE-9090"
+
+    # Verify audit_log entry in DB
+    async with TestingSessionLocal() as s:
+        stmt = select(AuditLog).where(
+            AuditLog.reference_id == "LEAVE-9090",
+            AuditLog.action_type == "leave_submitted",
+        )
+        entry = (await s.execute(stmt)).scalar_one_or_none()
+        assert entry is not None
+        assert entry.user_id == "u-audit-1"
+        assert entry.role_pack == "hr"
+        assert entry.details == {"leave_type": "casual", "days": 2}
+

@@ -26,7 +26,7 @@ from app.database import get_db
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.schemas.chat import ChatRequest, ChatResponse, SessionState
-from app.services import dialogue_router, response_renderer, session_manager, tts_service
+from app.services import dialogue_router, response_renderer, session_manager, tts_service, audit_log_service
 
 TALK_MODE = "talk"
 
@@ -126,6 +126,17 @@ async def chat(
     conversation.last_message_at = datetime.utcnow()
 
     await db.commit()
+
+    # --- 6.5. Fire audit event if present (slice-15) ---
+    if rasa_result.audit_event:
+        await audit_log_service.record(
+            db,
+            actor_id=user_id,
+            role_pack=conversation.role_pack,
+            action_type=rasa_result.audit_event.get("action_type", "unknown"),
+            reference_id=rasa_result.audit_event.get("reference_id"),
+            details=rasa_result.audit_event.get("details"),
+        )
 
     # --- 7. Talk mode — synthesize the reply to audio (degrades gracefully) ---
     audio_base64 = audio_content_type = tts_available = None

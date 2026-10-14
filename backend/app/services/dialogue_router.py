@@ -35,6 +35,7 @@ class RasaResult:
     current_form: Optional[str] = None
     current_step: Optional[str] = None
     response_text: Optional[str] = None
+    audit_event: Optional[Dict[str, Any]] = None
 
 
 def get_rasa_url(role_pack: str) -> str:
@@ -89,6 +90,7 @@ async def route(
         current_form=raw.get("current_form"),
         current_step=raw.get("current_step"),
         response_text=raw.get("response_text"),
+        audit_event=raw.get("audit_event"),
     )
 
     # FR-5 — log every classification/routing decision.

@@ -116,21 +116,42 @@ async def seed_hr_data(session: AsyncSession):
         session.add(TrainingPhrase(intent_id=status_stub.intent_id, phrase_text="check my leave application status"))
         logger.info("Created stub intent: ask_leave_status")
 
-    # 3. Stub Intent: submit_leave_request (placeholder for slice-15)
+    # 3. Intent: submit_leave_request (slice-15)
     stmt_req = select(Intent).where(Intent.name == "submit_leave_request")
     res_req = await session.execute(stmt_req)
-    if not res_req.scalar_one_or_none():
-        req_stub = Intent(
+    submit_intent = res_req.scalar_one_or_none()
+    if not submit_intent:
+        submit_intent = Intent(
             role_pack="hr",
             name="submit_leave_request",
             intent_type="dynamic_workflow",
             needs_retrain=False,
         )
-        session.add(req_stub)
+        session.add(submit_intent)
         await session.flush()
-        session.add(TrainingPhrase(intent_id=req_stub.intent_id, phrase_text="I want to apply for leave"))
-        session.add(TrainingPhrase(intent_id=req_stub.intent_id, phrase_text="submit a leave request"))
-        logger.info("Created stub intent: submit_leave_request")
+        logger.info("Created intent: submit_leave_request")
+
+    # Training phrases for submit_leave_request
+    leave_request_phrases = [
+        "I want to apply for leave",
+        "submit a leave request",
+        "apply for leave",
+        "request time off",
+        "I need to take leave",
+        "book leave",
+        "submit leave application",
+        "apply for vacation",
+        "request leave",
+        "I want to submit a leave application",
+    ]
+    for phrase_text in leave_request_phrases:
+        phrase_stmt = select(TrainingPhrase).where(
+            TrainingPhrase.intent_id == submit_intent.intent_id,
+            TrainingPhrase.phrase_text == phrase_text,
+        )
+        existing = await session.execute(phrase_stmt)
+        if not existing.scalar_one_or_none():
+            session.add(TrainingPhrase(intent_id=submit_intent.intent_id, phrase_text=phrase_text))
 
     # 4. Stub Intent: ask_policy_faq (placeholder for slice-16)
     stmt_faq = select(Intent).where(Intent.name == "ask_policy_faq")
@@ -183,6 +204,109 @@ async def seed_hr_data(session: AsyncSession):
         if not existing_variant.scalar_one_or_none():
             session.add(ResponseVariant(template_id=tmpl.template_id, variant_text=variant_text))
             logger.info("Created response variant for check_leave_balance_response")
+
+    # 7. Response Template: submit_leave_slot_prompt (slice-15)
+    stmt_slot_prompt = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "submit_leave_slot_prompt"
+    )
+    res_slot_prompt = await session.execute(stmt_slot_prompt)
+    slot_prompt_tmpl = res_slot_prompt.scalar_one_or_none()
+    if not slot_prompt_tmpl:
+        slot_prompt_tmpl = ResponseTemplate(
+            role_pack="hr",
+            template_key="submit_leave_slot_prompt",
+            base_text="What type of leave would you like to request?",
+            allow_rephrasing=False,
+            available_variables=["requested_slot"],
+        )
+        session.add(slot_prompt_tmpl)
+        await session.flush()
+        logger.info("Created response template: submit_leave_slot_prompt")
+
+    # 8. Response Template: submit_leave_confirmation (slice-15)
+    stmt_confirmation = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "submit_leave_confirmation"
+    )
+    res_confirmation = await session.execute(stmt_confirmation)
+    confirmation_tmpl = res_confirmation.scalar_one_or_none()
+    if not confirmation_tmpl:
+        confirmation_tmpl = ResponseTemplate(
+            role_pack="hr",
+            template_key="submit_leave_confirmation",
+            base_text="Please confirm your leave request: {leave_type} leave from {start_date} to {end_date}. Reason: {reason}",
+            allow_rephrasing=True,
+            available_variables=["leave_type", "start_date", "end_date", "reason"],
+        )
+        session.add(confirmation_tmpl)
+        await session.flush()
+        logger.info("Created response template: submit_leave_confirmation")
+
+    # Confirmation variants
+    confirmation_variants = [
+        "Please confirm your leave request: {leave_type} leave from {start_date} to {end_date}. Reason: {reason}",
+        "Ready to submit? {leave_type} leave, {start_date} to {end_date}. Reason: {reason}",
+        "Review your request: {leave_type} leave starting {start_date}, ending {end_date}. Reason: {reason}",
+    ]
+    for variant_text in confirmation_variants:
+        variant_stmt = select(ResponseVariant).where(
+            ResponseVariant.template_id == confirmation_tmpl.template_id,
+            ResponseVariant.variant_text == variant_text,
+        )
+        existing_variant = await session.execute(variant_stmt)
+        if not existing_variant.scalar_one_or_none():
+            session.add(ResponseVariant(template_id=confirmation_tmpl.template_id, variant_text=variant_text))
+
+    # 9. Response Template: submit_leave_result (slice-15)
+    stmt_result = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "submit_leave_result"
+    )
+    res_result = await session.execute(stmt_result)
+    result_tmpl = res_result.scalar_one_or_none()
+    if not result_tmpl:
+        result_tmpl = ResponseTemplate(
+            role_pack="hr",
+            template_key="submit_leave_result",
+            base_text="Leave request submitted successfully! Reference ID: {reference_id}",
+            allow_rephrasing=True,
+            available_variables=["reference_id", "leave_type", "start_date", "end_date", "days"],
+        )
+        session.add(result_tmpl)
+        await session.flush()
+        logger.info("Created response template: submit_leave_result")
+
+    # Result variants
+    result_variants = [
+        "Leave request submitted successfully! Reference ID: {reference_id}",
+        "Your leave application has been submitted. Reference: {reference_id}",
+        "All set! Your leave request reference is {reference_id}.",
+        "Leave request created with reference ID {reference_id}.",
+    ]
+    for variant_text in result_variants:
+        variant_stmt = select(ResponseVariant).where(
+            ResponseVariant.template_id == result_tmpl.template_id,
+            ResponseVariant.variant_text == variant_text,
+        )
+        existing_variant = await session.execute(variant_stmt)
+        if not existing_variant.scalar_one_or_none():
+            session.add(ResponseVariant(template_id=result_tmpl.template_id, variant_text=variant_text))
+
+    # 10. Response Template: submit_leave_cancelled (slice-15)
+    stmt_cancelled = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "submit_leave_cancelled"
+    )
+    res_cancelled = await session.execute(stmt_cancelled)
+    cancelled_tmpl = res_cancelled.scalar_one_or_none()
+    if not cancelled_tmpl:
+        cancelled_tmpl = ResponseTemplate(
+            role_pack="hr",
+            template_key="submit_leave_cancelled",
+            base_text="Leave request cancelled. No changes were made.",
+            allow_rephrasing=False,
+            available_variables=[],
+        )
+        session.add(cancelled_tmpl)
+        await session.flush()
+        logger.info("Created response template: submit_leave_cancelled")
 
 async def seed_it_data(session: AsyncSession):
     """Placeholder for IT role-pack seed data (slice-04)."""
