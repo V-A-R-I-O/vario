@@ -21,11 +21,11 @@ Deliverables:
 - Verify the full path: gateway → chat-core → dialogue-router → Rasa-HR → HRMSAdapter → Mock HRMS → response-renderer → card, in the deployed app.
 
 ## Acceptance criteria
-- [ ] Given a logged-in employee in an HR conversation, when they ask for their leave balance in natural language, then a data card renders showing total + casual/sick/earned breakdown.
-- [ ] Given the bot response, then the persisted bot message records `intent_name = check_leave_balance` and a `confidence`.
-- [ ] Given an employee with no HRMS record, then the bot returns a graceful message (no crash, no empty card).
-- [ ] Given the response variants, then repeated asks vary the wording (renderer picks a random variant).
-- [ ] Given a merge to `main`, then the working flow is visible in the deployed app.
+- [x] Given a logged-in employee in an HR conversation, when they ask for their leave balance in natural language, then a data card renders showing total + casual/sick/earned breakdown.
+- [x] Given the bot response, then the persisted bot message records `intent_name = check_leave_balance` and a `confidence`.
+- [x] Given an employee with no HRMS record, then the bot returns a graceful message (no crash, no empty card).
+- [x] Given the response variants, then repeated asks vary the wording (renderer picks a random variant).
+- [x] Given a merge to `main`, then the working flow is visible in the deployed app.
 
 ## Mockup / reference (if UI-facing)
 `docs/design/chat-view.html` — use the **data card** example (matches `docs/ui-reference.md` §4).

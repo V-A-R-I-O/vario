@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchMessages, sendChatMessage, fetchConversations } from '@/lib/api';
 import { useSpeechRecognition } from '@/lib/useSpeechRecognition';
-import { BotMessage, UserMessage, type BotMessageData } from '@/components/chat';
+import { BotMessage, UserMessage, type BotMessageData, HRLeaveBalanceCard } from '@/components/chat';
 
 interface ThreadMessage {
   id: string;
@@ -235,7 +235,51 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       );
     }
 
-    // 2. Admissions Status Card (Data Card composition)
+    // 2. HR Leave Balance Card (Slice-14)
+    const isLeaveBalanceCheck =
+      m.intent_name === 'check_leave_balance' ||
+      (m.slots?.total !== undefined && m.slots?.casual !== undefined) ||
+      (/\b(?:leave balance|days of leave|days left|days available)\b/i.test(m.content) &&
+        /\bcasual\b/i.test(m.content) &&
+        /\bsick\b/i.test(m.content) &&
+        /\bearned\b/i.test(m.content));
+
+    if (isLeaveBalanceCheck && (role === 'hr' || m.intent_name === 'check_leave_balance')) {
+      let total = m.slots?.total;
+      let casual = m.slots?.casual;
+      let sick = m.slots?.sick;
+      let earned = m.slots?.earned;
+
+      // Fallback: parse from rendered template text if slots are not present (e.g. on reload from DB)
+      if (total === undefined || casual === undefined || sick === undefined || earned === undefined) {
+        const totalMatch = m.content.match(/(\d+)\s*(?:days(?: of leave)?(?: remaining| left| available| total)?|days\s*(?:\(|\:)|total)/i);
+        const casualMatch = m.content.match(/(\d+)\s*(?:casual)/i);
+        const sickMatch = m.content.match(/(\d+)\s*(?:sick)/i);
+        const earnedMatch = m.content.match(/(\d+)\s*(?:earned)/i);
+
+        if (casualMatch && sickMatch && earnedMatch) {
+          casual = Number(casualMatch[1]);
+          sick = Number(sickMatch[1]);
+          earned = Number(earnedMatch[1]);
+          total = totalMatch ? Number(totalMatch[1]) : (casual + sick + earned);
+        }
+      }
+
+      if (total !== undefined && casual !== undefined && sick !== undefined && earned !== undefined) {
+        return (
+          <BotMessage key={m.id}>
+            <HRLeaveBalanceCard
+              total={Number(total)}
+              casual={Number(casual)}
+              sick={Number(sick)}
+              earned={Number(earned)}
+            />
+          </BotMessage>
+        );
+      }
+    }
+
+    // 3. Admissions Status Card (Data Card composition)
     const isStatusCheck =
       m.intent_name === 'check_application_status' ||
       Boolean(m.slots?.application_id) ||
