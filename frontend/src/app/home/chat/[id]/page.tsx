@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchMessages, sendChatMessage, fetchConversations } from '@/lib/api';
 import { useSpeechRecognition } from '@/lib/useSpeechRecognition';
-import { BotMessage, UserMessage, type BotMessageData, HRLeaveBalanceCard } from '@/components/chat';
+import { BotMessage, UserMessage, type BotMessageData, HRLeaveBalanceCard, createHRLeaveBalanceMessage } from '@/components/chat';
 
 interface ThreadMessage {
   id: string;
@@ -267,14 +267,15 @@ export default function ChatPage({ params }: { params: { id: string } }) {
 
       if (total !== undefined && casual !== undefined && sick !== undefined && earned !== undefined) {
         return (
-          <BotMessage key={m.id}>
-            <HRLeaveBalanceCard
-              total={Number(total)}
-              casual={Number(casual)}
-              sick={Number(sick)}
-              earned={Number(earned)}
-            />
-          </BotMessage>
+          <BotMessage
+            key={m.id}
+            message={createHRLeaveBalanceMessage({
+              total: Number(total),
+              casual: Number(casual),
+              sick: Number(sick),
+              earned: Number(earned),
+            })}
+          />
         );
       }
     }

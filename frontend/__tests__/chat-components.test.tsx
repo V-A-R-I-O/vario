@@ -5,6 +5,7 @@ import {
   AdmissionsStatusCard,
   AdmissionsNotFoundCard,
   HRLeaveBalanceCard,
+  createHRLeaveBalanceMessage,
 } from '../src/components/chat';
 import ChatComponentGallery from '../src/app/home/chat/gallery/page';
 
@@ -179,6 +180,14 @@ describe('HR Leave Balance components (slice-14)', () => {
     expect(screen.getByText('6 days')).toBeInTheDocument();
     expect(screen.getByText('Earned')).toBeInTheDocument();
     expect(screen.getByText('12 days')).toBeInTheDocument();
+  });
+
+  it('renders BotMessage with createHRLeaveBalanceMessage', () => {
+    const msg = createHRLeaveBalanceMessage({ total: 22, casual: 4, sick: 6, earned: 12 });
+    render(<BotMessage message={msg} />);
+    expect(screen.getByText('Your Leave Balance')).toBeInTheDocument();
+    expect(screen.getByText('22 days')).toBeInTheDocument();
+    expect(screen.getByText('4 days')).toBeInTheDocument();
   });
 });
 
