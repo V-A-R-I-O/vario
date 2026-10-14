@@ -282,7 +282,7 @@ def converse(req: ConverseRequest) -> ConverseResponse:
             slots=merged_slots,
             current_form=None,
             current_step=None,
-            response_text=None,
+            response_text=action_res.get("response_text"),
         )
 
     # Greeting / Goodbye / Stubs

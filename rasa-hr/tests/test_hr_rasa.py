@@ -97,11 +97,15 @@ def test_action_check_leave_balance_requires_employee_id_when_missing():
 
 def test_action_check_leave_balance_returns_template_when_id_present():
     action = ActionCheckLeaveBalance()
-    result = action.execute_logic(employee_id="EMP-2048", leave_type="sick")
+    result = action.execute_logic(employee_id="EMP-1042", leave_type="sick")
     assert result["requires_input"] is False
     assert result["template_key"] == "check_leave_balance_response"
-    assert result["slots"]["employee_id"] == "EMP-2048"
-    assert result["slots"]["balance"] == 12
+    assert result["slots"]["employee_id"] == "EMP-1042"
+    # Slice-14: Now returns breakdown instead of just balance
+    assert result["slots"]["total"] == 22
+    assert result["slots"]["casual"] == 4
+    assert result["slots"]["sick"] == 6
+    assert result["slots"]["earned"] == 12
     assert result["slots"]["leave_type"] == "sick"
 
 
@@ -139,12 +143,17 @@ def test_converse_webhook_resolves_employee_id_from_message():
     assert data["intent"] == "check_leave_balance"
     assert data["template_key"] == "check_leave_balance_response"
     assert data["slots"]["employee_id"] == "EMP-1042"
-    assert data["slots"]["balance"] == 12
+    # Slice-14: Now returns breakdown from HRMS
+    assert data["slots"]["total"] == 22
+    assert data["slots"]["casual"] == 4
+    assert data["slots"]["sick"] == 6
+    assert data["slots"]["earned"] == 12
     assert data["current_form"] is None
 
 
 def test_converse_webhook_resolves_employee_id_from_authenticated_sender():
     # Issue 2: Resolves employee context from authenticated session sender
+    # Slice-14: EMP-9081 not in mock HRMS, so should return graceful error
     payload = {
         "sender": "EMP-9081",
         "message": "What is my leave balance?",
@@ -156,20 +165,22 @@ def test_converse_webhook_resolves_employee_id_from_authenticated_sender():
     data = res.json()
 
     assert data["intent"] == "check_leave_balance"
-    assert data["template_key"] == "check_leave_balance_response"
+    # Employee not found, so template_key is None and response_text has error message
+    assert data["template_key"] is None
+    assert "couldn't find" in data["response_text"].lower() or "could not find" in data["response_text"].lower()
     assert data["slots"]["employee_id"] == "EMP-9081"
-    assert data["slots"]["balance"] == 12
 
 
 def test_converse_webhook_resolves_employee_id_from_session_slots():
     # Issue 2: Resolves employee context from existing session slots
+    # Slice-14: Use EMP-1042 (exists in mock HRMS) instead of EMP-3045
     payload = {
         "sender": "user-turn-2",
         "message": "How many days left?",
         "session": {
             "current_form": "check_leave_balance",
             "current_step": "ask_employee_id",
-            "slots": {"employee_id": "EMP-3045"},
+            "slots": {"employee_id": "EMP-1042"},
         },
     }
 
@@ -179,8 +190,9 @@ def test_converse_webhook_resolves_employee_id_from_session_slots():
 
     assert data["intent"] == "check_leave_balance"
     assert data["template_key"] == "check_leave_balance_response"
-    assert data["slots"]["employee_id"] == "EMP-3045"
-    assert data["slots"]["balance"] == 12
+    assert data["slots"]["employee_id"] == "EMP-1042"
+    assert data["slots"]["total"] == 22
+    assert data["slots"]["casual"] == 4
 
 
 def test_ambiguous_intent_classification():
@@ -192,11 +204,36 @@ def test_ambiguous_intent_classification():
         "need leave assistance",
         "I want to apply for leave status balance",
     ]
-
     for q in ambiguous_queries:
         intent, conf, _ = classify_message(q)
         assert intent == "nlu_fallback", f"Query '{q}' should be ambiguous but classified as {intent}"
         assert conf < 0.4, f"Ambiguous query '{q}' confidence should be < 0.4, got {conf}"
+
+
+def test_action_check_leave_balance_employee_not_found():
+    # Slice-14 AC 3: Given an employee with no HRMS record, return graceful message
+    action = ActionCheckLeaveBalance()
+    result = action.execute_logic(employee_id="EMP-9999", leave_type="annual")
+
+    assert result["requires_input"] is False
+    assert result["template_key"] is None
+    assert "couldn't find" in result["response_text"].lower() or "could not find" in result["response_text"].lower()
+    assert result["slots"]["employee_id"] == "EMP-9999"
+
+
+def test_action_check_leave_balance_with_real_employee():
+    # Slice-14 AC 1: Given EMP-1042 (seeded in mock HRMS), return data card with breakdown
+    action = ActionCheckLeaveBalance()
+    result = action.execute_logic(employee_id="EMP-1042", leave_type="annual")
+
+    assert result["requires_input"] is False
+    assert result["template_key"] == "check_leave_balance_response"
+    assert result["slots"]["employee_id"] == "EMP-1042"
+    assert result["slots"]["total"] == 22
+    assert result["slots"]["casual"] == 4
+    assert result["slots"]["sick"] == 6
+    assert result["slots"]["earned"] == 12
+    assert result["response_text"] is None
 
 
 def test_policy_query_edge_cases():
@@ -292,5 +329,6 @@ async def test_dialogue_router_routes_to_hr_converse():
             assert res.intent == "check_leave_balance"
             assert res.confidence >= 0.85
             assert res.template_key == "check_leave_balance_response"
-            assert res.slots.get("balance") == 12
+            assert res.slots.get("total") == 22
+            assert res.slots.get("casual") == 4
             assert res.slots.get("employee_id") == "EMP-1042"
