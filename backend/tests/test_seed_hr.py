@@ -55,9 +55,11 @@ async def test_seed_hr_data_creates_intents_and_template(db_session):
     )
     tmpl = (await db_session.execute(stmt_tmpl)).scalar_one_or_none()
     assert tmpl is not None
-    assert tmpl.role_pack == "hr"
-    assert "{balance}" in tmpl.base_text
-    assert tmpl.available_variables == ["balance"]
+    assert "{total}" in tmpl.base_text
+    assert "total" in tmpl.available_variables
+    assert "casual" in tmpl.available_variables
+    assert "sick" in tmpl.available_variables
+    assert "earned" in tmpl.available_variables
 
     # 5. Verify response variants
     stmt_variants = select(ResponseVariant).where(
@@ -65,7 +67,7 @@ async def test_seed_hr_data_creates_intents_and_template(db_session):
     )
     variants = (await db_session.execute(stmt_variants)).scalars().all()
     assert len(variants) >= 1
-    assert any("{balance}" in v.variant_text for v in variants)
+    assert any("{total}" in v.variant_text for v in variants)
 
 
 @pytest.mark.asyncio

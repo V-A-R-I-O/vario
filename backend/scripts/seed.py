@@ -158,9 +158,9 @@ async def seed_hr_data(session: AsyncSession):
         tmpl = ResponseTemplate(
             role_pack="hr",
             template_key="check_leave_balance_response",
-            base_text="You have {balance} days of leave remaining.",
+            base_text="You have {total} days of leave remaining: {casual} casual, {sick} sick, {earned} earned.",
             allow_rephrasing=True,
-            available_variables=["balance"],
+            available_variables=["total", "casual", "sick", "earned", "employee_id"],
         )
         session.add(tmpl)
         await session.flush()
@@ -168,9 +168,11 @@ async def seed_hr_data(session: AsyncSession):
 
     # 6. Response Variants for check_leave_balance_response
     variants = [
-        "You have {balance} days of leave remaining.",
-        "Your current leave balance is {balance} days.",
-        "You have {balance} days of leave left.",
+        "You have {total} days of leave remaining: {casual} casual, {sick} sick, {earned} earned.",
+        "Your current leave balance is {total} days ({casual} casual, {sick} sick, {earned} earned).",
+        "You have {total} days of leave left — {casual} casual, {sick} sick, and {earned} earned.",
+        "Your leave balance: {total} days total. Breakdown: {casual} casual, {sick} sick, {earned} earned.",
+        "You currently have {total} days available: {casual} casual days, {sick} sick days, and {earned} earned days.",
     ]
     for variant_text in variants:
         variant_stmt = select(ResponseVariant).where(
