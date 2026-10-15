@@ -142,3 +142,62 @@ export async function generatePhrases(intentId: string, count = 8) {
     body: JSON.stringify({ count }),
   });
 }
+
+// --- Admin conversation logs (slice-11) -----------------------------------
+
+export interface ConversationLogFilters {
+  actor_id?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AdminConversationItem {
+  conversation_id: string;
+  user_id: string;
+  user_name?: string | null;
+  user_email?: string | null;
+  title?: string | null;
+  role_pack: string;
+  status: string;
+  message_count: number;
+  last_intent?: string | null;
+  started_at: string;
+  last_message_at?: string | null;
+}
+
+export interface AdminTranscriptMessage {
+  message_id: string;
+  conversation_id: string;
+  sender_type: 'user' | 'bot';
+  content: string;
+  intent_name?: string | null;
+  confidence?: number | null;
+  entities?: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AdminTranscriptData {
+  conversation_id: string;
+  role_pack: string;
+  user_id: string;
+  user_name?: string | null;
+  user_email?: string | null;
+  title?: string | null;
+  started_at: string;
+  messages: AdminTranscriptMessage[];
+}
+
+export async function fetchAdminConversations(filters: ConversationLogFilters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') params.append(k, String(v));
+  });
+  const q = params.toString();
+  return authFetch(`/admin/conversations${q ? `?${q}` : ''}`);
+}
+
+export async function fetchAdminConversationMessages(conversationId: string) {
+  return authFetch(`/admin/conversations/${conversationId}/messages`);
+}

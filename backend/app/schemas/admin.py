@@ -138,3 +138,40 @@ class VariantDeleteResponse(BaseModel):
 class GeneratePhrasesResponse(BaseModel):
     intent_id: str
     generated_phrases: List[str] = Field(default_factory=list)
+
+
+# --- Conversation Logs (slice-11, FR-19) -----------------------------------
+
+
+class AdminConversationSummary(BaseModel):
+    id: str
+    user_name: Optional[str] = None
+    user_email: Optional[str] = None
+    title: Optional[str] = None
+    message_count: int = 0
+    last_intent: Optional[str] = None
+    started_at: datetime
+    last_message_at: Optional[datetime] = None
+
+
+class AdminConversationListResponse(BaseModel):
+    role_pack: str
+    total: int
+    conversations: List[AdminConversationSummary] = Field(default_factory=list)
+
+
+class AdminMessageOut(BaseModel):
+    id: str
+    sender: str
+    content: str
+    intent_name: Optional[str] = None
+    confidence: Optional[float] = None
+    entities: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+
+class AdminTranscriptResponse(BaseModel):
+    conversation_id: str
+    role_pack: str
+    user_name: Optional[str] = None
+    messages: List[AdminMessageOut] = Field(default_factory=list)
