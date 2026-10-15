@@ -6,7 +6,7 @@ import yaml
 from fastapi import FastAPI, Request, status
 from pydantic import BaseModel
 
-from actions.actions import ActionCheckApplicationStatus
+from actions.actions import ActionCheckApplicationStatus, ActionGetDocumentChecklist
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rasa_admissions_server")
@@ -18,6 +18,7 @@ app = FastAPI(
 )
 
 action_handler = ActionCheckApplicationStatus()
+checklist_action_handler = ActionGetDocumentChecklist()
 
 # Regex for application IDs (e.g. APP-1001)
 APP_ID_REGEX = re.compile(r"\b(APP-\d{4})\b", re.IGNORECASE)
@@ -132,7 +133,18 @@ def classify_message(text: str) -> tuple[str, float, Dict[str, Any]]:
 
     prog_match = PROGRAM_REGEX.search(text)
     if prog_match:
-        entities["program"] = prog_match.group(1)
+        entities["program"] = prog_match.group(1).strip()
+    else:
+        # Check for phrase after "for", "in", or "program" when related to documents/checklist/admission
+        doc_prog_match = re.search(
+            r"(?:for|in)\s+([a-zA-Z0-9\.\(\)\s-]+?)(?:\s+admission|\s+program|\s+checklist|\?|$)",
+            text,
+            re.IGNORECASE,
+        )
+        if doc_prog_match:
+            candidate = doc_prog_match.group(1).strip()
+            if candidate and candidate.lower() not in {"admission", "admissions", "the", "a", "my", "this", "fees", "documents"}:
+                entities["program"] = candidate
 
     user_toks = _tokenize(clean)
     scores: Dict[str, float] = {}
@@ -199,7 +211,21 @@ async def converse(req: ConverseRequest) -> ConverseResponse:
     sender = req.sender
     session = req.session or SessionState()
 
-    intent, confidence, entities = classify_message(message)
+    # Multi-turn slot filling if session is currently waiting for a slot in an active form
+    if session.current_step == "await_program" or session.current_form == "get_document_checklist_form":
+        prog_match = PROGRAM_REGEX.search(message)
+        prog_val = prog_match.group(1).strip() if prog_match else message.strip()
+        intent = "get_document_checklist"
+        confidence = 0.95
+        entities = {"program": prog_val}
+    elif session.current_step == "await_application_id" or session.current_form == "check_application_status_form":
+        app_match = APP_ID_REGEX.search(message)
+        app_val = app_match.group(1).upper() if app_match else message.strip().upper()
+        intent = "check_application_status"
+        confidence = 0.95
+        entities = {"application_id": app_val}
+    else:
+        intent, confidence, entities = classify_message(message)
 
     logger.info(
         "Converse called: sender=%s intent=%s confidence=%.2f entities=%s",
@@ -237,6 +263,38 @@ async def converse(req: ConverseRequest) -> ConverseResponse:
                 slots=merged_slots,
                 current_form="check_application_status_form",
                 current_step="await_application_id",
+                response_text=action_res.get("response_text"),
+            )
+
+        return ConverseResponse(
+            intent=intent,
+            confidence=confidence,
+            entities=entities,
+            template_key=action_res.get("template_key"),
+            slots=merged_slots,
+            current_form=None,
+            current_step=None,
+            response_text=action_res.get("response_text"),
+        )
+
+    # Document checklist action (slice-25)
+    if intent == "get_document_checklist":
+        prog = entities.get("program") or session.slots.get("program")
+        action_res = await checklist_action_handler.execute_logic_async(prog)
+
+        merged_slots = dict(session.slots)
+        merged_slots.update(action_res.get("slots", {}))
+
+        # If program is missing, prompt for it (slot prompt)
+        if action_res.get("missing_slot") == "program":
+            return ConverseResponse(
+                intent=intent,
+                confidence=confidence,
+                entities=entities,
+                template_key=None,
+                slots=merged_slots,
+                current_form="get_document_checklist_form",
+                current_step="await_program",
                 response_text=action_res.get("response_text"),
             )
 

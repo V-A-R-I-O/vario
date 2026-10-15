@@ -374,8 +374,45 @@ ADMISSIONS_NOT_FOUND_VARIANTS = [
     "Unable to locate application {application_id}. Suggested next step: {suggested_next_step}",
 ]
 
+ADMISSIONS_CHECKLIST_PHRASES = [
+    "what documents do I need for btech?",
+    "document checklist for Computer Science",
+    "which certificates are required for mtech?",
+    "checklist of documents for mba",
+    "what do I need to submit for Data Science?",
+    "document requirements for btech",
+    "list of documents needed for admission",
+    "show me the checklist for mba",
+    "what papers are required for mtech admission?",
+    "mandatory documents for Computer Science (B.Tech)",
+    "what documents are required?",
+    "can you show the document checklist?",
+    "what certificates do I need to submit?",
+    "documents required for admission",
+    "admission document requirements",
+    "required documents for btech admission",
+    "checklist for mtech program",
+    "what are the necessary papers for mba?",
+]
+
+ADMISSIONS_CHECKLIST_VARIANTS = [
+    "Here are the required documents for {program}: {items_summary}",
+    "Required documents for {program}: {items_summary}",
+    "For admission to {program}, please prepare: {items_summary}",
+    "Here is the document checklist for {program}: {items_summary}",
+    "The required documents for {program} admission are: {items_summary}",
+]
+
+ADMISSIONS_CHECKLIST_NOT_FOUND_VARIANTS = [
+    "No document checklist found for program '{program}'. Available programs: Computer Science (B.Tech), Data Science (M.Tech), MBA.",
+    "We could not find a checklist for '{program}'. Available programs: Computer Science (B.Tech), Data Science (M.Tech), MBA.",
+    "Program '{program}' was not found. Available programs: Computer Science (B.Tech), Data Science (M.Tech), MBA.",
+    "Checklist unavailable for '{program}'. Supported programs: Computer Science (B.Tech), Data Science (M.Tech), MBA.",
+    "Could not locate document checklist for '{program}'. Available programs: Computer Science (B.Tech), Data Science (M.Tech), MBA.",
+]
+
 async def seed_admissions_data(session: AsyncSession):
-    """Seed Admissions role-pack intents, phrases, and response templates (slice-22)."""
+    """Seed Admissions role-pack intents, phrases, and response templates (slice-22, slice-25)."""
     logger.info("Seeding Admissions role-pack data...")
 
     # 1. Main Intent: check_application_status
@@ -403,10 +440,11 @@ async def seed_admissions_data(session: AsyncSession):
         if not existing.scalar_one_or_none():
             session.add(TrainingPhrase(intent_id=status_intent.intent_id, phrase_text=phrase_text))
 
-    # 2. Stub Intent: get_document_checklist (placeholder for slice-25)
+    # 2. Intent: get_document_checklist (slice-25)
     stmt_chk = select(Intent).where(Intent.name == "get_document_checklist")
     res_chk = await session.execute(stmt_chk)
-    if not res_chk.scalar_one_or_none():
+    chk_intent = res_chk.scalar_one_or_none()
+    if not chk_intent:
         chk_intent = Intent(
             role_pack="admissions",
             name="get_document_checklist",
@@ -415,9 +453,17 @@ async def seed_admissions_data(session: AsyncSession):
         )
         session.add(chk_intent)
         await session.flush()
-        session.add(TrainingPhrase(intent_id=chk_intent.intent_id, phrase_text="what documents do I need for btech?"))
-        session.add(TrainingPhrase(intent_id=chk_intent.intent_id, phrase_text="document checklist for admission"))
-        logger.info("Created stub intent: get_document_checklist")
+        logger.info("Created intent: get_document_checklist")
+
+    # Seed training phrases for get_document_checklist
+    for phrase_text in ADMISSIONS_CHECKLIST_PHRASES:
+        phrase_stmt = select(TrainingPhrase).where(
+            TrainingPhrase.intent_id == chk_intent.intent_id,
+            TrainingPhrase.phrase_text == phrase_text,
+        )
+        existing = await session.execute(phrase_stmt)
+        if not existing.scalar_one_or_none():
+            session.add(TrainingPhrase(intent_id=chk_intent.intent_id, phrase_text=phrase_text))
 
     # 3. Stub Intent: ask_fee_deadline (placeholder for slice-26)
     stmt_fee = select(Intent).where(Intent.name == "ask_fee_deadline")
@@ -490,6 +536,60 @@ async def seed_admissions_data(session: AsyncSession):
         existing_var_nf = (await session.execute(stmt_var_nf)).scalar_one_or_none()
         if not existing_var_nf:
             session.add(ResponseVariant(template_id=tmpl_nf.template_id, variant_text=var_text))
+
+    # 6. Response Template: get_document_checklist_response + 5 variants (slice-25)
+    stmt_tmpl_chk = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "get_document_checklist_response"
+    )
+    res_tmpl_chk = await session.execute(stmt_tmpl_chk)
+    tmpl_chk = res_tmpl_chk.scalar_one_or_none()
+    if not tmpl_chk:
+        tmpl_chk = ResponseTemplate(
+            role_pack="admissions",
+            template_key="get_document_checklist_response",
+            base_text="Here are the required documents for {program}: {items_summary}",
+            allow_rephrasing=True,
+            available_variables=["program", "items_summary"],
+        )
+        session.add(tmpl_chk)
+        await session.flush()
+        logger.info("Created response template: get_document_checklist_response")
+
+    for var_text in ADMISSIONS_CHECKLIST_VARIANTS:
+        stmt_var_chk = select(ResponseVariant).where(
+            ResponseVariant.template_id == tmpl_chk.template_id,
+            ResponseVariant.variant_text == var_text,
+        )
+        existing_var_chk = (await session.execute(stmt_var_chk)).scalar_one_or_none()
+        if not existing_var_chk:
+            session.add(ResponseVariant(template_id=tmpl_chk.template_id, variant_text=var_text))
+
+    # 7. Response Template: get_document_checklist_not_found_response + 5 variants (slice-25)
+    stmt_tmpl_chk_nf = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "get_document_checklist_not_found_response"
+    )
+    res_tmpl_chk_nf = await session.execute(stmt_tmpl_chk_nf)
+    tmpl_chk_nf = res_tmpl_chk_nf.scalar_one_or_none()
+    if not tmpl_chk_nf:
+        tmpl_chk_nf = ResponseTemplate(
+            role_pack="admissions",
+            template_key="get_document_checklist_not_found_response",
+            base_text="No document checklist found for program '{program}'. Available programs: Computer Science (B.Tech), Data Science (M.Tech), MBA.",
+            allow_rephrasing=True,
+            available_variables=["program"],
+        )
+        session.add(tmpl_chk_nf)
+        await session.flush()
+        logger.info("Created response template: get_document_checklist_not_found_response")
+
+    for var_text in ADMISSIONS_CHECKLIST_NOT_FOUND_VARIANTS:
+        stmt_var_chk_nf = select(ResponseVariant).where(
+            ResponseVariant.template_id == tmpl_chk_nf.template_id,
+            ResponseVariant.variant_text == var_text,
+        )
+        existing_var_chk_nf = (await session.execute(stmt_var_chk_nf)).scalar_one_or_none()
+        if not existing_var_chk_nf:
+            session.add(ResponseVariant(template_id=tmpl_chk_nf.template_id, variant_text=var_text))
 
 async def main():
     logger.info(f"Connecting to database at {settings.DATABASE_URL}")

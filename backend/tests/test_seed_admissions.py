@@ -77,7 +77,39 @@ async def test_seed_admissions_data_creates_intents_and_template(db_session):
         assert "{application_id}" in var.variant_text
         assert "{suggested_next_step}" in var.variant_text
 
-    # 6. Verify response renderer renders both templates with slot values
+    # 6. Verify get_document_checklist_response template and 5 variants (slice-25)
+    stmt_tmpl_chk = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "get_document_checklist_response"
+    )
+    tmpl_chk = (await db_session.execute(stmt_tmpl_chk)).scalar_one_or_none()
+    assert tmpl_chk is not None
+    assert tmpl_chk.role_pack == "admissions"
+    assert "{program}" in tmpl_chk.base_text
+    assert "{items_summary}" in tmpl_chk.base_text
+
+    stmt_vars_chk = select(ResponseVariant).where(ResponseVariant.template_id == tmpl_chk.template_id)
+    chk_variants = (await db_session.execute(stmt_vars_chk)).scalars().all()
+    assert len(chk_variants) == 5
+    for var in chk_variants:
+        assert "{program}" in var.variant_text
+        assert "{items_summary}" in var.variant_text
+
+    # 7. Verify get_document_checklist_not_found_response template and 5 variants (slice-25)
+    stmt_tmpl_chk_nf = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "get_document_checklist_not_found_response"
+    )
+    tmpl_chk_nf = (await db_session.execute(stmt_tmpl_chk_nf)).scalar_one_or_none()
+    assert tmpl_chk_nf is not None
+    assert tmpl_chk_nf.role_pack == "admissions"
+    assert "{program}" in tmpl_chk_nf.base_text
+
+    stmt_vars_chk_nf = select(ResponseVariant).where(ResponseVariant.template_id == tmpl_chk_nf.template_id)
+    chk_nf_variants = (await db_session.execute(stmt_vars_chk_nf)).scalars().all()
+    assert len(chk_nf_variants) == 5
+    for var in chk_nf_variants:
+        assert "{program}" in var.variant_text
+
+    # 8. Verify response renderer renders templates with slot values
     rendered_status = await response_renderer.render(
         db_session,
         "check_application_status_response",
@@ -95,6 +127,21 @@ async def test_seed_admissions_data_creates_intents_and_template(db_session):
     assert "APP-9999" in rendered_nf
     assert "contact admissions@org.example.com" in rendered_nf
 
+    rendered_chk = await response_renderer.render(
+        db_session,
+        "get_document_checklist_response",
+        {"program": "Computer Science (B.Tech)", "items_summary": "Class 10 Marksheet, Class 12 Marksheet"},
+    )
+    assert "Computer Science (B.Tech)" in rendered_chk
+    assert "Class 10 Marksheet" in rendered_chk
+
+    rendered_chk_nf = await response_renderer.render(
+        db_session,
+        "get_document_checklist_not_found_response",
+        {"program": "Aerospace Engineering"},
+    )
+    assert "Aerospace Engineering" in rendered_chk_nf
+
 
 @pytest.mark.asyncio
 async def test_seed_admissions_data_is_idempotent(db_session):
@@ -109,13 +156,23 @@ async def test_seed_admissions_data_is_idempotent(db_session):
     intents = (await db_session.execute(stmt)).scalars().all()
     assert len(intents) == 1
 
+    stmt_chk = select(Intent).where(Intent.name == "get_document_checklist")
+    chk_intents = (await db_session.execute(stmt_chk)).scalars().all()
+    assert len(chk_intents) == 1
+
     stmt_tmpl = select(ResponseTemplate).where(
         ResponseTemplate.template_key == "check_application_status_response"
     )
     tmpls = (await db_session.execute(stmt_tmpl)).scalars().all()
     assert len(tmpls) == 1
 
-    stmt_vars = select(ResponseVariant).where(ResponseVariant.template_id == tmpls[0].template_id)
-    vars = (await db_session.execute(stmt_vars)).scalars().all()
-    assert len(vars) == 5
+    stmt_tmpl_chk = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "get_document_checklist_response"
+    )
+    tmpls_chk = (await db_session.execute(stmt_tmpl_chk)).scalars().all()
+    assert len(tmpls_chk) == 1
+
+    stmt_vars_chk = select(ResponseVariant).where(ResponseVariant.template_id == tmpls_chk[0].template_id)
+    vars_chk = (await db_session.execute(stmt_vars_chk)).scalars().all()
+    assert len(vars_chk) == 5
 

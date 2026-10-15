@@ -168,6 +168,80 @@ describe('Admissions components (slice-24)', () => {
   });
 });
 
+describe('Admissions document checklist components (slice-25)', () => {
+  it('renders document checklist as an ordered list with program title (AC-1)', () => {
+    const docs = [
+      'Class 10 Grade Sheet / Birth Certificate',
+      'Class 12 / Higher Secondary Marksheet',
+      'Entrance Exam Scorecard (JEE / CET)',
+      'Transfer Certificate & Conduct Certificate',
+      'Valid Government Photo ID',
+    ];
+
+    render(
+      <BotMessage
+        message={{
+          type: 'list',
+          title: 'Computer Science (B.Tech) Required Documents:',
+          ordered: true,
+          items: docs,
+        }}
+      />
+    );
+
+    expect(screen.getByText('Computer Science (B.Tech) Required Documents:')).toBeInTheDocument();
+    docs.forEach((doc) => {
+      expect(screen.getByText(doc)).toBeInTheDocument();
+    });
+    expect(screen.getByRole('list').tagName).toBe('OL');
+  });
+
+  it('renders slot prompt when no program is specified and triggers option selection (AC-2)', () => {
+    const onSelect = jest.fn();
+    render(
+      <BotMessage
+        message={{
+          type: 'slot_prompt',
+          text: 'Which program would you like the document checklist for? (e.g. B.Tech, M.Tech, MBA)',
+          options: [
+            { label: 'Computer Science (B.Tech)', value: 'Computer Science (B.Tech)' },
+            { label: 'Data Science (M.Tech)', value: 'Data Science (M.Tech)' },
+            { label: 'MBA', value: 'MBA' },
+          ],
+          onSelect,
+        }}
+      />
+    );
+
+    expect(
+      screen.getByText('Which program would you like the document checklist for? (e.g. B.Tech, M.Tech, MBA)')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Computer Science (B.Tech)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Data Science (M.Tech)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'MBA' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'MBA' }));
+    expect(onSelect).toHaveBeenCalledWith('MBA');
+  });
+
+  it('renders graceful not found card for unknown program without crashing (AC-3)', () => {
+    render(
+      <BotMessage
+        message={{
+          type: 'not_found',
+          text: "No document checklist found for program 'Astrophysics'. Available programs: Computer Science (B.Tech), Data Science (M.Tech), MBA.",
+        }}
+      />
+    );
+
+    expect(
+      screen.getByText(
+        "No document checklist found for program 'Astrophysics'. Available programs: Computer Science (B.Tech), Data Science (M.Tech), MBA."
+      )
+    ).toBeInTheDocument();
+  });
+});
+
 describe('HR Leave Balance components (slice-14)', () => {
   it('renders HRLeaveBalanceCard with total, casual, sick, and earned breakdown', () => {
     render(<HRLeaveBalanceCard total={22} casual={4} sick={6} earned={12} />);

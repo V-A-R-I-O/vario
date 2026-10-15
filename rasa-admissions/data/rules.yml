@@ -6,6 +6,11 @@ rules:
       - intent: check_application_status
       - action: action_check_application_status
 
+  - rule: Get document checklist rule
+    steps:
+      - intent: get_document_checklist
+      - action: action_get_document_checklist
+
   - rule: Say greet
     steps:
       - intent: greet

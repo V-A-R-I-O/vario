@@ -215,7 +215,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
   const toThreadRow = (m: ThreadMessage) => {
     if (m.sender === 'user') return <UserMessage key={m.id} text={m.content} />;
 
-    // 1. Not Found warning card (FR-17)
+    // 1. Not Found warning card (FR-17 / slice-25 AC-3)
     const isNotFound =
       m.slots?.found === false ||
       m.slots?.status === 'Not Found' ||
@@ -223,7 +223,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       m.content.toLowerCase().includes('could not be located') ||
       m.content.toLowerCase().includes("couldn't find");
 
-    if (isNotFound && (role === 'admissions' || m.intent_name === 'check_application_status')) {
+    if (isNotFound && (role === 'admissions' || m.intent_name === 'check_application_status' || m.intent_name === 'get_document_checklist')) {
       return (
         <BotMessage
           key={m.id}
@@ -233,6 +233,65 @@ export default function ChatPage({ params }: { params: { id: string } }) {
           }}
         />
       );
+    }
+
+    // 2. Admissions Document Checklist Slot Prompt (slice-25 AC-2)
+    const isChecklistPrompt =
+      (m.intent_name === 'get_document_checklist' && !m.slots?.required_documents) ||
+      m.content.toLowerCase().includes('which program') ||
+      m.content.toLowerCase().includes('document checklist for?');
+
+    if (isChecklistPrompt && (role === 'admissions' || m.intent_name === 'get_document_checklist')) {
+      return (
+        <BotMessage
+          key={m.id}
+          message={{
+            type: 'slot_prompt',
+            text: m.content,
+            options: [
+              { label: 'Computer Science (B.Tech)', value: 'Computer Science (B.Tech)' },
+              { label: 'Data Science (M.Tech)', value: 'Data Science (M.Tech)' },
+              { label: 'MBA', value: 'MBA' },
+            ],
+            onSelect: (val) => {
+              sendMessage(val, 'chat');
+            },
+          }}
+        />
+      );
+    }
+
+    // 3. Admissions Document Checklist List Card (slice-25 AC-1)
+    const isChecklist =
+      (m.intent_name === 'get_document_checklist' && !isNotFound) ||
+      Array.isArray(m.slots?.required_documents);
+
+    if (isChecklist && (role === 'admissions' || m.intent_name === 'get_document_checklist')) {
+      let docs: string[] = [];
+      if (Array.isArray(m.slots?.required_documents) && m.slots.required_documents.length > 0) {
+        docs = m.slots.required_documents;
+      } else {
+        const colonIdx = m.content.indexOf(':');
+        if (colonIdx !== -1) {
+          const listPart = m.content.slice(colonIdx + 1).trim().replace(/\.$/, '');
+          docs = listPart.split(',').map((s) => s.trim()).filter(Boolean);
+        }
+      }
+
+      if (docs.length > 0) {
+        const progName = m.slots?.program || m.entities?.program || 'Admission';
+        return (
+          <BotMessage
+            key={m.id}
+            message={{
+              type: 'list',
+              title: `${progName} Required Documents:`,
+              ordered: true,
+              items: docs,
+            }}
+          />
+        );
+      }
     }
 
     // 2. HR Leave Balance Card (Slice-14)
@@ -280,7 +339,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       }
     }
 
-    // 3. Admissions Status Card (Data Card composition)
+    // 4. Admissions Status Card (Data Card composition, slice-24)
     const isStatusCheck =
       m.intent_name === 'check_application_status' ||
       Boolean(m.slots?.application_id) ||

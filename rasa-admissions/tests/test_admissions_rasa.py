@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server import app, classify_message
-from actions.actions import ActionCheckApplicationStatus
+from actions.actions import ActionCheckApplicationStatus, ActionGetDocumentChecklist
 
 client = TestClient(app)
 
@@ -206,5 +206,158 @@ def test_ambiguous_classification_triggers_fallback():
         assert data["intent"] == "nlu_fallback"
         assert data["template_key"] is None
         assert "didn't quite understand" in data["response_text"]
+
+
+# --- Slice 25: adm-checklist tests (SCRUM-27) ---
+
+def test_action_get_document_checklist_success():
+    # AC-1: Given a program, when applicant asks for checklist, returns list
+    action = ActionGetDocumentChecklist()
+    assert action.name() == "action_get_document_checklist"
+
+    for prog in ["btech", "Computer Science", "mtech", "mba"]:
+        result = action.execute_logic(prog)
+        assert result["template_key"] == "get_document_checklist_response"
+        assert result["missing_slot"] is None
+        assert result["slots"]["found"] is True
+        assert isinstance(result["slots"]["required_documents"], list)
+        assert len(result["slots"]["required_documents"]) >= 3
+        assert result["slots"]["items_summary"]
+        assert result["response_text"] is not None
+
+
+def test_action_get_document_checklist_missing_program():
+    # AC-2: Given no program specified, prompts for program (slot prompt)
+    action = ActionGetDocumentChecklist()
+    for empty_prog in [None, "", "   "]:
+        result = action.execute_logic(empty_prog)
+        assert result["template_key"] is None
+        assert result["missing_slot"] == "program"
+        assert result["current_form"] == "get_document_checklist_form"
+        assert result["current_step"] == "await_program"
+        assert "Which program would you like the document checklist for?" in result["response_text"]
+
+
+def test_action_get_document_checklist_not_found():
+    # AC-3: Given an unknown program, graceful not-found without crashing
+    action = ActionGetDocumentChecklist()
+    result = action.execute_logic("Robotics and Automation")
+    assert result["template_key"] == "get_document_checklist_not_found_response"
+    assert result["slots"]["found"] is False
+    assert result["slots"]["program"] == "robotics and automation"
+    assert isinstance(result["slots"]["available_programs"], list)
+    assert len(result["slots"]["available_programs"]) >= 1
+    assert "No document checklist found" in result["response_text"]
+
+
+def test_classify_document_checklist_intent():
+    utterances = [
+        ("what documents do I need for btech?", "btech"),
+        ("document checklist for Computer Science", "computer science"),
+        ("which certificates are required for mtech?", "mtech"),
+        ("checklist of documents for mba", "mba"),
+        ("what do I need to submit for Data Science?", "data science"),
+    ]
+
+    for utt, expected_prog in utterances:
+        intent, conf, entities = classify_message(utt)
+        assert intent == "get_document_checklist", f"Failed intent for: {utt}"
+        assert conf >= 0.85, f"Confidence too low for: {utt}"
+        assert entities.get("program", "").lower() == expected_prog.lower()
+
+
+def test_converse_webhook_document_checklist_success():
+    # AC-1 & ADR-002: End-to-end webhook call with specified program
+    payload = {
+        "sender": "user-chk-1",
+        "message": "what documents do I need for btech?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "get_document_checklist"
+    assert data["confidence"] >= 0.85
+    assert data["template_key"] == "get_document_checklist_response"
+    assert data["slots"]["found"] is True
+    assert isinstance(data["slots"]["required_documents"], list)
+    assert len(data["slots"]["required_documents"]) >= 3
+    assert data["current_form"] is None
+    assert data["current_step"] is None
+
+
+def test_converse_webhook_document_checklist_slot_prompt():
+    # AC-2: Webhook without program returns slot prompt
+    payload = {
+        "sender": "user-chk-2",
+        "message": "list of documents needed for admission",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "get_document_checklist"
+    assert data["template_key"] is None
+    assert data["current_form"] == "get_document_checklist_form"
+    assert data["current_step"] == "await_program"
+    assert "Which program would you like the document checklist for?" in data["response_text"]
+
+
+def test_converse_webhook_document_checklist_multiturn_flow():
+    # Multi-turn dialogue: Prompt followed by applicant providing program
+    turn1_payload = {
+        "sender": "user-chk-3",
+        "message": "document requirements for admission",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+    res1 = client.post("/webhooks/vario/converse", json=turn1_payload)
+    assert res1.status_code == 200
+    turn1_data = res1.json()
+    assert turn1_data["current_step"] == "await_program"
+
+    # Turn 2: User answers with program
+    turn2_payload = {
+        "sender": "user-chk-3",
+        "message": "Computer Science (B.Tech)",
+        "session": {
+            "current_form": turn1_data["current_form"],
+            "current_step": turn1_data["current_step"],
+            "slots": turn1_data["slots"],
+        },
+    }
+    res2 = client.post("/webhooks/vario/converse", json=turn2_payload)
+    assert res2.status_code == 200
+    turn2_data = res2.json()
+
+    assert turn2_data["intent"] == "get_document_checklist"
+    assert turn2_data["template_key"] == "get_document_checklist_response"
+    assert turn2_data["slots"]["found"] is True
+    assert isinstance(turn2_data["slots"]["required_documents"], list)
+    assert turn2_data["current_form"] is None
+    assert turn2_data["current_step"] is None
+
+
+def test_converse_webhook_document_checklist_not_found():
+    # AC-3: Graceful not-found for unknown program
+    payload = {
+        "sender": "user-chk-4",
+        "message": "what documents do I need for Astrophysics?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "get_document_checklist"
+    assert data["template_key"] == "get_document_checklist_not_found_response"
+    assert data["slots"]["found"] is False
+    assert "available_programs" in data["slots"]
+    assert "No document checklist found" in data["response_text"]
+
 
 
