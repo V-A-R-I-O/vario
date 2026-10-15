@@ -40,6 +40,11 @@ async def test_seed_admissions_data_creates_intents_and_template(db_session):
     fee_intent = (await db_session.execute(stmt_fee)).scalar_one_or_none()
     assert fee_intent is not None
     assert fee_intent.role_pack == "admissions"
+    assert fee_intent.intent_type == "dynamic_workflow"
+
+    stmt_fee_phrases = select(TrainingPhrase).where(TrainingPhrase.intent_id == fee_intent.intent_id)
+    fee_phrases = (await db_session.execute(stmt_fee_phrases)).scalars().all()
+    assert len(fee_phrases) >= 20
 
     # 4. Verify check_application_status_response template and 5 variants
     stmt_tmpl = select(ResponseTemplate).where(
@@ -109,7 +114,24 @@ async def test_seed_admissions_data_creates_intents_and_template(db_session):
     for var in chk_nf_variants:
         assert "{program}" in var.variant_text
 
-    # 8. Verify response renderer renders templates with slot values
+    # 8. Verify ask_fee_deadline_response template and 5 variants (slice-26)
+    stmt_tmpl_fee = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_fee_deadline_response"
+    )
+    tmpl_fee = (await db_session.execute(stmt_tmpl_fee)).scalar_one_or_none()
+    assert tmpl_fee is not None
+    assert tmpl_fee.role_pack == "admissions"
+    assert "{academic_year}" in tmpl_fee.base_text
+    assert "{details}" in tmpl_fee.base_text
+
+    stmt_vars_fee = select(ResponseVariant).where(ResponseVariant.template_id == tmpl_fee.template_id)
+    fee_variants = (await db_session.execute(stmt_vars_fee)).scalars().all()
+    assert len(fee_variants) == 5
+    for var in fee_variants:
+        assert "{academic_year}" in var.variant_text
+        assert "{details}" in var.variant_text
+
+    # 9. Verify response renderer renders templates with slot values
     rendered_status = await response_renderer.render(
         db_session,
         "check_application_status_response",
@@ -142,6 +164,14 @@ async def test_seed_admissions_data_creates_intents_and_template(db_session):
     )
     assert "Aerospace Engineering" in rendered_chk_nf
 
+    rendered_fee = await response_renderer.render(
+        db_session,
+        "ask_fee_deadline_response",
+        {"academic_year": "2026-2027", "details": "Application Fee: ₹1,500"},
+    )
+    assert "2026-2027" in rendered_fee
+    assert "Application Fee: ₹1,500" in rendered_fee
+
 
 @pytest.mark.asyncio
 async def test_seed_admissions_data_is_idempotent(db_session):
@@ -160,6 +190,10 @@ async def test_seed_admissions_data_is_idempotent(db_session):
     chk_intents = (await db_session.execute(stmt_chk)).scalars().all()
     assert len(chk_intents) == 1
 
+    stmt_fee = select(Intent).where(Intent.name == "ask_fee_deadline")
+    fee_intents = (await db_session.execute(stmt_fee)).scalars().all()
+    assert len(fee_intents) == 1
+
     stmt_tmpl = select(ResponseTemplate).where(
         ResponseTemplate.template_key == "check_application_status_response"
     )
@@ -175,4 +209,14 @@ async def test_seed_admissions_data_is_idempotent(db_session):
     stmt_vars_chk = select(ResponseVariant).where(ResponseVariant.template_id == tmpls_chk[0].template_id)
     vars_chk = (await db_session.execute(stmt_vars_chk)).scalars().all()
     assert len(vars_chk) == 5
+
+    stmt_tmpl_fee = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_fee_deadline_response"
+    )
+    tmpls_fee = (await db_session.execute(stmt_tmpl_fee)).scalars().all()
+    assert len(tmpls_fee) == 1
+
+    stmt_vars_fee = select(ResponseVariant).where(ResponseVariant.template_id == tmpls_fee[0].template_id)
+    vars_fee = (await db_session.execute(stmt_vars_fee)).scalars().all()
+    assert len(vars_fee) == 5
 
