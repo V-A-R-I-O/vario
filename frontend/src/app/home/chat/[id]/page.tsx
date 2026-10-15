@@ -512,16 +512,16 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       }
     }
 
+    const onReplay = m.audioBase64
+      ? () => playAudio(m.audioBase64 as string, m.audioContentType)
+      : undefined;
+
     // 5. Admissions Fees & Deadlines Card / FAQ (slice-26, FR-16)
     if (m.intent_name === 'ask_fee_deadline' && (role === 'admissions' || !role)) {
       const fees = Array.isArray(m.slots?.fees) ? m.slots.fees : [];
       const deadlines = Array.isArray(m.slots?.deadlines) ? m.slots.deadlines : [];
       const refundPolicy = m.slots?.refund_policy;
       const academicYear = m.slots?.academic_year || '2026-2027';
-
-      const onReplay = m.audioBase64
-        ? () => playAudio(m.audioBase64 as string, m.audioContentType)
-        : undefined;
 
       const feeMsg = createAdmissionsFeeDeadlineMessage({
         academicYear,
@@ -534,10 +534,29 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       return <BotMessage key={m.id} message={feeMsg} onReplay={onReplay} />;
     }
 
+    // 6. Policy FAQ Answer (Slice-16)
+    const isFaq =
+      m.intent_name === 'ask_policy_faq' ||
+      m.intent_name === 'ask_wfh_policy' ||
+      Boolean(m.intent_name && m.intent_name.startsWith('ask_') && (m.intent_name.includes('policy') || m.intent_name.includes('faq'))) ||
+      m.slots?.is_faq === true ||
+      m.slots?.intent_type === 'static_faq' ||
+      (role === 'hr' && /\b(?:wfh|work from home|remote work|leave policy|maternity policy|bereavement policy|paternity policy)\b/i.test(m.content));
+
+    if (isFaq) {
+      return (
+        <BotMessage
+          key={m.id}
+          message={{
+            type: 'faq_answer',
+            text: m.content,
+          }}
+          onReplay={onReplay}
+        />
+      );
+    }
+
     const data: BotMessageData = { type: 'plain_text', text: m.content };
-    const onReplay = m.audioBase64
-      ? () => playAudio(m.audioBase64 as string, m.audioContentType)
-      : undefined;
     return <BotMessage key={m.id} message={data} onReplay={onReplay} />;
   };
 

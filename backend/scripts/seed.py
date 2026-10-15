@@ -153,21 +153,81 @@ async def seed_hr_data(session: AsyncSession):
         if not existing.scalar_one_or_none():
             session.add(TrainingPhrase(intent_id=submit_intent.intent_id, phrase_text=phrase_text))
 
-    # 4. Stub Intent: ask_policy_faq (placeholder for slice-16)
+    # 4. Intent: ask_policy_faq (slice-16)
     stmt_faq = select(Intent).where(Intent.name == "ask_policy_faq")
     res_faq = await session.execute(stmt_faq)
-    if not res_faq.scalar_one_or_none():
-        faq_stub = Intent(
+    faq_intent = res_faq.scalar_one_or_none()
+    if not faq_intent:
+        faq_intent = Intent(
             role_pack="hr",
             name="ask_policy_faq",
             intent_type="static_faq",
             needs_retrain=False,
         )
-        session.add(faq_stub)
+        session.add(faq_intent)
         await session.flush()
-        session.add(TrainingPhrase(intent_id=faq_stub.intent_id, phrase_text="what is the company leave policy?"))
-        session.add(TrainingPhrase(intent_id=faq_stub.intent_id, phrase_text="how many sick days are allowed per year?"))
-        logger.info("Created stub intent: ask_policy_faq")
+        logger.info("Created intent: ask_policy_faq")
+
+    faq_phrases = [
+        "what is the company leave policy?",
+        "how many sick days are allowed per year?",
+        "what is the policy for maternity leave?",
+        "can I carry forward unused leaves to next year?",
+        "what are the rules for taking sick leave?",
+        "how many days of paternity leave do I get?",
+        "tell me about the bereavement leave guidelines",
+        "what is the leave carry forward policy?",
+        "how many annual leaves are granted per year?",
+        "how does maternity leave work?",
+        "rules for casual leave and sick leave",
+        "company leave policy and rules",
+    ]
+    for phrase_text in faq_phrases:
+        phrase_stmt = select(TrainingPhrase).where(
+            TrainingPhrase.intent_id == faq_intent.intent_id,
+            TrainingPhrase.phrase_text == phrase_text,
+        )
+        existing = await session.execute(phrase_stmt)
+        if not existing.scalar_one_or_none():
+            session.add(TrainingPhrase(intent_id=faq_intent.intent_id, phrase_text=phrase_text))
+
+    # 4b. Intent: ask_wfh_policy (slice-16)
+    stmt_wfh = select(Intent).where(Intent.name == "ask_wfh_policy")
+    res_wfh = await session.execute(stmt_wfh)
+    wfh_intent = res_wfh.scalar_one_or_none()
+    if not wfh_intent:
+        wfh_intent = Intent(
+            role_pack="hr",
+            name="ask_wfh_policy",
+            intent_type="static_faq",
+            needs_retrain=False,
+        )
+        session.add(wfh_intent)
+        await session.flush()
+        logger.info("Created intent: ask_wfh_policy")
+
+    wfh_phrases = [
+        "what is the WFH policy?",
+        "what's the WFH policy?",
+        "what is the work from home policy?",
+        "can I work from home?",
+        "how many days can I work remotely?",
+        "tell me about the remote work policy",
+        "work from home policy",
+        "are we allowed to work from home?",
+        "remote work guidelines",
+        "guidelines for working from home",
+        "do we have a work from home policy?",
+        "how does work from home work here?",
+    ]
+    for phrase_text in wfh_phrases:
+        phrase_stmt = select(TrainingPhrase).where(
+            TrainingPhrase.intent_id == wfh_intent.intent_id,
+            TrainingPhrase.phrase_text == phrase_text,
+        )
+        existing = await session.execute(phrase_stmt)
+        if not existing.scalar_one_or_none():
+            session.add(TrainingPhrase(intent_id=wfh_intent.intent_id, phrase_text=phrase_text))
 
     # 5. Response Template: check_leave_balance_response
     stmt_tmpl = select(ResponseTemplate).where(
@@ -307,6 +367,74 @@ async def seed_hr_data(session: AsyncSession):
         session.add(cancelled_tmpl)
         await session.flush()
         logger.info("Created response template: submit_leave_cancelled")
+
+    # 11. Response Template: ask_policy_faq_response (slice-16)
+    stmt_policy_tmpl = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_policy_faq_response"
+    )
+    res_policy_tmpl = await session.execute(stmt_policy_tmpl)
+    policy_tmpl = res_policy_tmpl.scalar_one_or_none()
+    if not policy_tmpl:
+        policy_tmpl = ResponseTemplate(
+            role_pack="hr",
+            template_key="ask_policy_faq_response",
+            base_text="Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days.",
+            allow_rephrasing=True,
+            available_variables=[],
+        )
+        session.add(policy_tmpl)
+        await session.flush()
+        logger.info("Created response template: ask_policy_faq_response")
+
+    policy_variants = [
+        "Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days.",
+        "Employees receive 20 annual, 10 sick, and 5 casual leave days annually. Up to 5 unused annual leave days roll over.",
+        "The leave policy provides 20 annual, 10 sick, and 5 casual days per calendar year, with a maximum of 5 annual days carried forward.",
+        "Under our leave policy, you get 20 annual, 10 sick, and 5 casual leave days per year. Unused annual leave carries over up to 5 days.",
+        "Standard leave allotment is 20 annual, 10 sick, and 5 casual days per year. Up to 5 unused annual leave days can be carried forward.",
+    ]
+    for variant_text in policy_variants:
+        variant_stmt = select(ResponseVariant).where(
+            ResponseVariant.template_id == policy_tmpl.template_id,
+            ResponseVariant.variant_text == variant_text,
+        )
+        existing_variant = await session.execute(variant_stmt)
+        if not existing_variant.scalar_one_or_none():
+            session.add(ResponseVariant(template_id=policy_tmpl.template_id, variant_text=variant_text))
+
+    # 12. Response Template: ask_wfh_policy_response (slice-16)
+    stmt_wfh_tmpl = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_wfh_policy_response"
+    )
+    res_wfh_tmpl = await session.execute(stmt_wfh_tmpl)
+    wfh_tmpl = res_wfh_tmpl.scalar_one_or_none()
+    if not wfh_tmpl:
+        wfh_tmpl = ResponseTemplate(
+            role_pack="hr",
+            template_key="ask_wfh_policy_response",
+            base_text="Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location.",
+            allow_rephrasing=True,
+            available_variables=[],
+        )
+        session.add(wfh_tmpl)
+        await session.flush()
+        logger.info("Created response template: ask_wfh_policy_response")
+
+    wfh_variants = [
+        "Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location.",
+        "Our WFH policy allows working from home up to 3 days per week with manager approval. Core hours are 10am to 4pm.",
+        "You are eligible to work from home up to 3 days each week, approved by your manager. Core hours remain 10:00 AM – 4:00 PM.",
+        "Remote work is permitted up to 3 days per week with managerial consent, adhering to core hours (10am–4pm).",
+        "Under company policy, you may work remotely up to 3 days per week upon manager approval. Core hours apply.",
+    ]
+    for variant_text in wfh_variants:
+        variant_stmt = select(ResponseVariant).where(
+            ResponseVariant.template_id == wfh_tmpl.template_id,
+            ResponseVariant.variant_text == variant_text,
+        )
+        existing_variant = await session.execute(variant_stmt)
+        if not existing_variant.scalar_one_or_none():
+            session.add(ResponseVariant(template_id=wfh_tmpl.template_id, variant_text=variant_text))
 
 async def seed_it_data(session: AsyncSession):
     """Placeholder for IT role-pack seed data (slice-04)."""

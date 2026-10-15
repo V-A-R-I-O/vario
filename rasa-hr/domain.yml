@@ -16,6 +16,7 @@ intents:
   - ask_policy_faq:
       use_entities:
         - policy_topic
+  - ask_wfh_policy
   - nlu_fallback
   - greet
   - goodbye
@@ -102,6 +103,12 @@ responses:
 
   utter_default_fallback:
     - text: "I'm sorry, I didn't quite catch that. You can ask me about your leave balance (e.g. 'what is my leave balance?'), leave application status, or HR policies."
+
+  utter_ask_policy_faq:
+    - text: "Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days."
+
+  utter_ask_wfh_policy:
+    - text: "Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location."
 
 actions:
   - action_check_leave_balance

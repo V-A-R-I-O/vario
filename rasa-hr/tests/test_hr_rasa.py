@@ -596,3 +596,115 @@ def test_converse_webhook_leave_request_multi_turn():
     assert data["audit_event"] is not None
     assert data["audit_event"]["action_type"] == "leave_submitted"
 
+
+# ============================================================================
+# Slice 16: HR Policy FAQ Tests
+# ============================================================================
+
+def test_classify_wfh_policy_intent():
+    """AC 1: WFH policy questions classify as ask_wfh_policy with high confidence"""
+    utterances = [
+        "what is the WFH policy?",
+        "what's the WFH policy?",
+        "what is the work from home policy?",
+        "can I work from home?",
+        "how many days can I work remotely?",
+        "tell me about the remote work policy",
+        "work from home policy",
+        "are we allowed to work from home?",
+        "remote work guidelines",
+    ]
+    for utt in utterances:
+        intent, conf, _ = classify_message(utt)
+        assert intent == "ask_wfh_policy", f"Failed on: {utt} (got {intent})"
+        assert conf >= 0.85, f"Confidence too low ({conf}) for: {utt}"
+
+
+def test_converse_webhook_wfh_policy():
+    """AC 1: Given a WFH policy question, bot returns WFH policy answer and template key via converse"""
+    payload = {
+        "sender": "user-101",
+        "message": "What's the WFH policy?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["intent"] == "ask_wfh_policy"
+    assert data["confidence"] >= 0.85
+    assert data["template_key"] == "ask_wfh_policy_response"
+    assert "3 days per week" in data["response_text"]
+    assert data["slots"].get("is_faq") is True
+    assert data["slots"].get("intent_type") == "static_faq"
+
+
+def test_converse_webhook_policy_faq_with_topic():
+    """AC 1: Given a maternity/paternity policy question, bot returns specific policy answer"""
+    # Maternity
+    res = client.post("/webhooks/vario/converse", json={
+        "sender": "user-101",
+        "message": "What is the policy for maternity leave?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["intent"] == "ask_policy_faq"
+    assert data["template_key"] == "ask_policy_faq_response"
+    assert "12 weeks" in data["response_text"]
+    assert data["slots"].get("policy_topic") == "maternity"
+
+    # Paternity
+    res = client.post("/webhooks/vario/converse", json={
+        "sender": "user-101",
+        "message": "How many days of paternity leave do I get?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["intent"] == "ask_policy_faq"
+    assert "2 weeks" in data["response_text"]
+
+    # Bereavement
+    res = client.post("/webhooks/vario/converse", json={
+        "sender": "user-101",
+        "message": "tell me about the bereavement leave guidelines",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["intent"] == "ask_policy_faq"
+    assert "3 days" in data["response_text"]
+
+
+def test_converse_webhook_policy_faq_default():
+    """AC 1: Given general leave policy query, bot returns default leave policy"""
+    res = client.post("/webhooks/vario/converse", json={
+        "sender": "user-101",
+        "message": "what is the company leave policy?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    })
+    assert res.status_code == 200
+    data = res.json()
+    assert data["intent"] == "ask_policy_faq"
+    assert data["template_key"] == "ask_policy_faq_response"
+    assert "20 annual leaves" in data["response_text"]
+
+
+def test_policy_faq_low_confidence_fallback():
+    """AC 3: Conflicting or vague policy question triggers low confidence fallback"""
+    confusing_queries = [
+        "what is the wfh balance apply status leave policy?",
+        "leave help",
+    ]
+    for q in confusing_queries:
+        res = client.post("/webhooks/vario/converse", json={
+            "sender": "user-101",
+            "message": q,
+            "session": {"current_form": None, "current_step": None, "slots": {}},
+        })
+        assert res.status_code == 200
+        data = res.json()
+        assert data["confidence"] < 0.4 or data["intent"] == "nlu_fallback"
+        assert "didn't quite understand" in data["response_text"]
+
+
