@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server import app, classify_message
-from actions.actions import ActionCheckApplicationStatus, ActionGetDocumentChecklist
+from actions.actions import ActionCheckApplicationStatus, ActionGetDocumentChecklist, ActionAskFeeDeadline
 
 client = TestClient(app)
 
@@ -358,6 +358,175 @@ def test_converse_webhook_document_checklist_not_found():
     assert data["slots"]["found"] is False
     assert "available_programs" in data["slots"]
     assert "No document checklist found" in data["response_text"]
+
+
+# --- Slice 26: adm-fee-deadline tests (SCRUM-38) ---
+
+def test_action_ask_fee_deadline_tuition_fee():
+    # AC-1: Given a fee question, return fee from calendar
+    action = ActionAskFeeDeadline()
+    assert action.name() == "action_ask_fee_deadline"
+
+    test_cases = [
+        ("how much is the tuition fee for B.Tech?", "3,20,000", "Computer Science"),
+        ("tuition fee for MBA program", "4,50,000", "MBA"),
+        ("what is the application fee?", "1,500", "Application Fee"),
+        ("how much is the hostel fee?", "75,000", "Hostel Fee"),
+    ]
+
+    for q, expected_amt, expected_item in test_cases:
+        result = action.execute_logic(q)
+        assert result["template_key"] == "ask_fee_deadline_response"
+        assert result["slots"]["academic_year"] == "2026-2027"
+        assert expected_amt in result["slots"]["details"]
+        assert expected_amt in result["response_text"]
+        assert any(expected_item in f["item"] for f in result["slots"].get("fees", []))
+
+
+def test_action_ask_fee_deadline_submission_deadline():
+    # AC-2: Given a deadline question, return relevant deadline from calendar
+    action = ActionAskFeeDeadline()
+
+    test_cases = [
+        ("what is the last date to submit the application?", "November 30, 2026", "Submission Deadline"),
+        ("when is the document verification deadline?", "December 10, 2026", "Document Verification"),
+        ("when does the merit list come out?", "December 18, 2026", "Merit List"),
+        ("what is the second merit list deadline?", "December 28, 2026", "Second Merit"),
+        ("when do classes commence?", "January 15, 2027", "Orientation"),
+    ]
+
+    for q, expected_date, expected_milestone in test_cases:
+        result = action.execute_logic(q)
+        assert result["template_key"] == "ask_fee_deadline_response"
+        assert result["slots"]["academic_year"] == "2026-2027"
+        assert expected_date in result["slots"]["details"]
+        assert expected_date in result["response_text"]
+        assert any(expected_milestone in d["milestone"] for d in result["slots"].get("deadlines", []))
+
+
+def test_action_ask_fee_deadline_dynamic_calendar_update():
+    # AC-3: Given a change to calendar (in Mock Admissions), answers update accordingly
+    action = ActionAskFeeDeadline()
+    from actions.actions import OFFLINE_CALENDAR
+
+    # Mutate offline calendar / test calendar data
+    original_deadlines = list(OFFLINE_CALENDAR["deadlines"])
+    try:
+        OFFLINE_CALENDAR["deadlines"] = original_deadlines + [
+            {"milestone": "Spot Round Registration Deadline", "date": "February 1, 2027"}
+        ]
+        result = action.execute_logic("when is spot round registration deadline?")
+        assert result["template_key"] == "ask_fee_deadline_response"
+        assert "February 1, 2027" in result["slots"]["details"]
+        assert "Spot Round Registration Deadline" in str(result["slots"].get("deadlines", []))
+    finally:
+        OFFLINE_CALENDAR["deadlines"] = original_deadlines
+
+
+def test_action_ask_fee_deadline_clarification_on_vague_query():
+    # AC-4: Given a low-confidence or vague question, ask for clarification rather than guessing
+    action = ActionAskFeeDeadline()
+    for vague_q in ["when?", "how much?", "fees?", "deadline?", "when", "fee"]:
+        result = action.execute_logic(vague_q)
+        assert result["needs_clarification"] is True
+        assert result["template_key"] is None
+        assert "clarify whether you are asking about tuition fees" in result["response_text"]
+
+
+def test_classify_fee_deadline_intents():
+    fee_deadline_queries = [
+        "when is the last date to pay fees?",
+        "what are the admission deadlines?",
+        "how much is the tuition fee for B.Tech?",
+        "what is the last date to submit the application?",
+        "admission fee structure and payment dates",
+        "when does the merit list come out?",
+        "what is the refund policy for admission fees?",
+        "when is the document verification deadline?",
+        "tuition fee for MBA program",
+        "what is the application fee?",
+        "how much is the hostel fee?",
+        "what are the fee deadlines?",
+    ]
+
+    for q in fee_deadline_queries:
+        intent, conf, _ = classify_message(q)
+        assert intent == "ask_fee_deadline", f"Failed for query: {q}"
+        assert conf >= 0.80, f"Low confidence for: {q}"
+
+
+def test_converse_webhook_fee_query_success():
+    # AC-1 & ADR-002: Converse webhook roundtrip for fee inquiry
+    payload = {
+        "sender": "user-fee-1",
+        "message": "how much is the tuition fee for B.Tech?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "ask_fee_deadline"
+    assert data["confidence"] >= 0.85
+    assert data["template_key"] == "ask_fee_deadline_response"
+    assert data["slots"]["academic_year"] == "2026-2027"
+    assert "3,20,000" in data["slots"]["details"]
+    assert "3,20,000" in data["response_text"]
+    assert data["current_form"] is None
+
+
+def test_converse_webhook_deadline_query_success():
+    # AC-2 & ADR-002: Converse webhook roundtrip for deadline inquiry
+    payload = {
+        "sender": "user-dl-1",
+        "message": "what is the last date to submit the application?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "ask_fee_deadline"
+    assert data["confidence"] >= 0.85
+    assert data["template_key"] == "ask_fee_deadline_response"
+    assert data["slots"]["academic_year"] == "2026-2027"
+    assert "November 30, 2026" in data["slots"]["details"]
+    assert "November 30, 2026" in data["response_text"]
+
+
+def test_converse_webhook_refund_policy_success():
+    payload = {
+        "sender": "user-ref-1",
+        "message": "what is the refund policy for admission fees?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "ask_fee_deadline"
+    assert data["template_key"] == "ask_fee_deadline_response"
+    assert "100% refund" in data["slots"]["details"]
+    assert "refund_policy" in data["slots"]
+
+
+def test_converse_webhook_vague_fee_query_requests_clarification():
+    # AC-4: Vague query in converse endpoint requests clarification
+    payload = {
+        "sender": "user-vague-1",
+        "message": "when?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["template_key"] is None
+    assert "clarify whether you are asking about tuition fees" in data["response_text"]
 
 
 

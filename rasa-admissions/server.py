@@ -6,7 +6,7 @@ import yaml
 from fastapi import FastAPI, Request, status
 from pydantic import BaseModel
 
-from actions.actions import ActionCheckApplicationStatus, ActionGetDocumentChecklist
+from actions.actions import ActionCheckApplicationStatus, ActionGetDocumentChecklist, ActionAskFeeDeadline
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rasa_admissions_server")
@@ -19,6 +19,7 @@ app = FastAPI(
 
 action_handler = ActionCheckApplicationStatus()
 checklist_action_handler = ActionGetDocumentChecklist()
+fee_deadline_action_handler = ActionAskFeeDeadline()
 
 # Regex for application IDs (e.g. APP-1001)
 APP_ID_REGEX = re.compile(r"\b(APP-\d{4})\b", re.IGNORECASE)
@@ -28,7 +29,7 @@ PROGRAM_REGEX = re.compile(r"\b(b\.?tech|m\.?tech|mba|computer science|data scie
 STOPWORDS = {
     "what", "is", "the", "in", "today", "for", "to", "of", "a", "an", "can",
     "you", "i", "my", "me", "do", "does", "tell", "about", "please", "with",
-    "would", "could", "like"
+    "would", "could", "like", "and", "or", "also", "any", "some"
 }
 
 # Configured FallbackClassifier thresholds from config.yml
@@ -76,6 +77,23 @@ def load_nlu_training_examples() -> Dict[str, List[str]]:
                 "when is the last date to pay fees",
                 "what are the admission deadlines",
                 "how much is the tuition fee for b.tech",
+                "what is the last date to submit the application",
+                "admission fee structure and payment dates",
+                "when does the merit list come out",
+                "what is the refund policy for admission fees",
+                "when is the document verification deadline",
+                "tuition fee for mba program",
+                "what is the application fee",
+                "how much is the hostel fee",
+                "tuition fee for data science mtech",
+                "what are the fee deadlines",
+                "last date for admission application",
+                "important dates and fees for admission",
+                "what is the fee refund policy",
+                "when do classes commence",
+                "orientation date and admission timeline",
+                "what is the second merit list deadline",
+                "how much is the caution deposit",
             ],
             "greet": ["hello", "hi", "hey", "good morning"],
             "goodbye": ["bye", "goodbye", "see you later"],
@@ -295,6 +313,36 @@ async def converse(req: ConverseRequest) -> ConverseResponse:
                 slots=merged_slots,
                 current_form="get_document_checklist_form",
                 current_step="await_program",
+                response_text=action_res.get("response_text"),
+            )
+
+        return ConverseResponse(
+            intent=intent,
+            confidence=confidence,
+            entities=entities,
+            template_key=action_res.get("template_key"),
+            slots=merged_slots,
+            current_form=None,
+            current_step=None,
+            response_text=action_res.get("response_text"),
+        )
+
+    # Fee and deadline inquiry (slice-26)
+    if intent == "ask_fee_deadline":
+        action_res = await fee_deadline_action_handler.execute_logic_async(message)
+        merged_slots = dict(session.slots)
+        merged_slots.update(action_res.get("slots", {}))
+
+        # If clarification is requested (AC-4)
+        if action_res.get("needs_clarification"):
+            return ConverseResponse(
+                intent=intent,
+                confidence=confidence,
+                entities=entities,
+                template_key=None,
+                slots=merged_slots,
+                current_form=None,
+                current_step=None,
                 response_text=action_res.get("response_text"),
             )
 

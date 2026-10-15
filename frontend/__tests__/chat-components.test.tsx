@@ -4,6 +4,8 @@ import {
   type BotMessageData,
   AdmissionsStatusCard,
   AdmissionsNotFoundCard,
+  AdmissionsFeeDeadlineCard,
+  createAdmissionsFeeDeadlineMessage,
   HRLeaveBalanceCard,
   createHRLeaveBalanceMessage,
 } from '../src/components/chat';
@@ -262,6 +264,65 @@ describe('HR Leave Balance components (slice-14)', () => {
     expect(screen.getByText('Your Leave Balance')).toBeInTheDocument();
     expect(screen.getByText('22 days')).toBeInTheDocument();
     expect(screen.getByText('4 days')).toBeInTheDocument();
+  });
+});
+
+describe('Admissions Fee and Deadline components (slice-26)', () => {
+  it('renders AdmissionsFeeDeadlineCard with fee items', () => {
+    render(
+      <AdmissionsFeeDeadlineCard
+        academicYear="2026-2027"
+        fees={[
+          { item: 'Computer Science (B.Tech) Annual Tuition', amount: '₹3,20,000' },
+          { item: 'Application Fee', amount: '₹1,500' },
+        ]}
+      />
+    );
+    expect(screen.getByText('Admissions Fee Schedule (2026-2027)')).toBeInTheDocument();
+    expect(screen.getByText('Computer Science (B.Tech) Annual Tuition')).toBeInTheDocument();
+    expect(screen.getByText('₹3,20,000')).toBeInTheDocument();
+    expect(screen.getByText('Application Fee')).toBeInTheDocument();
+    expect(screen.getByText('₹1,500')).toBeInTheDocument();
+  });
+
+  it('renders AdmissionsFeeDeadlineCard with deadline milestones', () => {
+    render(
+      <AdmissionsFeeDeadlineCard
+        academicYear="2026-2027"
+        deadlines={[
+          { milestone: 'Regular Application Submission Deadline', date: 'November 30, 2026' },
+          { milestone: 'First Merit List', date: 'December 18, 2026' },
+        ]}
+      />
+    );
+    expect(screen.getByText('Admissions Important Deadlines (2026-2027)')).toBeInTheDocument();
+    expect(screen.getByText('Regular Application Submission Deadline')).toBeInTheDocument();
+    expect(screen.getByText('November 30, 2026')).toBeInTheDocument();
+    expect(screen.getByText('First Merit List')).toBeInTheDocument();
+    expect(screen.getByText('December 18, 2026')).toBeInTheDocument();
+  });
+
+  it('renders AdmissionsFeeDeadlineCard with refund policy as faq_answer', () => {
+    render(
+      <AdmissionsFeeDeadlineCard
+        academicYear="2026-2027"
+        refundPolicy="100% refund minus processing fee if requested 15 days before classes start."
+      />
+    );
+    expect(
+      screen.getByText('Refund Policy (2026-2027): 100% refund minus processing fee if requested 15 days before classes start.')
+    ).toBeInTheDocument();
+  });
+
+  it('renders BotMessage with createAdmissionsFeeDeadlineMessage', () => {
+    const msg = createAdmissionsFeeDeadlineMessage({
+      academicYear: '2026-2027',
+      fees: [{ item: 'MBA Tuition', amount: '₹4,50,000' }],
+    });
+    render(<BotMessage message={msg} />);
+    expect(screen.getByText('Admissions Fee Schedule (2026-2027)')).toBeInTheDocument();
+    expect(screen.getByText('MBA Tuition')).toBeInTheDocument();
+    expect(screen.getByText('₹4,50,000')).toBeInTheDocument();
   });
 });
 

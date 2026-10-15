@@ -539,8 +539,39 @@ ADMISSIONS_CHECKLIST_NOT_FOUND_VARIANTS = [
     "Could not locate document checklist for '{program}'. Available programs: Computer Science (B.Tech), Data Science (M.Tech), MBA.",
 ]
 
+ADMISSIONS_FEE_DEADLINE_PHRASES = [
+    "when is the last date to pay fees?",
+    "what are the admission deadlines?",
+    "how much is the tuition fee for B.Tech?",
+    "what is the last date to submit the application?",
+    "admission fee structure and payment dates",
+    "when does the merit list come out?",
+    "what is the refund policy for admission fees?",
+    "when is the document verification deadline?",
+    "tuition fee for MBA program",
+    "what is the application fee?",
+    "how much is the hostel fee?",
+    "tuition fee for Data Science MTech",
+    "what are the fee deadlines?",
+    "last date for admission application",
+    "important dates and fees for admission",
+    "what is the fee refund policy?",
+    "when do classes commence?",
+    "orientation date and admission timeline",
+    "what is the second merit list deadline?",
+    "how much is the caution deposit?",
+]
+
+ADMISSIONS_FEE_DEADLINE_VARIANTS = [
+    "According to the {academic_year} admissions calendar: {details}",
+    "For the {academic_year} academic year: {details}",
+    "Here are the admissions calendar details ({academic_year}): {details}",
+    "Based on the official {academic_year} admissions calendar: {details}",
+    "Per the {academic_year} admissions schedule: {details}",
+]
+
 async def seed_admissions_data(session: AsyncSession):
-    """Seed Admissions role-pack intents, phrases, and response templates (slice-22, slice-25)."""
+    """Seed Admissions role-pack intents, phrases, and response templates (slice-22, slice-25, slice-26)."""
     logger.info("Seeding Admissions role-pack data...")
 
     # 1. Main Intent: check_application_status
@@ -593,21 +624,32 @@ async def seed_admissions_data(session: AsyncSession):
         if not existing.scalar_one_or_none():
             session.add(TrainingPhrase(intent_id=chk_intent.intent_id, phrase_text=phrase_text))
 
-    # 3. Stub Intent: ask_fee_deadline (placeholder for slice-26)
+    # 3. Intent: ask_fee_deadline (slice-26)
     stmt_fee = select(Intent).where(Intent.name == "ask_fee_deadline")
     res_fee = await session.execute(stmt_fee)
-    if not res_fee.scalar_one_or_none():
+    fee_intent = res_fee.scalar_one_or_none()
+    if not fee_intent:
         fee_intent = Intent(
             role_pack="admissions",
             name="ask_fee_deadline",
-            intent_type="static_faq",
+            intent_type="dynamic_workflow",
             needs_retrain=False,
         )
         session.add(fee_intent)
         await session.flush()
-        session.add(TrainingPhrase(intent_id=fee_intent.intent_id, phrase_text="when is the deadline to pay fees?"))
-        session.add(TrainingPhrase(intent_id=fee_intent.intent_id, phrase_text="what is the tuition fee for BTech?"))
-        logger.info("Created stub intent: ask_fee_deadline")
+        logger.info("Created intent: ask_fee_deadline")
+    else:
+        fee_intent.intent_type = "dynamic_workflow"
+
+    # Seed training phrases for ask_fee_deadline
+    for phrase_text in ADMISSIONS_FEE_DEADLINE_PHRASES:
+        phrase_stmt = select(TrainingPhrase).where(
+            TrainingPhrase.intent_id == fee_intent.intent_id,
+            TrainingPhrase.phrase_text == phrase_text,
+        )
+        existing = await session.execute(phrase_stmt)
+        if not existing.scalar_one_or_none():
+            session.add(TrainingPhrase(intent_id=fee_intent.intent_id, phrase_text=phrase_text))
 
     # 4. Response Template: check_application_status_response + 5 variants
     stmt_tmpl = select(ResponseTemplate).where(
@@ -718,6 +760,33 @@ async def seed_admissions_data(session: AsyncSession):
         existing_var_chk_nf = (await session.execute(stmt_var_chk_nf)).scalar_one_or_none()
         if not existing_var_chk_nf:
             session.add(ResponseVariant(template_id=tmpl_chk_nf.template_id, variant_text=var_text))
+
+    # 8. Response Template: ask_fee_deadline_response + 5 variants (slice-26)
+    stmt_tmpl_fee = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_fee_deadline_response"
+    )
+    res_tmpl_fee = await session.execute(stmt_tmpl_fee)
+    tmpl_fee = res_tmpl_fee.scalar_one_or_none()
+    if not tmpl_fee:
+        tmpl_fee = ResponseTemplate(
+            role_pack="admissions",
+            template_key="ask_fee_deadline_response",
+            base_text="According to the {academic_year} admissions calendar: {details}",
+            allow_rephrasing=True,
+            available_variables=["academic_year", "details"],
+        )
+        session.add(tmpl_fee)
+        await session.flush()
+        logger.info("Created response template: ask_fee_deadline_response")
+
+    for var_text in ADMISSIONS_FEE_DEADLINE_VARIANTS:
+        stmt_var_fee = select(ResponseVariant).where(
+            ResponseVariant.template_id == tmpl_fee.template_id,
+            ResponseVariant.variant_text == var_text,
+        )
+        existing_var_fee = (await session.execute(stmt_var_fee)).scalar_one_or_none()
+        if not existing_var_fee:
+            session.add(ResponseVariant(template_id=tmpl_fee.template_id, variant_text=var_text))
 
 async def main():
     logger.info(f"Connecting to database at {settings.DATABASE_URL}")

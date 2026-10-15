@@ -70,6 +70,16 @@ nlu:
       - when is the document verification deadline?
       - tuition fee for MBA program
       - what is the application fee?
+      - how much is the hostel fee?
+      - tuition fee for Data Science MTech
+      - what are the fee deadlines?
+      - last date for admission application
+      - important dates and fees for admission
+      - what is the fee refund policy?
+      - when do classes commence?
+      - orientation date and admission timeline
+      - what is the second merit list deadline?
+      - how much is the caution deposit?
 
   - intent: nlu_fallback
     examples: |

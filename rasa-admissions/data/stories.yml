@@ -33,6 +33,16 @@ stories:
           - program: "mba"
       - action: action_get_document_checklist
 
+  - story: Direct fee inquiry
+    steps:
+      - intent: ask_fee_deadline
+      - action: action_ask_fee_deadline
+
+  - story: Direct deadline inquiry
+    steps:
+      - intent: ask_fee_deadline
+      - action: action_ask_fee_deadline
+
   - story: Goodbye flow
     steps:
       - intent: goodbye
