@@ -115,3 +115,9 @@ def get_document_checklist(program: str) -> Dict[str, Any]:
 @app.get("/calendar")
 def get_calendar() -> Dict[str, Any]:
     return SEED_CALENDAR
+
+
+@app.put("/calendar")
+def update_calendar(payload: Dict[str, Any]) -> Dict[str, Any]:
+    SEED_CALENDAR.update(payload)
+    return SEED_CALENDAR

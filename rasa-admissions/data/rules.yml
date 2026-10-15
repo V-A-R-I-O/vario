@@ -11,6 +11,11 @@ rules:
       - intent: get_document_checklist
       - action: action_get_document_checklist
 
+  - rule: Ask fee deadline rule
+    steps:
+      - intent: ask_fee_deadline
+      - action: action_ask_fee_deadline
+
   - rule: Say greet
     steps:
       - intent: greet

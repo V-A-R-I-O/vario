@@ -99,6 +99,24 @@ def test_get_calendar_success():
     assert "refund_policy" in data
 
 
+def test_update_calendar_success():
+    # AC 3: Given a change to calendar, answers update accordingly
+    original = client.get("/calendar").json()
+    try:
+        updated_deadlines = list(original["deadlines"]) + [
+            {"milestone": "Extended Late Application Deadline", "date": "January 5, 2027"}
+        ]
+        res = client.put("/calendar", json={"deadlines": updated_deadlines})
+        assert res.status_code == 200
+        assert any(d["milestone"] == "Extended Late Application Deadline" for d in res.json()["deadlines"])
+
+        # Check GET reflects the change
+        get_res = client.get("/calendar")
+        assert any(d["milestone"] == "Extended Late Application Deadline" for d in get_res.json()["deadlines"])
+    finally:
+        client.put("/calendar", json=original)
+
+
 def test_get_document_checklist_empty_or_single_char_rejected():
     # Regression test: empty or single-character queries must return 404
     for short_query in [" ", "a", "m", "x"]:
