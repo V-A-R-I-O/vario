@@ -49,6 +49,20 @@ async def test_seed_hr_data_creates_intents_and_template(db_session):
     assert faq_intent.role_pack == "hr"
     assert faq_intent.intent_type == "static_faq"
 
+    stmt_faq_phrases = select(TrainingPhrase).where(TrainingPhrase.intent_id == faq_intent.intent_id)
+    faq_phrases = (await db_session.execute(stmt_faq_phrases)).scalars().all()
+    assert len(faq_phrases) >= 5
+
+    stmt_wfh = select(Intent).where(Intent.name == "ask_wfh_policy")
+    wfh_intent = (await db_session.execute(stmt_wfh)).scalar_one_or_none()
+    assert wfh_intent is not None
+    assert wfh_intent.role_pack == "hr"
+    assert wfh_intent.intent_type == "static_faq"
+
+    stmt_wfh_phrases = select(TrainingPhrase).where(TrainingPhrase.intent_id == wfh_intent.intent_id)
+    wfh_phrases = (await db_session.execute(stmt_wfh_phrases)).scalars().all()
+    assert len(wfh_phrases) >= 5
+
     # 4. Verify response template
     stmt_tmpl = select(ResponseTemplate).where(
         ResponseTemplate.template_key == "check_leave_balance_response"
@@ -61,7 +75,32 @@ async def test_seed_hr_data_creates_intents_and_template(db_session):
     assert "sick" in tmpl.available_variables
     assert "earned" in tmpl.available_variables
 
-    # 5. Verify response variants
+    # 5. Verify policy FAQ templates and variants (slice-16)
+    stmt_policy_tmpl = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_policy_faq_response"
+    )
+    policy_tmpl = (await db_session.execute(stmt_policy_tmpl)).scalar_one_or_none()
+    assert policy_tmpl is not None
+    assert policy_tmpl.available_variables == []
+    stmt_policy_variants = select(ResponseVariant).where(
+        ResponseVariant.template_id == policy_tmpl.template_id
+    )
+    policy_variants = (await db_session.execute(stmt_policy_variants)).scalars().all()
+    assert len(policy_variants) >= 1
+
+    stmt_wfh_tmpl = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_wfh_policy_response"
+    )
+    wfh_tmpl = (await db_session.execute(stmt_wfh_tmpl)).scalar_one_or_none()
+    assert wfh_tmpl is not None
+    assert wfh_tmpl.available_variables == []
+    stmt_wfh_variants = select(ResponseVariant).where(
+        ResponseVariant.template_id == wfh_tmpl.template_id
+    )
+    wfh_variants = (await db_session.execute(stmt_wfh_variants)).scalars().all()
+    assert len(wfh_variants) >= 1
+
+    # 6. Verify response variants for check_leave_balance
     stmt_variants = select(ResponseVariant).where(
         ResponseVariant.template_id == tmpl.template_id
     )
@@ -83,8 +122,18 @@ async def test_seed_hr_data_is_idempotent(db_session):
     intents = (await db_session.execute(stmt)).scalars().all()
     assert len(intents) == 1
 
+    stmt_wfh = select(Intent).where(Intent.name == "ask_wfh_policy")
+    wfh_intents = (await db_session.execute(stmt_wfh)).scalars().all()
+    assert len(wfh_intents) == 1
+
     stmt_tmpl = select(ResponseTemplate).where(
         ResponseTemplate.template_key == "check_leave_balance_response"
     )
     tmpls = (await db_session.execute(stmt_tmpl)).scalars().all()
     assert len(tmpls) == 1
+
+    stmt_wfh_tmpl = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_wfh_policy_response"
+    )
+    wfh_tmpls = (await db_session.execute(stmt_wfh_tmpl)).scalars().all()
+    assert len(wfh_tmpls) == 1

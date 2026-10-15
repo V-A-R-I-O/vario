@@ -505,10 +505,33 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       }
     }
 
-    const data: BotMessageData = { type: 'plain_text', text: m.content };
+    // 5. Policy FAQ Answer (Slice-16)
     const onReplay = m.audioBase64
       ? () => playAudio(m.audioBase64 as string, m.audioContentType)
       : undefined;
+
+    const isFaq =
+      m.intent_name === 'ask_policy_faq' ||
+      m.intent_name === 'ask_wfh_policy' ||
+      Boolean(m.intent_name && m.intent_name.startsWith('ask_') && (m.intent_name.includes('policy') || m.intent_name.includes('faq'))) ||
+      m.slots?.is_faq === true ||
+      m.slots?.intent_type === 'static_faq' ||
+      (role === 'hr' && /\b(?:wfh|work from home|remote work|leave policy|maternity policy|bereavement policy|paternity policy)\b/i.test(m.content));
+
+    if (isFaq) {
+      return (
+        <BotMessage
+          key={m.id}
+          message={{
+            type: 'faq_answer',
+            text: m.content,
+          }}
+          onReplay={onReplay}
+        />
+      );
+    }
+
+    const data: BotMessageData = { type: 'plain_text', text: m.content };
     return <BotMessage key={m.id} message={data} onReplay={onReplay} />;
   };
 
