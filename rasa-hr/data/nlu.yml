@@ -68,6 +68,18 @@ nlu:
       - I need to take vacation from Monday to Wednesday
       - can I request [casual](leave_type) leave tomorrow?
       - apply for [annual](leave_type) leave
+      - I'd like to request [casual](leave_type) leave on [2026-10-20](start_date)
+      - please apply for [earned](leave_type) leave from [2026-10-25](start_date) to [2026-10-27](end_date)
+      - I need to take [sick](leave_type) leave because I'm unwell
+      - can I submit a leave request for [2026-11-01](start_date) to [2026-11-03](end_date)?
+      - I want to take [casual](leave_type) leave for personal reasons
+      - apply for leave starting [2026-10-30](start_date)
+      - I need time off from [2026-10-15](start_date) to [2026-10-20](end_date) for medical appointment
+      - request [earned](leave_type) leave on [2026-10-28](start_date)
+      - I'd like to apply for [sick](leave_type) leave tomorrow
+      - can I take [casual](leave_type) leave on [2026-10-22](start_date)?
+      - please submit leave request for [2026-10-25](start_date) to [2026-10-26](end_date) with reason: family function
+      - I need to apply for [annual](leave_type) leave from [2026-11-10](start_date) to [2026-11-24](end_date) for vacation
 
   - intent: ask_policy_faq
     examples: |
@@ -78,6 +90,25 @@ nlu:
       - what are the rules for taking sick leave?
       - how many days of paternity leave do I get?
       - tell me about the bereavement leave guidelines
+      - what is the leave carry forward policy?
+      - how does maternity leave work?
+      - company leave policy and rules
+
+  - intent: ask_wfh_policy
+    examples: |
+      - what is the WFH policy?
+      - what's the WFH policy?
+      - what is the work from home policy?
+      - can I work from home?
+      - how many days can I work remotely?
+      - tell me about the remote work policy
+      - work from home policy
+      - are we allowed to work from home?
+      - remote work guidelines
+      - guidelines for working from home
+      - do we have a work from home policy?
+      - how does work from home work here?
+
 
   - intent: nlu_fallback
     examples: |

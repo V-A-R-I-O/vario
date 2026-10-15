@@ -52,6 +52,10 @@ KEYWORDS_POLICY = [
     "carry forward", "entitled", "entitlement", "allowance", "maternity", "paternity",
     "bereavement", "benefit", "benefits"
 ]
+KEYWORDS_WFH = [
+    "wfh", "work from home", "remote work", "work remotely", "working remotely",
+    "telecommute", "remote", "home office"
+]
 KEYWORDS_BALANCE = [
     "balance", "how many", "how much", "remaining", "left", "available",
     "days off", "pto", "paid time off", "vacation days", "leave quota",
@@ -127,9 +131,10 @@ def classify_message_local(
         kw in clean for kw in ["days left", "days remaining", "time left"]
     )
     has_policy = any(kw in clean for kw in KEYWORDS_POLICY)
+    has_wfh = any(kw in clean for kw in KEYWORDS_WFH)
 
     # Conflicting intents in a single utterance (e.g. "apply for leave status balance")
-    intent_actions_count = sum([has_apply, has_status, has_balance, has_policy])
+    intent_actions_count = sum([has_apply, has_status, has_balance, has_policy, has_wfh])
     if intent_actions_count > 2:
         return "nlu_fallback", 0.25, entities
 
@@ -139,7 +144,11 @@ def classify_message_local(
     ]:
         return "nlu_fallback", 0.25, entities
 
-    # 4. Policy FAQ edge cases (e.g. "What is the maternity policy?", "maternity leave policy")
+    # 4. WFH Policy FAQ (e.g. "what's the WFH policy?", "can I work from home?")
+    if has_wfh:
+        return "ask_wfh_policy", 0.95, entities
+
+    # 5. Policy FAQ edge cases (e.g. "What is the maternity policy?", "maternity leave policy")
     # Must evaluate BEFORE balance check so policy queries don't get misclassified as leave balance
     if has_policy or ("policy_topic" in entities and any(w in clean for w in ["policy", "rule", "rules", "guideline", "guidelines", "benefit", "benefits", "how does", "what is"])):
         if not ("balance" in clean and not any(p in clean for p in ["policy", "rule", "guideline"])):
@@ -362,6 +371,55 @@ def converse(req: ConverseRequest) -> ConverseResponse:
             current_step=current_step_val,
             response_text=action_res.get("response_text"),
             audit_event=action_res.get("audit_event"),
+        )
+
+    # Policy FAQ: WFH Policy (slice-16)
+    if intent == "ask_wfh_policy":
+        merged_slots = dict(session.slots)
+        merged_slots["is_faq"] = True
+        merged_slots["intent_type"] = "static_faq"
+        return ConverseResponse(
+            intent=intent,
+            confidence=confidence,
+            entities=entities,
+            template_key="ask_wfh_policy_response",
+            slots=merged_slots,
+            current_form=None,
+            current_step=None,
+            response_text="Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location.",
+        )
+
+    # Policy FAQ: General HR & Leave Policies (slice-16)
+    if intent == "ask_policy_faq":
+        policy_topic = entities.get("policy_topic") or session.slots.get("policy_topic")
+        merged_slots = dict(session.slots)
+        merged_slots["is_faq"] = True
+        merged_slots["intent_type"] = "static_faq"
+        if policy_topic:
+            merged_slots["policy_topic"] = policy_topic
+
+        if policy_topic == "maternity":
+            text = "The maternity leave policy provides 12 weeks of paid leave for birth mothers, available any time during pregnancy or after birth."
+        elif policy_topic == "paternity":
+            text = "Paternity leave provides 2 weeks of paid leave for new fathers, to be used within the first 3 months after birth or adoption."
+        elif policy_topic == "bereavement":
+            text = "Bereavement leave allows up to 3 days of paid time off for the loss of an immediate family member."
+        elif policy_topic in ("carryover", "carry forward"):
+            text = "Unused annual leaves can be carried forward to the next year, up to a maximum of 5 days. Any unused sick leaves do not carry forward."
+        elif policy_topic == "sick":
+            text = "Sick leave can be taken for personal illness or to care for a sick family member. A doctor's note is required for absences exceeding 3 consecutive days."
+        else:
+            text = "Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days."
+
+        return ConverseResponse(
+            intent=intent,
+            confidence=confidence,
+            entities=entities,
+            template_key="ask_policy_faq_response",
+            slots=merged_slots,
+            current_form=None,
+            current_step=None,
+            response_text=text,
         )
 
     # Greeting / Goodbye / Stubs

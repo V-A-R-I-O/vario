@@ -20,3 +20,81 @@ rules:
     steps:
       - intent: nlu_fallback
       - action: utter_default_fallback
+
+  - rule: Handle policy FAQ
+    steps:
+      - intent: ask_policy_faq
+      - action: utter_ask_policy_faq
+
+  - rule: Handle WFH policy FAQ
+    steps:
+      - intent: ask_wfh_policy
+      - action: utter_ask_wfh_policy
+
+  - rule: Submit leave request - ask for leave type
+    steps:
+      - intent: submit_leave_request
+      - action: action_submit_leave_request
+      - intent: inform
+        entities:
+          - leave_type
+      - action: action_submit_leave_request
+
+  - rule: Submit leave request - ask for start date
+    steps:
+      - intent: submit_leave_request
+      - action: action_submit_leave_request
+      - intent: inform
+        entities:
+          - start_date
+      - action: action_submit_leave_request
+
+  - rule: Submit leave request - ask for end date
+    steps:
+      - intent: submit_leave_request
+      - action: action_submit_leave_request
+      - intent: inform
+        entities:
+          - end_date
+      - action: action_submit_leave_request
+
+  - rule: Submit leave request - ask for reason
+    steps:
+      - intent: submit_leave_request
+      - action: action_submit_leave_request
+      - intent: inform
+        entities:
+          - reason
+      - action: action_submit_leave_request
+
+  - rule: Submit leave request - show confirmation
+    condition:
+      - active_form: submit_leave_request
+      - slots:
+        - leave_type: None
+        - start_date: None
+        - end_date: None
+        - reason: None
+    steps:
+      - intent: submit_leave_request
+      - action: action_submit_leave_request
+      - slot_was_set:
+        - leave_type
+        - start_date
+        - end_date
+        - reason
+      - action: action_submit_leave_request
+
+  - rule: Submit leave request - handle confirmation
+    steps:
+      - intent: submit_leave_request
+      - action: action_submit_leave_request
+      - intent: affirm
+      - action: action_submit_leave_request
+
+  - rule: Submit leave request - handle cancellation
+    steps:
+      - intent: submit_leave_request
+      - action: action_submit_leave_request
+      - intent: deny
+      - action: action_submit_leave_request
