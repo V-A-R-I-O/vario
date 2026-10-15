@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server import app, classify_message
-from actions.actions import ActionCheckLeaveBalance
+from actions.actions import ActionCheckLeaveBalance, ActionSubmitLeaveRequest
 
 client = TestClient(app)
 
@@ -302,11 +302,11 @@ def test_upstream_rasa_runtime_proxy():
             )
 
 
-@pytest.mark.asyncio
-async def test_dialogue_router_routes_to_hr_converse():
+def test_dialogue_router_routes_to_hr_converse():
     # End-to-end integration test with backend dialogue_router
     import httpx
     import sys
+    import asyncio
     from pathlib import Path
 
     backend_path = str(Path(__file__).resolve().parent.parent.parent / "backend")
@@ -316,19 +316,283 @@ async def test_dialogue_router_routes_to_hr_converse():
     from app.services.dialogue_router import route
     from app.models.session import Session
 
-    # With resolved employee ID in session
-    session = Session(session_id="sess-1", conversation_id="conv-1", slots={"employee_id": "EMP-1042"})
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://localhost:5005") as ac:
-        async def mock_post(url, payload):
-            resp = await ac.post("/webhooks/vario/converse", json=payload)
-            return resp.json()
+    async def _run():
+        session = Session(session_id="sess-1", conversation_id="conv-1", slots={"employee_id": "EMP-1042"})
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://localhost:5005") as ac:
+            async def mock_post(url, payload):
+                resp = await ac.post("/webhooks/vario/converse", json=payload)
+                return resp.json()
 
-        with patch("app.services.dialogue_router._post_to_rasa", side_effect=mock_post):
-            res = await route("hr", "user-101", "What is my leave balance?", session)
-            assert res.intent == "check_leave_balance"
-            assert res.confidence >= 0.85
-            assert res.template_key == "check_leave_balance_response"
-            assert res.slots.get("total") == 22
-            assert res.slots.get("casual") == 4
-            assert res.slots.get("employee_id") == "EMP-1042"
+            with patch("app.services.dialogue_router._post_to_rasa", side_effect=mock_post):
+                res = await route("hr", "user-101", "What is my leave balance?", session)
+                assert res.intent == "check_leave_balance"
+                assert res.confidence >= 0.85
+                assert res.template_key == "check_leave_balance_response"
+                assert res.slots.get("total") == 22
+                assert res.slots.get("casual") == 4
+
+    asyncio.run(_run())
+
+
+# ============================================================================
+# Slice 15: HR Leave Request Workflow Tests
+# ============================================================================
+
+def test_classify_leave_request_intent():
+    """AC 1: Leave request phrases classify as submit_leave_request"""
+    utterances = [
+        "I want to apply for leave",
+        "submit a leave request",
+        "apply for leave",
+        "request time off",
+        "I need to take leave",
+        "book leave",
+        "submit leave application",
+        "apply for vacation",
+    ]
+
+    for utt in utterances:
+        intent, conf, _ = classify_message(utt)
+        assert intent == "submit_leave_request", f"Failed on: {utt}"
+        assert conf >= 0.85, f"Confidence too low ({conf}) for: {utt}"
+
+
+def test_action_submit_leave_collects_leave_type():
+    """AC 1: Workflow prompts for leave_type when missing"""
+    from actions.actions import ActionSubmitLeaveRequest
+
+    action = ActionSubmitLeaveRequest()
+    result = action.execute_logic(employee_id="EMP-1042")
+
+    assert result["requires_input"] is True
+    assert result["missing_slot"] == "leave_type"
+    assert result["slots"]["requested_slot"] == "leave_type"
+
+
+def test_action_submit_leave_collects_start_date():
+    """AC 1: Workflow prompts for start_date after leave_type"""
+    from actions.actions import ActionSubmitLeaveRequest
+
+    action = ActionSubmitLeaveRequest()
+    result = action.execute_logic(employee_id="EMP-1042", leave_type="casual")
+
+    assert result["requires_input"] is True
+    assert result["missing_slot"] == "start_date"
+    assert result["slots"]["requested_slot"] == "start_date"
+
+
+def test_action_submit_leave_validates_start_date():
+    """AC 1: Workflow validates start_date format and not in past"""
+    from actions.actions import ActionSubmitLeaveRequest
+
+    action = ActionSubmitLeaveRequest()
+
+    # Invalid format
+    result = action.execute_logic(
+        employee_id="EMP-1042",
+        leave_type="casual",
+        start_date="10/20/2026"
+    )
+    assert result["requires_input"] is True
+    assert result["slots"]["start_date"] is None
+    assert "valid start date" in result["response_text"].lower()
+
+    # Valid future date
+    result = action.execute_logic(
+        employee_id="EMP-1042",
+        leave_type="casual",
+        start_date="2026-10-20"
+    )
+    assert result["missing_slot"] == "end_date"
+
+
+def test_action_submit_leave_collects_end_date():
+    """AC 1: Workflow prompts for end_date after start_date"""
+    from actions.actions import ActionSubmitLeaveRequest
+
+    action = ActionSubmitLeaveRequest()
+    result = action.execute_logic(
+        employee_id="EMP-1042",
+        leave_type="casual",
+        start_date="2026-10-20"
+    )
+
+    assert result["requires_input"] is True
+    assert result["missing_slot"] == "end_date"
+
+
+def test_action_submit_leave_validates_date_range():
+    """AC 1: Workflow validates end_date >= start_date"""
+    from actions.actions import ActionSubmitLeaveRequest
+
+    action = ActionSubmitLeaveRequest()
+
+    # End before start
+    result = action.execute_logic(
+        employee_id="EMP-1042",
+        leave_type="casual",
+        start_date="2026-10-20",
+        end_date="2026-10-19"
+    )
+    assert result["requires_input"] is True
+    assert result["slots"]["end_date"] is None
+    assert "on or after the start date" in result["response_text"].lower()
+
+
+def test_action_submit_leave_collects_reason():
+    """AC 1: Workflow prompts for reason after dates"""
+    from actions.actions import ActionSubmitLeaveRequest
+
+    action = ActionSubmitLeaveRequest()
+    result = action.execute_logic(
+        employee_id="EMP-1042",
+        leave_type="casual",
+        start_date="2026-10-20",
+        end_date="2026-10-22"
+    )
+
+    assert result["requires_input"] is True
+    assert result["missing_slot"] == "reason"
+
+
+def test_action_submit_leave_shows_confirmation():
+    """AC 2: Confirmation summary shown before submission"""
+    from actions.actions import ActionSubmitLeaveRequest
+
+    action = ActionSubmitLeaveRequest()
+    result = action.execute_logic(
+        employee_id="EMP-1042",
+        leave_type="casual",
+        start_date="2026-10-20",
+        end_date="2026-10-22",
+        reason="Family event"
+    )
+
+    assert result["template_key"] == "submit_leave_confirmation"
+    assert result["slots"]["confirmation_pending"] is True
+    assert result["requires_input"] is True
+
+
+def test_action_submit_leave_submits_on_confirm():
+    """AC 3: Leave submitted via adapter on Confirm"""
+    from actions.actions import ActionSubmitLeaveRequest
+
+    action = ActionSubmitLeaveRequest()
+
+    # Mock successful submission
+    mock_response = {
+        "success": True,
+        "reference_id": "LEAVE-2045",
+        "days": 3,
+    }
+
+    with patch("actions.actions.HRMSAdapter.submit_leave", return_value=mock_response):
+        result = action.execute_logic(
+            employee_id="EMP-1042",
+            leave_type="casual",
+            start_date="2026-10-20",
+            end_date="2026-10-22",
+            reason="Family event",
+            confirmation_pending=True,
+            user_action="confirm"
+        )
+
+    assert result["template_key"] == "submit_leave_result"
+    assert result["slots"]["reference_id"] == "LEAVE-2045"
+    assert result["slots"]["confirmation_pending"] is False
+    assert result["audit_event"] is not None
+    assert result["audit_event"]["action_type"] == "leave_submitted"
+    assert result["audit_event"]["reference_id"] == "LEAVE-2045"
+
+
+def test_action_submit_leave_cancels_gracefully():
+    """AC 4: Nothing submitted on Cancel"""
+    from actions.actions import ActionSubmitLeaveRequest
+
+    action = ActionSubmitLeaveRequest()
+    result = action.execute_logic(
+        employee_id="EMP-1042",
+        leave_type="casual",
+        start_date="2026-10-20",
+        end_date="2026-10-22",
+        reason="Family event",
+        confirmation_pending=True,
+        user_action="cancel"
+    )
+
+    assert result["template_key"] == "submit_leave_cancelled"
+    assert "cancelled" in result["response_text"].lower()
+    assert result["slots"]["leave_type"] is None
+    assert result["slots"]["confirmation_pending"] is False
+
+
+def test_converse_webhook_leave_request_multi_turn():
+    """AC 1-4: Full multi-turn leave request flow via converse webhook"""
+    # Turn 1: Initiate leave request
+    payload = {
+        "sender": "EMP-1042",
+        "message": "I want to apply for leave",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["intent"] == "submit_leave_request"
+    assert data["current_form"] == "submit_leave_request"
+    assert data["slots"]["requested_slot"] == "leave_type"
+
+    # Turn 2: Provide leave type
+    payload["message"] = "casual"
+    payload["session"]["slots"] = data["slots"]
+    payload["session"]["current_form"] = data["current_form"]
+    res = client.post("/webhooks/vario/converse", json=payload)
+    data = res.json()
+    assert data["slots"]["leave_type"] == "casual"
+    assert data["slots"]["requested_slot"] == "start_date"
+
+    # Turn 3: Provide start date
+    payload["message"] = "2026-10-20"
+    payload["session"]["slots"] = data["slots"]
+    res = client.post("/webhooks/vario/converse", json=payload)
+    data = res.json()
+    assert data["slots"]["start_date"] == "2026-10-20"
+    assert data["slots"]["requested_slot"] == "end_date"
+
+    # Turn 4: Provide end date
+    payload["message"] = "2026-10-22"
+    payload["session"]["slots"] = data["slots"]
+    res = client.post("/webhooks/vario/converse", json=payload)
+    data = res.json()
+    assert data["slots"]["end_date"] == "2026-10-22"
+    assert data["slots"]["requested_slot"] == "reason"
+
+    # Turn 5: Provide reason
+    payload["message"] = "Family event"
+    payload["session"]["slots"] = data["slots"]
+    res = client.post("/webhooks/vario/converse", json=payload)
+    data = res.json()
+    assert data["slots"]["reason"] == "Family event"
+    assert data["slots"]["confirmation_pending"] is True
+    assert data["template_key"] == "submit_leave_confirmation"
+
+    # Turn 6: Confirm
+    payload["message"] = "confirm"
+    payload["session"]["slots"] = data["slots"]
+
+    mock_response = {
+        "success": True,
+        "reference_id": "LEAVE-2045",
+        "days": 3,
+    }
+
+    # Mock HRMSAdapter at the correct import path for Rasa HR server
+    with patch("actions.actions.HRMSAdapter.submit_leave", return_value=mock_response):
+        res = client.post("/webhooks/vario/converse", json=payload)
+        data = res.json()
+
+    assert data["template_key"] == "submit_leave_result"
+    assert data["slots"]["reference_id"] == "LEAVE-2045"
+    assert data["audit_event"] is not None
+    assert data["audit_event"]["action_type"] == "leave_submitted"
+
