@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchMessages, sendChatMessage, fetchConversations } from '@/lib/api';
 import { useSpeechRecognition } from '@/lib/useSpeechRecognition';
-import { BotMessage, UserMessage, type BotMessageData, HRLeaveBalanceCard, createHRLeaveBalanceMessage } from '@/components/chat';
+import {
+  BotMessage,
+  UserMessage,
+  type BotMessageData,
+  HRLeaveBalanceCard,
+  createHRLeaveBalanceMessage,
+  createAdmissionsFeeDeadlineMessage,
+} from '@/components/chat';
 
 interface ThreadMessage {
   id: string;
@@ -503,6 +510,28 @@ export default function ChatPage({ params }: { params: { id: string } }) {
           />
         );
       }
+    }
+
+    // 5. Admissions Fees & Deadlines Card / FAQ (slice-26, FR-16)
+    if (m.intent_name === 'ask_fee_deadline' && (role === 'admissions' || !role)) {
+      const fees = Array.isArray(m.slots?.fees) ? m.slots.fees : [];
+      const deadlines = Array.isArray(m.slots?.deadlines) ? m.slots.deadlines : [];
+      const refundPolicy = m.slots?.refund_policy;
+      const academicYear = m.slots?.academic_year || '2026-2027';
+
+      const onReplay = m.audioBase64
+        ? () => playAudio(m.audioBase64 as string, m.audioContentType)
+        : undefined;
+
+      const feeMsg = createAdmissionsFeeDeadlineMessage({
+        academicYear,
+        fees,
+        deadlines,
+        refundPolicy,
+        text: m.content,
+      });
+
+      return <BotMessage key={m.id} message={feeMsg} onReplay={onReplay} />;
     }
 
     const data: BotMessageData = { type: 'plain_text', text: m.content };
