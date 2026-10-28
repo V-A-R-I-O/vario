@@ -382,3 +382,44 @@ async def test_chat_records_audit_log_on_leave_submitted():
         assert entry.role_pack == "hr"
         assert entry.details == {"leave_type": "casual", "days": 2}
 
+
+
+@pytest.mark.asyncio
+async def test_it_password_reset_security_answer_is_redacted_from_history():
+    from sqlalchemy import select
+    from app.models.message import Message
+
+    async with _client() as client:
+        conv_id = await make_conversation(client, headers_for("reset-user"), role_pack="it")
+        turns = [
+            ("I forgot my password", rasa_payload(
+                intent="reset_password", template_key=None, response_text="Enter employee ID.",
+                slots={"requested_slot": "employee_id", "reset_attempts": 0},
+                current_form="reset_password_form", current_step="ask_employee_id",
+            )),
+            ("EMP-1042", rasa_payload(
+                intent="reset_password", template_key=None, response_text="What city were you born in?",
+                slots={"employee_id": "EMP-1042", "security_question": "What city were you born in?", "requested_slot": "security_answer"},
+                current_form="reset_password_form", current_step="await_security_answer",
+            )),
+            ("Mysuru", rasa_payload(
+                intent="reset_password", template_key=None, response_text="Password reset request initiated.",
+                slots={"employee_id": "EMP-1042", "reset_result": True, "identity_verified": True},
+                current_form=None, current_step=None,
+                audit_event={"action_type": "password_reset_initiated", "reference_id": "EMP-1042", "details": {"verification": "mock_identity_verified"}},
+            )),
+        ]
+        for message, response_payload in turns:
+            with patch("app.services.dialogue_router._post_to_rasa", new=AsyncMock(return_value=response_payload)):
+                result = await client.post(
+                    "/api/chat",
+                    json={"conversation_id": conv_id, "message": message},
+                    headers=headers_for("reset-user"),
+                )
+            assert result.status_code == 200
+
+    async with TestingSessionLocal() as db:
+        stored = (await db.execute(select(Message).where(Message.conversation_id == conv_id, Message.sender == "user"))).scalars().all()
+    contents = [message.content for message in stored]
+    assert "[security answer redacted]" in contents
+    assert "Mysuru" not in contents

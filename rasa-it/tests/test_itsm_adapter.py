@@ -76,3 +76,36 @@ async def test_create_ticket_handles_rejection_and_service_outage():
     with patch("httpx.AsyncClient.post", side_effect=httpx.ConnectError("offline")):
         with pytest.raises(BackendUnavailableError):
             await ITSMAdapter.create_ticket("network", "VPN unavailable", "EMP-1042")
+
+
+@pytest.mark.asyncio
+async def test_security_question_response_never_contains_answer():
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = httpx.Response(200, json={"found": True, "employee_id": "EMP-1042", "security_question": "What city were you born in?"})
+        result = await ITSMAdapter.get_security_question("emp-1042")
+    assert result["security_question"] == "What city were you born in?"
+    assert "security_answer" not in result
+    assert "mysuru" not in str(result).casefold()
+
+
+@pytest.mark.asyncio
+async def test_verify_identity_and_reset_use_mock_contract():
+    verified = {"verified": True, "employee_id": "EMP-1042", "detail": "Identity verified."}
+    reset = {"success": True, "employee_id": "EMP-1042", "reset_requested": True, "message": "Mock password reset initiated."}
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.side_effect = [httpx.Response(200, json=verified), httpx.Response(200, json=reset)]
+        result = await ITSMAdapter.verify_identity("emp-1042", "Mysuru")
+        reset_result = await ITSMAdapter.reset_password("emp-1042")
+    assert result["verified"] is True
+    assert reset_result["reset_requested"] is True
+    assert mock_post.await_args_list[0].kwargs["json"] == {"employee_id": "EMP-1042", "answer": "Mysuru"}
+    assert mock_post.await_args_list[1].kwargs["json"] == {"employee_id": "EMP-1042"}
+
+
+@pytest.mark.asyncio
+async def test_reset_adapter_rejects_unverified_identity():
+    from actions.itsm_adapter import IdentityVerificationError
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = httpx.Response(403, json={"detail": "Identity verification is required."})
+        with pytest.raises(IdentityVerificationError):
+            await ITSMAdapter.reset_password("EMP-1042")

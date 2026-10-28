@@ -25,6 +25,36 @@ slots:
     influence_conversation: false
     mappings:
       - type: custom
+  employee_id:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+  security_question:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+  requested_slot:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+  reset_attempts:
+    type: float
+    influence_conversation: false
+    mappings:
+      - type: custom
+  identity_verified:
+    type: bool
+    influence_conversation: false
+    mappings:
+      - type: custom
+  reset_result:
+    type: bool
+    influence_conversation: false
+    mappings:
+      - type: custom
 
 responses:
   utter_greet:
