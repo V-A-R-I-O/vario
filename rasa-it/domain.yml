@@ -1,0 +1,49 @@
+version: "3.1"
+
+intents:
+  - check_ticket_status:
+      use_entities:
+        - ticket_id
+  - raise_ticket
+  - reset_password
+  - nlu_fallback
+  - greet
+  - goodbye
+
+entities:
+  - ticket_id
+
+slots:
+  ticket_id:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_entity
+        entity: ticket_id
+  status:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+
+responses:
+  utter_greet:
+    - text: "Hello! I am your VARIO IT Support Assistant. I can check a ticket status, help raise a ticket, or guide you to password-reset support."
+  utter_goodbye:
+    - text: "Thanks for contacting IT Support. Have a good day!"
+  utter_ask_ticket_id:
+    - text: "Please provide your ticket ID (for example, TKT-1234) so I can check its status."
+  utter_default_fallback:
+    - text: "I'm sorry, I didn't understand that. You can ask me to check an IT ticket, raise a support ticket, or get password-reset help."
+  utter_raise_ticket_stub:
+    - text: "I can help with a new support ticket. The guided ticket-creation workflow is being connected."
+  utter_reset_password_stub:
+    - text: "I can help with password-reset guidance. The verified reset workflow is being connected."
+
+actions:
+  - action_check_ticket_status
+  - action_default_fallback
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: true

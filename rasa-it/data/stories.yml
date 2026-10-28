@@ -1,0 +1,21 @@
+version: "3.1"
+
+stories:
+  - story: Check ticket status with ticket ID
+    steps:
+      - intent: check_ticket_status
+        entities:
+          - ticket_id: "TKT-1234"
+      - action: action_check_ticket_status
+
+  - story: Ask for ticket ID when missing
+    steps:
+      - intent: check_ticket_status
+      - action: action_check_ticket_status
+
+  - story: Greet then check ticket status
+    steps:
+      - intent: greet
+      - action: utter_greet
+      - intent: check_ticket_status
+      - action: action_check_ticket_status
