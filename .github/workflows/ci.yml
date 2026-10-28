@@ -139,3 +139,16 @@ jobs:
       - name: Run role-pack tests
         working-directory: ${{ matrix.service }}
         run: python -m pytest
+
+  compose-config:
+    name: Docker Compose configuration validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate full local stack configuration
+        run: |
+          cp .env.example .env
+          docker compose --profile full config --quiet
