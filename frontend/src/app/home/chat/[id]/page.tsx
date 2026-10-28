@@ -443,6 +443,58 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       }
     }
 
+    // Slice 19 — IT ticket creation slot prompts, confirmation and result.
+    if (m.intent_name === 'raise_ticket') {
+      const ticketSlots = { ...(m.entities ?? {}), ...(m.slots ?? {}) };
+      if (ticketSlots.requested_slot === 'category') {
+        return (
+          <BotMessage key={m.id} message={{
+            type: 'slot_prompt',
+            text: m.content || 'What category best describes the issue?',
+            options: [
+              { label: 'Hardware', value: 'hardware' },
+              { label: 'Software', value: 'software' },
+              { label: 'Access', value: 'access' },
+              { label: 'Network', value: 'network' },
+              { label: 'Other', value: 'other' },
+            ],
+            onSelect: (value: string) => { sendMessage(value, 'chat'); },
+          }} />
+        );
+      }
+      if (ticketSlots.requested_slot === 'description') {
+        return <BotMessage key={m.id} message={{ type: 'plain_text', text: m.content || 'Please describe the IT issue.' }} />;
+      }
+      if (ticketSlots.confirmation_pending && ticketSlots.category && ticketSlots.description) {
+        return (
+          <BotMessage key={m.id} message={{
+            type: 'confirmation',
+            title: 'Confirm IT Support Ticket',
+            rows: [
+              { label: 'Category', value: String(ticketSlots.category) },
+              { label: 'Description', value: String(ticketSlots.description) },
+              { label: 'Reporter', value: String(ticketSlots.reporter || 'Authenticated user') },
+            ],
+            confirmLabel: 'Confirm',
+            cancelLabel: 'Cancel',
+            onConfirm: () => { sendMessage('confirm', 'chat'); },
+            onCancel: () => { sendMessage('cancel', 'chat'); },
+          }} />
+        );
+      }
+      if (ticketSlots.ticket_result && ticketSlots.ticket_id) {
+        return (
+          <BotMessage key={m.id} message={{
+            type: 'result',
+            text: ticketSlots.ticket_reused
+              ? 'This matches a ticket you just created. Reusing existing ticket:'
+              : 'Ticket created successfully. Reference ID:',
+            referenceId: String(ticketSlots.ticket_id),
+          }} />
+        );
+      }
+    }
+
     // 4. HR Leave Request Workflow (Slice-15) - Slot Prompt, Confirmation, Result
     const isLeaveRequest = m.intent_name === 'submit_leave_request' || m.slots?.requested_slot;
 

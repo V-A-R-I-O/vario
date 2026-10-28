@@ -14,6 +14,10 @@ class BackendUnavailableError(Exception):
     """The ITSM endpoint is unreachable or returned an invalid response."""
 
 
+class TicketCreationRejectedError(Exception):
+    """The ITSM service rejected ticket creation because the submitted details are invalid."""
+
+
 class ITSMAdapter:
     DEFAULT_TIMEOUT = 2.5
 
@@ -60,3 +64,41 @@ class ITSMAdapter:
             "status": data.get("status"),
             "updated_at": data.get("updated_at"),
         }
+
+
+    @classmethod
+    async def create_ticket(cls, category: str, description: str, reporter: str) -> Dict[str, Any]:
+        """Create a support ticket through the mockable ITSM HTTP contract."""
+        clean_category = (category or "").strip()
+        clean_description = (description or "").strip()
+        clean_reporter = (reporter or "").strip().upper()
+        if not clean_category or not clean_description or not clean_reporter:
+            raise TicketCreationRejectedError("Category, description, and reporter are required.")
+        if len(clean_category) > 80 or len(clean_description) > 2000 or len(clean_reporter) > 80:
+            raise TicketCreationRejectedError("Ticket details exceed the supported length.")
+        try:
+            async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
+                response = await client.post(
+                    f"{cls.base_url()}/tickets",
+                    json={"category": clean_category, "description": clean_description, "reporter": clean_reporter},
+                )
+        except (httpx.RequestError, httpx.TimeoutException) as exc:
+            raise BackendUnavailableError("ITSM service is currently unavailable. Please try again shortly.") from exc
+        if response.status_code in (400, 404, 422):
+            try:
+                payload = response.json()
+                detail = payload.get("detail", "Ticket details were rejected.")
+                if isinstance(detail, dict):
+                    detail = detail.get("message", "Ticket details were rejected.")
+            except ValueError:
+                detail = "Ticket details were rejected."
+            raise TicketCreationRejectedError(str(detail))
+        if response.status_code not in (200, 201):
+            raise BackendUnavailableError(f"ITSM service returned HTTP {response.status_code}.")
+        try:
+            ticket = response.json()
+        except ValueError as exc:
+            raise BackendUnavailableError("ITSM service returned a malformed ticket response.") from exc
+        if not isinstance(ticket, dict) or not ticket.get("ticket_id"):
+            raise BackendUnavailableError("ITSM service returned an incomplete ticket response.")
+        return ticket
