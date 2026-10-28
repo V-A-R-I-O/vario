@@ -7,6 +7,7 @@ from .training_phrase import TrainingPhrase
 from .response_template import ResponseTemplate
 from .response_variant import ResponseVariant
 from .audit_log import AuditLog
+from .retraining_job import RetrainingJob
 
 __all__ = [
     "User",
@@ -18,4 +19,5 @@ __all__ = [
     "ResponseTemplate",
     "ResponseVariant",
     "AuditLog",
+    "RetrainingJob",
 ]
