@@ -108,10 +108,8 @@ jobs:
         service:
           - rasa-hr
           - rasa-admissions
-          - rasa-it
-    # Slice 17's IT role pack is not yet on main. Enable its matrix leg
-    # automatically as soon as the service requirements file exists.
-    if: ${{ matrix.service != 'rasa-it' || hashFiles('rasa-it/requirements.txt') != '' }}
+    # IT role-pack CI is being introduced with Slice 17 PR #40; keep this
+    # matrix limited to services present on main to avoid a broken checkout.
 
     steps:
       - name: Check out repository
