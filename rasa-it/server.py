@@ -3,7 +3,9 @@
 The canonical Rasa training assets live beside this server. The runtime calls the
 ITSM HTTP adapter for live ticket status and returns structured slots for the chat UI.
 """
+import json
 import logging
+import os
 import re
 from typing import Any, Dict, Optional
 
@@ -61,6 +63,27 @@ def load_nlu_training_examples() -> Dict[str, list[str]]:
 
 
 TRAINING_DATA = load_nlu_training_examples()
+
+
+def load_persisted_training_examples() -> None:
+    """Overlay retrained examples saved on the persistent runtime volume."""
+    path = Path(os.getenv("RETRAINING_DATA_PATH", "/var/lib/vario/training_examples.json"))
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(saved, dict):
+            TRAINING_DATA.update({
+                str(intent): [str(phrase).strip().lower() for phrase in phrases
+                              if isinstance(phrase, str) and phrase.strip()]
+                for intent, phrases in saved.items()
+                if isinstance(phrases, list)
+            })
+    except FileNotFoundError:
+        return
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Unable to load persisted retraining data: %s", type(exc).__name__)
+
+
+load_persisted_training_examples()
 
 
 class SessionState(BaseModel):
@@ -504,7 +527,6 @@ class _InternalRetrainPayload(_RetrainRequest):
 @app.post("/internal/retrain")
 async def internal_retrain(payload: _InternalRetrainPayload,
     x_vario_internal_token: str = Header(default="", alias="X-Vario-Internal-Token")):
-    import os
     expected = os.getenv("RETRAINING_INTERNAL_TOKEN", "")
     if not expected or x_vario_internal_token != expected:
         raise HTTPException(status_code=401, detail="Invalid internal retraining token")
@@ -512,6 +534,18 @@ async def internal_retrain(payload: _InternalRetrainPayload,
         raise HTTPException(status_code=422, detail="Invalid training examples")
     global TRAINING_DATA
     updated = dict(TRAINING_DATA)
-    updated.update({k: [p.strip().lower() for p in v if p.strip()] for k, v in payload.examples_by_intent.items()})
+    updated.update({
+        intent: [phrase.strip().lower() for phrase in phrases if phrase.strip()]
+        for intent, phrases in payload.examples_by_intent.items()
+    })
+    path = Path(os.getenv("RETRAINING_DATA_PATH", "/var/lib/vario/training_examples.json"))
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = path.with_suffix(path.suffix + ".tmp")
+        temporary_path.write_text(json.dumps(updated, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporary_path, path)
+    except OSError as exc:
+        logger.exception("Unable to persist retraining data")
+        raise HTTPException(status_code=503, detail="Unable to persist retraining data") from exc
     TRAINING_DATA = updated
     return {"status": "success", "intents_updated": len(payload.examples_by_intent)}
