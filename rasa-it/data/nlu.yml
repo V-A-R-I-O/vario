@@ -96,9 +96,3 @@ nlu:
       - thanks, bye
       - see you later
 
-  - intent: nlu_fallback
-    examples: |
-      - what is the weather in Paris?
-      - tell me a joke
-      - order a pizza
-      - how far is Mars from the sun?
