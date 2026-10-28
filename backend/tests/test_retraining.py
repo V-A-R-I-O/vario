@@ -20,8 +20,11 @@ async def test_retraining_job_is_persisted_and_role_scoped(monkeypatch):
     # Keep the background worker dormant so this test exercises durable job creation
     # and retrieval without calling a live role-pack runtime.
     import asyncio
+    from app.services import retraining_service
+    from tests.conftest import TestingSessionLocal
 
     monkeypatch.setattr(asyncio, "create_task", lambda coroutine: coroutine.close())
+    monkeypatch.setattr(retraining_service, "AsyncSessionLocal", TestingSessionLocal)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post("/api/admin/retrain", headers=HR)
         assert created.status_code == 202
@@ -42,7 +45,11 @@ async def test_retraining_job_is_persisted_and_role_scoped(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_retraining_job_not_found_returns_404():
+async def test_retraining_job_not_found_returns_404(monkeypatch):
+    from app.services import retraining_service
+    from tests.conftest import TestingSessionLocal
+
+    monkeypatch.setattr(retraining_service, "AsyncSessionLocal", TestingSessionLocal)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
             "/api/admin/retrain/00000000-0000-0000-0000-000000000000", headers=HR
