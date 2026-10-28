@@ -889,4 +889,6 @@ Headers included: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Res
 
 - `POST /api/admin/retrain`: admin JWT required; role pack is derived from the JWT, returns `202` and `retrain_job_id`. Returns `409` if that pack already has an active job.
 - `GET /api/admin/retrain/:job_id`: returns job state (`pending`, `training`, `complete`, `failed`) and timestamps. Jobs are visible only to admins of the same role pack.
-- Current job registry is process-local; persistent queue/storage is a production hardening follow-up for multi-worker deployments.
+- Job status and timestamps are persisted in the gateway database (`retraining_jobs`) and are scoped by role pack. Apply the Alembic migration before deployment.
+- IT classifier examples are persisted to the named `rasa-it-data` Compose volume and loaded on runtime startup; configure `RETRAINING_INTERNAL_TOKEN` to the same strong secret for gateway and IT runtime.
+- Execution still uses an in-process background task, not a durable queue. Run one gateway worker for this slice; multi-worker execution requires a shared task queue/worker and race-safe job claiming before enabling multiple workers.
