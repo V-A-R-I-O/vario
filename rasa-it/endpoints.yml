@@ -1,2 +1,7 @@
-# The standalone VARIO runtime currently handles actions locally.
-# Configure an action server here if actions are later split into a separate service.
+# Endpoints configuration for Rasa IT
+action_endpoint:
+  url: "http://localhost:5055/webhook"
+
+models:
+  url: ""
+  wait_time_between_pulls: 10
