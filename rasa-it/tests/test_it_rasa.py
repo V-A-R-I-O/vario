@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from server import app, classify_message
+from server import app, classify_message, action_handler
 from actions.actions import ActionCheckTicketStatus
 
 client = TestClient(app)
@@ -91,7 +91,16 @@ def test_converse_endpoint_prompts_for_missing_ticket_id():
     assert "ticket ID" in data["response_text"]
 
 
-def test_converse_endpoint_recognizes_ticket_without_fabricating_status():
+def test_converse_endpoint_returns_live_ticket_status(monkeypatch):
+    async def fake_lookup(ticket_id):
+        assert ticket_id == "TKT-1234"
+        return {
+            "template_key": "check_ticket_status_response",
+            "slots": {"ticket_id": "TKT-1234", "status": "In Progress", "found": True, "category": "hardware"},
+            "response_text": None,
+        }
+
+    monkeypatch.setattr(action_handler, "lookup_logic", fake_lookup)
     response = client.post(
         "/webhooks/vario/converse",
         json={
@@ -103,10 +112,35 @@ def test_converse_endpoint_recognizes_ticket_without_fabricating_status():
     assert response.status_code == 200
     data = response.json()
     assert data["intent"] == "check_ticket_status"
-    assert data["entities"]["ticket_id"] == "TKT-1234"
+    assert data["template_key"] == "check_ticket_status_response"
     assert data["slots"]["ticket_id"] == "TKT-1234"
+    assert data["slots"]["status"] == "In Progress"
+    assert data["entities"]["status"] == "In Progress"
+    assert data["response_text"] is None
+
+
+def test_converse_endpoint_handles_unknown_ticket(monkeypatch):
+    async def fake_lookup(ticket_id):
+        return {
+            "template_key": None,
+            "slots": {"ticket_id": "TKT-9999", "status": "Not Found", "found": False},
+            "response_text": "I couldn't find ticket TKT-9999. Please check the ID and try again.",
+        }
+
+    monkeypatch.setattr(action_handler, "lookup_logic", fake_lookup)
+    response = client.post(
+        "/webhooks/vario/converse",
+        json={
+            "sender": "user-test",
+            "message": "check ticket TKT-9999",
+            "session": {"current_form": None, "current_step": None, "slots": {}},
+        },
+    )
+    data = response.json()
+    assert response.status_code == 200
     assert data["template_key"] is None
-    assert "ITSM adapter" in data["response_text"]
+    assert data["slots"]["found"] is False
+    assert "couldn't find" in data["response_text"]
 
 
 def test_converse_endpoint_handles_fallback():
