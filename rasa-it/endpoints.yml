@@ -1,0 +1,2 @@
+# The standalone VARIO runtime currently handles actions locally.
+# Configure an action server here if actions are later split into a separate service.
