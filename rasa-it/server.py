@@ -1,7 +1,7 @@
 """Lightweight local IT role-pack runtime implementing the VARIO ADR-002 contract.
 
-The canonical Rasa training assets live beside this server. This small runtime keeps
-local development and CI lightweight; the live ticket lookup belongs to Slice 20.
+The canonical Rasa training assets live beside this server. The runtime calls the
+ITSM HTTP adapter for live ticket status and returns structured slots for the chat UI.
 """
 import logging
 import re
@@ -24,7 +24,7 @@ app = FastAPI(
 )
 
 action_handler = ActionCheckTicketStatus()
-TICKET_ID_REGEX = re.compile(r"\b(TKT-\d{4})\b", re.IGNORECASE)
+TICKET_ID_REGEX = re.compile(r"\b((?:TKT|IT)-\d{4})\b", re.IGNORECASE)
 FALLBACK_THRESHOLD = 0.4
 AMBIGUITY_THRESHOLD = 0.1
 
@@ -221,33 +221,44 @@ async def converse(req: ConverseRequest) -> ConverseResponse:
 
     if intent == "check_ticket_status":
         ticket_id = entities.get("ticket_id") or session.slots.get("ticket_id")
-        action_result = action_handler.execute_logic(ticket_id)
+        action_result = await action_handler.lookup_logic(ticket_id)
         merged_slots = dict(session.slots)
         merged_slots.update(action_result.get("slots", {}))
+        response_entities = dict(entities)
+        response_entities.update(action_result.get("slots", {}))
 
         if action_result.get("missing_slot") == "ticket_id":
             return ConverseResponse(
                 intent=intent,
                 confidence=confidence,
-                entities=entities,
+                entities=response_entities,
                 slots=merged_slots,
                 current_form="check_ticket_status_form",
                 current_step="await_ticket_id",
                 response_text=action_result["response_text"],
             )
 
-        # Do not invent a status before Slice 20 connects the ITSM adapter.
+        if action_result.get("backend_unavailable") or action_result.get("slots", {}).get("found") is False:
+            return ConverseResponse(
+                intent=intent,
+                confidence=confidence,
+                entities=response_entities,
+                slots=merged_slots,
+                template_key=None,
+                current_form=None,
+                current_step=None,
+                response_text=action_result["response_text"],
+            )
+
         return ConverseResponse(
             intent=intent,
             confidence=confidence,
-            entities=entities,
+            entities=response_entities,
             slots=merged_slots,
+            template_key=action_result["template_key"],
             current_form=None,
             current_step=None,
-            response_text=(
-                f"I recognized ticket {merged_slots['ticket_id']}. "
-                "The live status lookup will be available when the ITSM adapter is connected."
-            ),
+            response_text=action_result.get("response_text"),
         )
 
     if intent == "raise_ticket":

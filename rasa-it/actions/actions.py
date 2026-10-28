@@ -1,6 +1,8 @@
 import re
 from typing import Any, Dict, Optional
 
+from actions.itsm_adapter import BackendUnavailableError, ITSMAdapter
+
 try:
     from rasa_sdk import Action, Tracker
     from rasa_sdk.executor import CollectingDispatcher
@@ -19,11 +21,11 @@ except ImportError:  # Allows the lightweight runtime tests to run without Rasa 
         return {"event": "slot", "name": key, "value": value}
 
 
-TICKET_ID_REGEX = re.compile(r"\b(TKT-\d{4})\b", re.IGNORECASE)
+TICKET_ID_REGEX = re.compile(r"\b((?:TKT|IT)-\d{4})\b", re.IGNORECASE)
 
 
 class ActionCheckTicketStatus(Action):
-    """Slice 17 action contract; the live ITSM lookup is added by Slice 20."""
+    """Look up ticket status through the ITSM adapter and return chat slots."""
 
     TEMPLATE_KEY = "check_ticket_status_response"
 
@@ -75,6 +77,40 @@ class ActionCheckTicketStatus(Action):
             "response_text": None,
         }
 
+    async def lookup_logic(self, ticket_id: Optional[str]) -> Dict[str, Any]:
+        """Resolve the ticket ID against ITSM; never invent a status."""
+        result = self.execute_logic(ticket_id)
+        if result.get("missing_slot"):
+            return result
+        clean_id = result["slots"]["ticket_id"]
+        try:
+            ticket = await ITSMAdapter.get_ticket_status(clean_id)
+        except BackendUnavailableError:
+            return {
+                "template_key": None,
+                "slots": {"ticket_id": clean_id},
+                "backend_unavailable": True,
+                "response_text": "I can't reach the IT ticket system right now. Please try again shortly.",
+            }
+        if not ticket.get("found"):
+            return {
+                "template_key": None,
+                "slots": {"ticket_id": clean_id, "status": "Not Found", "found": False},
+                "response_text": (
+                    f"I couldn't find ticket {clean_id}. Please check the ID and try again. "
+                    "You can use the ticket ID shown in your support confirmation."
+                ),
+            }
+        slots = {
+            "ticket_id": ticket.get("ticket_id", clean_id),
+            "status": ticket.get("status") or "Unknown",
+            "found": True,
+        }
+        for key in ("category", "description", "reporter", "updated_at"):
+            if ticket.get(key):
+                slots[key] = str(ticket[key])
+        return {"template_key": self.TEMPLATE_KEY, "slots": slots, "response_text": None}
+
     async def run(
         self,
         dispatcher: CollectingDispatcher,
@@ -82,17 +118,16 @@ class ActionCheckTicketStatus(Action):
         domain: Dict[str, Any],
     ) -> list:
         ticket_id = self.extract_ticket_id(tracker)
-        result = self.execute_logic(ticket_id)
+        result = await self.lookup_logic(ticket_id)
         if result.get("missing_slot"):
             dispatcher.utter_message(text=result["response_text"])
             return []
-        dispatcher.utter_message(
-            text=(
-                f"I recognized ticket {result['slots']['ticket_id']}. "
-                "The live status lookup will be connected with the ITSM adapter."
-            )
-        )
-        return [SlotSet("ticket_id", result["slots"]["ticket_id"])]
+        if result.get("backend_unavailable") or result.get("slots", {}).get("found") is False:
+            dispatcher.utter_message(text=result["response_text"])
+            return [SlotSet(key, value) for key, value in result.get("slots", {}).items() if key in {"ticket_id", "status"}]
+        slots = result["slots"]
+        dispatcher.utter_message(text=f"Ticket {slots['ticket_id']} is currently {slots['status']}.")
+        return [SlotSet("ticket_id", slots["ticket_id"]), SlotSet("status", slots["status"])]
 
 
 class ActionDefaultFallback(Action):

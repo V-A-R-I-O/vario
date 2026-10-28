@@ -10,6 +10,8 @@ import {
   HRLeaveBalanceCard,
   createHRLeaveBalanceMessage,
   createAdmissionsFeeDeadlineMessage,
+  createITTicketStatusMessage,
+  createITTicketNotFoundMessage,
 } from '@/components/chat';
 
 interface ThreadMessage {
@@ -230,6 +232,16 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       m.content.toLowerCase().includes('could not be located') ||
       m.content.toLowerCase().includes("couldn't find");
 
+    if (isNotFound && m.intent_name === 'check_ticket_status') {
+      const ticketId = m.slots?.ticket_id || m.entities?.ticket_id || m.content.match(/\b(?:TKT|IT)-\d{4}\b/i)?.[0]?.toUpperCase();
+      return (
+        <BotMessage
+          key={m.id}
+          message={createITTicketNotFoundMessage(ticketId)}
+        />
+      );
+    }
+
     if (isNotFound && (role === 'admissions' || m.intent_name === 'check_application_status' || m.intent_name === 'get_document_checklist')) {
       return (
         <BotMessage
@@ -400,6 +412,32 @@ export default function ChatPage({ params }: { params: { id: string } }) {
                 { label: 'Next Step', value: nextStepVal },
               ],
             }}
+          />
+        );
+      }
+    }
+
+    // IT Ticket Status Card (Slice 20): slots are available on the live turn;
+    // entities preserve the same fields so the card also renders after reload.
+    if (m.intent_name === 'check_ticket_status') {
+      const ticketId =
+        m.slots?.ticket_id ||
+        m.entities?.ticket_id ||
+        m.content.match(/\b(?:TKT|IT)-\d{4}\b/i)?.[0]?.toUpperCase();
+      const ticketStatus = m.slots?.status || m.entities?.status;
+      const found = m.slots?.found ?? m.entities?.found;
+      if (ticketId && ticketStatus && found !== false && ticketStatus !== 'Not Found') {
+        return (
+          <BotMessage
+            key={m.id}
+            message={createITTicketStatusMessage({
+              ticketId,
+              status: String(ticketStatus),
+              category: m.slots?.category || m.entities?.category,
+              description: m.slots?.description || m.entities?.description,
+              reporter: m.slots?.reporter || m.entities?.reporter,
+              updatedAt: m.slots?.updated_at || m.entities?.updated_at,
+            })}
           />
         );
       }

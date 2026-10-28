@@ -5,3 +5,4 @@ export * from './AdmissionsStatusCard';
 export * from './AdmissionsFeeDeadlineCard';
 export * from './HRLeaveBalanceCard';
 
+export * from './ITTicketStatusCard';
