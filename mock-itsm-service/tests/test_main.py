@@ -50,3 +50,16 @@ def test_identity_verification_and_reset_guard():
     assert "security_answer" not in correct.json()
     assert client.post("/password/reset", json={"employee_id": "EMP-1042"}).json()["success"] is True
     assert client.post("/password/reset", json={"employee_id": "EMP-1042"}).status_code == 403
+
+
+def test_security_question_endpoint_returns_question_without_answer():
+    response = client.get("/identity/EMP-1042/question")
+    assert response.status_code == 200
+    assert response.json()["security_question"] == "What city were you born in?"
+    assert "security_answer" not in response.json()
+    assert "mysuru" not in str(response.json()).casefold()
+
+
+def test_security_question_endpoint_rejects_unknown_employee():
+    response = client.get("/identity/EMP-9999/question")
+    assert response.status_code == 404
