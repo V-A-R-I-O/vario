@@ -1,6 +1,6 @@
 """Durable status for asynchronous role-pack retraining jobs."""
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Text, CheckConstraint
+from sqlalchemy import Column, String, DateTime, Text, CheckConstraint, Integer
 from app.database import Base
 from .user import generate_uuid
 
@@ -15,7 +15,7 @@ class RetrainingJob(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
-    intent_count = Column(String, nullable=True)
+    intent_count = Column(Integer, nullable=True)
     error_message = Column(Text, nullable=True)
 
     __table_args__ = (
