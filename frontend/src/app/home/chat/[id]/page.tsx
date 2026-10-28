@@ -233,7 +233,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       m.content.toLowerCase().includes("couldn't find");
 
     if (isNotFound && m.intent_name === 'check_ticket_status') {
-      const ticketId = m.slots?.ticket_id || m.entities?.ticket_id || m.content.match(/\\b(?:TKT|IT)-\\d{4}\\b/i)?.[0]?.toUpperCase();
+      const ticketId = m.slots?.ticket_id || m.entities?.ticket_id || m.content.match(/\b(?:TKT|IT)-\d{4}\b/i)?.[0]?.toUpperCase();
       return (
         <BotMessage
           key={m.id}
@@ -423,7 +423,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       const ticketId =
         m.slots?.ticket_id ||
         m.entities?.ticket_id ||
-        m.content.match(/\\b(?:TKT|IT)-\\d{4}\\b/i)?.[0]?.toUpperCase();
+        m.content.match(/\b(?:TKT|IT)-\d{4}\b/i)?.[0]?.toUpperCase();
       const ticketStatus = m.slots?.status || m.entities?.status;
       const found = m.slots?.found ?? m.entities?.found;
       if (ticketId && ticketStatus && found !== false && ticketStatus !== 'Not Found') {

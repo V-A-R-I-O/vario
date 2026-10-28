@@ -79,7 +79,7 @@ class ActionCheckTicketStatus(Action):
 
     async def lookup_logic(self, ticket_id: Optional[str]) -> Dict[str, Any]:
         """Resolve the ticket ID against ITSM; never invent a status."""
-        result = await self.lookup_logic(ticket_id)
+        result = self.execute_logic(ticket_id)
         if result.get("missing_slot"):
             return result
         clean_id = result["slots"]["ticket_id"]
