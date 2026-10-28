@@ -97,13 +97,20 @@ services:
     ports:
       - "${MOCK_HRMS_PORT:-9002}:9002"
 
-  # Stub — replace build context when mock-itsm-service is implemented
+  # Mock ITSM backend (tickets + demo identity verification)
   mock-itsm:
-    image: busybox:1.36
+    build:
+      context: ./mock-itsm-service
     profiles: [full]
-    command: ["sh", "-c", "echo 'mock-itsm stub — replace with real service'; httpd -f -p 9003 -h /tmp"]
+    restart: unless-stopped
     ports:
       - "${MOCK_ITSM_PORT:-9003}:9003"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   # Stub — replace build context when mock-admissions-service is implemented
   mock-admissions:
