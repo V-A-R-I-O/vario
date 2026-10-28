@@ -436,11 +436,137 @@ async def seed_hr_data(session: AsyncSession):
         if not existing_variant.scalar_one_or_none():
             session.add(ResponseVariant(template_id=wfh_tmpl.template_id, variant_text=variant_text))
 
+IT_TICKET_STATUS_PHRASES = [
+    "what is the status of my ticket TKT-1234?",
+    "what's happening with ticket TKT-1234?",
+    "check the status of TKT-1234",
+    "can you check my ticket TKT-1234?",
+    "track ticket TKT-1234",
+    "give me an update on ticket TKT-1234",
+    "has my ticket TKT-1234 been resolved?",
+    "is ticket TKT-1234 still open?",
+    "is my IT ticket TKT-1234 closed?",
+    "what is the progress of TKT-1234?",
+    "please look up ticket TKT-1234",
+    "show me the current status of TKT-1234",
+    "I need an update for TKT-1234",
+    "where does ticket TKT-1234 stand?",
+    "when will ticket TKT-1234 be fixed?",
+    "has anyone worked on TKT-1234?",
+    "check my IT support request TKT-1234",
+    "what's the latest on my support ticket TKT-1234?",
+    "is there any update on TKT-1234?",
+    "tell me whether TKT-1234 is pending",
+    "find the status of support request TKT-1234",
+    "I want to follow up on TKT-1234",
+    "can I get the status for TKT-1234?",
+    "ticket TKT-1234 status",
+    "status update for TKT-1234",
+    "please track my support issue TKT-1234",
+    "has the issue in TKT-1234 been fixed?",
+    "check if ticket TKT-1234 is in progress",
+    "what stage is my ticket TKT-1234 at?",
+    "is TKT-1234 assigned to someone?",
+    "look up the progress of my ticket TKT-1234",
+    "I would like to know the status of TKT-1234",
+    "could you tell me if TKT-1234 is resolved?",
+    "is my help desk request TKT-1234 complete?",
+    "check the progress of IT request TKT-1234",
+    "please provide a status update for ticket TKT-1234",
+    "do you have news about TKT-1234?",
+    "what is the current state of my incident TKT-1234",
+    "I am following up on support ticket TKT-1234",
+    "tell me the status of my issue TKT-1234",
+]
+
+IT_RAISE_TICKET_PHRASES = [
+    "I need to raise an IT ticket",
+    "create a support ticket",
+    "open a new IT ticket",
+    "report a technical issue",
+    "I need help with my laptop",
+    "raise an incident for me",
+]
+
+IT_RESET_PASSWORD_PHRASES = [
+    "I forgot my password",
+    "help me reset my password",
+    "I cannot sign in to my account",
+    "reset my work account password",
+    "I am locked out of my account",
+    "how can I change my password?",
+]
+
+
 async def seed_it_data(session: AsyncSession):
-    """Placeholder for IT role-pack seed data (slice-04)."""
+    """Seed IT role-pack intents, phrases, and ticket-status response template (slice-17)."""
     logger.info("Seeding IT role-pack data...")
-    # TODO: Add IT intents, phrases, templates
-    pass
+
+    intents = [
+        ("check_ticket_status", "dynamic_workflow", IT_TICKET_STATUS_PHRASES),
+        ("raise_ticket", "dynamic_workflow", IT_RAISE_TICKET_PHRASES),
+        ("reset_password", "dynamic_workflow", IT_RESET_PASSWORD_PHRASES),
+    ]
+
+    for intent_name, intent_type, phrases in intents:
+        result = await session.execute(select(Intent).where(Intent.name == intent_name))
+        intent = result.scalar_one_or_none()
+        if intent is None:
+            intent = Intent(
+                role_pack="it",
+                name=intent_name,
+                intent_type=intent_type,
+                needs_retrain=False,
+            )
+            session.add(intent)
+            await session.flush()
+        elif intent.role_pack != "it":
+            raise ValueError(f"Intent name {intent_name!r} already belongs to another role pack")
+
+        for phrase_text in phrases:
+            result = await session.execute(
+                select(TrainingPhrase).where(
+                    TrainingPhrase.intent_id == intent.intent_id,
+                    TrainingPhrase.phrase_text == phrase_text,
+                )
+            )
+            if result.scalar_one_or_none() is None:
+                session.add(TrainingPhrase(intent_id=intent.intent_id, phrase_text=phrase_text))
+
+    template_key = "check_ticket_status_response"
+    result = await session.execute(
+        select(ResponseTemplate).where(ResponseTemplate.template_key == template_key)
+    )
+    template = result.scalar_one_or_none()
+    if template is None:
+        template = ResponseTemplate(
+            role_pack="it",
+            template_key=template_key,
+            base_text="Ticket {ticket_id} is currently {status}.",
+            allow_rephrasing=True,
+            available_variables=["ticket_id", "status"],
+        )
+        session.add(template)
+        await session.flush()
+    elif template.role_pack != "it":
+        raise ValueError(f"Template key {template_key!r} already belongs to another role pack")
+
+    variants = [
+        "Ticket {ticket_id} is currently {status}.",
+        "The current status of ticket {ticket_id} is {status}.",
+        "Here is the latest status for {ticket_id}: {status}.",
+        "Support ticket {ticket_id} has the status: {status}.",
+        "Your ticket {ticket_id} is marked as {status}.",
+    ]
+    for variant_text in variants:
+        result = await session.execute(
+            select(ResponseVariant).where(
+                ResponseVariant.template_id == template.template_id,
+                ResponseVariant.variant_text == variant_text,
+            )
+        )
+        if result.scalar_one_or_none() is None:
+            session.add(ResponseVariant(template_id=template.template_id, variant_text=variant_text))
 
 from sqlalchemy import select
 from app.models.intent import Intent
