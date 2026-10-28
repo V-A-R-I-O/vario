@@ -146,6 +146,9 @@ services:
     environment:
       MOCK_ITSM_URL: http://mock-itsm:9003
       RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-}
+      RETRAINING_DATA_PATH: /var/lib/vario/training_examples.json
+    volumes:
+      - rasa-it-data:/var/lib/vario
     depends_on:
       mock-itsm:
         condition: service_healthy
@@ -169,3 +172,4 @@ services:
 
 volumes:
   pgdata:
+  rasa-it-data:
