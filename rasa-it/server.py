@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from pathlib import Path
 
 from actions.actions import ActionCheckTicketStatus
-from actions.itsm_adapter import BackendUnavailableError, ITSMAdapter, TicketCreationRejectedError
+from actions.itsm_adapter import BackendUnavailableError, IdentityVerificationError, ITSMAdapter, TicketCreationRejectedError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rasa_it_server")
@@ -186,6 +186,7 @@ async def converse(req: ConverseRequest) -> ConverseResponse:
     slots = dict(session.slots or {})
     reporter = str(req.auth_context.get("employee_id") or "").strip().upper()
     in_create_form = session.current_form == "raise_ticket_form"
+    in_reset_form = session.current_form == "reset_password_form"
 
     if session.current_step == "await_ticket_id" or session.current_form == "check_ticket_status_form":
         ticket_match = TICKET_ID_REGEX.search(message)
@@ -199,6 +200,8 @@ async def converse(req: ConverseRequest) -> ConverseResponse:
         intent, confidence, entities = "check_ticket_status", 0.96, {"ticket_id": ticket_match.group(1).upper()}
     elif in_create_form:
         intent, confidence, entities = "raise_ticket", 0.96, {}
+    elif in_reset_form:
+        intent, confidence, entities = "reset_password", 0.96, {}
     else:
         intent, confidence, entities = classify_message(message)
 
@@ -214,6 +217,15 @@ async def converse(req: ConverseRequest) -> ConverseResponse:
         return ConverseResponse(
             intent="raise_ticket", confidence=0.96, entities=response_entities,
             slots=workflow_slots, current_form=current_form, current_step=current_step,
+            response_text=text, audit_event=audit_event,
+        )
+
+    def reset_response(text, reset_slots, current_form, current_step, audit_event=None):
+        response_entities = dict(entities)
+        response_entities.update(reset_slots)
+        return ConverseResponse(
+            intent="reset_password", confidence=0.96, entities=response_entities,
+            slots=reset_slots, current_form=current_form, current_step=current_step,
             response_text=text, audit_event=audit_event,
         )
 
@@ -307,6 +319,104 @@ async def converse(req: ConverseRequest) -> ConverseResponse:
         restart_slots.update({"reporter": reporter, "requested_slot": "category", "confirmation_pending": False})
         return workflow_response("Let's start your IT ticket again. What category best describes the issue?", restart_slots, "raise_ticket_form", "ask_category")
 
+    if in_reset_form or intent == "reset_password":
+        if _is_reset_cancel(message):
+            return reset_response("Password reset cancelled. No reset was initiated.", _cleared_reset_slots(slots), None, None)
+
+        if not in_reset_form:
+            start_slots = _cleared_reset_slots(slots)
+            start_slots.update({"requested_slot": "employee_id", "reset_attempts": 0, "identity_verified": False, "reset_result": False, "reset_denied": False, "reset_error": False})
+            return reset_response(
+                "Please enter your employee ID (for example, EMP-1042). This demo uses mock identity verification and will never ask for your password.",
+                start_slots, "reset_password_form", "ask_employee_id",
+            )
+
+        if session.current_step == "ask_employee_id":
+            employee_id = message.strip().upper()
+            if not re.fullmatch(r"EMP-\d{4}", employee_id):
+                slots.update({"requested_slot": "employee_id", "reset_error": True, "reset_denied": False})
+                return reset_response("Please enter a valid employee ID in the format EMP-1042. No reset has been initiated.", slots, "reset_password_form", "ask_employee_id")
+            try:
+                identity = await ITSMAdapter.get_security_question(employee_id)
+            except BackendUnavailableError:
+                slots.update({"employee_id": None, "requested_slot": "employee_id", "reset_error": True})
+                return reset_response("The mock identity service is temporarily unavailable. Please try your employee ID again.", slots, "reset_password_form", "ask_employee_id")
+            if not identity.get("found"):
+                slots.update({"employee_id": None, "security_question": None, "requested_slot": "employee_id", "reset_error": True, "reset_denied": True})
+                return reset_response("I couldn't find that employee in the mock ITSM directory. Check the ID and try again. No reset was initiated.", slots, "reset_password_form", "ask_employee_id")
+            slots.update({
+                "employee_id": identity["employee_id"], "security_question": identity["security_question"],
+                "requested_slot": "security_answer", "reset_attempts": 0, "identity_verified": False,
+                "reset_result": False, "reset_denied": False, "reset_error": False,
+            })
+            return reset_response(f"To verify your identity, answer this security question: {identity['security_question']}", slots, "reset_password_form", "await_security_answer")
+
+        if session.current_step == "await_security_answer":
+            answer = message.strip()
+            if not answer or len(answer) > 300:
+                slots.update({"requested_slot": "security_answer", "reset_error": True})
+                return reset_response("Please provide an answer of at most 300 characters. Your answer is not saved in the conversation.", slots, "reset_password_form", "await_security_answer")
+            try:
+                verification = await ITSMAdapter.verify_identity(str(slots.get("employee_id") or ""), answer)
+            except BackendUnavailableError:
+                slots.update({"requested_slot": "security_answer", "reset_error": True})
+                return reset_response("The mock identity service is temporarily unavailable. Your answer was not saved; please try answering the security question again.", slots, "reset_password_form", "await_security_answer")
+
+            if not verification.get("verified"):
+                attempts = int(slots.get("reset_attempts") or 0) + 1
+                if attempts >= 3:
+                    denied = _cleared_reset_slots(slots)
+                    denied.update({"reset_attempts": attempts, "reset_denied": True, "reset_error": False})
+                    return reset_response("Identity verification failed after three attempts. No password reset was initiated. Start again if you still need help.", denied, None, None)
+                slots.update({"reset_attempts": attempts, "requested_slot": "security_answer", "identity_verified": False, "reset_error": False})
+                return reset_response(f"That answer didn't match. Please try again ({3 - attempts} attempt(s) remaining). No reset has been initiated.", slots, "reset_password_form", "await_security_answer")
+
+            slots.update({"identity_verified": True, "requested_slot": None, "reset_error": False})
+            try:
+                reset = await ITSMAdapter.reset_password(str(slots.get("employee_id") or ""))
+            except IdentityVerificationError:
+                slots.update({"identity_verified": False, "requested_slot": "security_answer", "reset_error": True})
+                return reset_response("The mock ITSM verification expired before the reset could be initiated. Please answer the security question again.", slots, "reset_password_form", "await_security_answer")
+            except BackendUnavailableError:
+                slots.update({"identity_verified": True, "requested_slot": None, "reset_error": True})
+                return reset_response("Your identity was verified, but the mock reset service is temporarily unavailable. Reply Retry to continue; no password value was created or changed.", slots, "reset_password_form", "reset_pending")
+            if not reset.get("success") or not reset.get("reset_requested"):
+                denied = _cleared_reset_slots(slots)
+                denied.update({"reset_denied": True, "reset_error": False})
+                return reset_response("The mock ITSM service could not initiate the reset. No reset was completed; please contact IT support.", denied, None, None)
+            result_slots = _cleared_reset_slots(slots)
+            result_slots.update({"employee_id": str(slots.get("employee_id") or "").upper(), "identity_verified": True, "reset_result": True, "reset_denied": False, "reset_error": False, "requested_slot": None})
+            return reset_response(
+                "Password reset request initiated successfully. No actual password was generated, displayed, or stored.",
+                result_slots, None, None,
+                {"action_type": "password_reset_initiated", "reference_id": result_slots["employee_id"], "details": {"verification": "mock_identity_verified", "reset_requested": True}},
+            )
+
+        if session.current_step == "reset_pending":
+            try:
+                reset = await ITSMAdapter.reset_password(str(slots.get("employee_id") or ""))
+            except IdentityVerificationError:
+                slots.update({"identity_verified": False, "requested_slot": "security_answer", "reset_error": True})
+                return reset_response("The mock ITSM verification expired. Please answer the security question again.", slots, "reset_password_form", "await_security_answer")
+            except BackendUnavailableError:
+                slots.update({"identity_verified": True, "reset_error": True})
+                return reset_response("The mock reset service is still unavailable. Reply Retry to try again; your security answer is not retained.", slots, "reset_password_form", "reset_pending")
+            if reset.get("success") and reset.get("reset_requested"):
+                result_slots = _cleared_reset_slots(slots)
+                result_slots.update({"employee_id": str(slots.get("employee_id") or "").upper(), "identity_verified": True, "reset_result": True, "reset_denied": False, "reset_error": False, "requested_slot": None})
+                return reset_response(
+                    "Password reset request initiated successfully. No actual password was generated, displayed, or stored.",
+                    result_slots, None, None,
+                    {"action_type": "password_reset_initiated", "reference_id": result_slots["employee_id"], "details": {"verification": "mock_identity_verified", "reset_requested": True}},
+                )
+            denied = _cleared_reset_slots(slots)
+            denied["reset_denied"] = True
+            return reset_response("The mock ITSM service could not initiate the reset. No reset was completed; please contact IT support.", denied, None, None)
+
+        restart_slots = _cleared_reset_slots(slots)
+        restart_slots.update({"requested_slot": "employee_id", "reset_attempts": 0, "reset_error": False, "reset_denied": False})
+        return reset_response("Let's restart password reset. Please enter your employee ID.", restart_slots, "reset_password_form", "ask_employee_id")
+
     logger.info("IT converse sender=%s intent=%s confidence=%.2f", req.sender, intent, confidence)
     if intent == "nlu_fallback" or confidence < FALLBACK_THRESHOLD:
         return ConverseResponse(
@@ -358,6 +468,22 @@ def _cleared_ticket_slots(slots: Dict[str, Any], *, clear_dedupe: bool) -> Dict[
     if clear_dedupe:
         cleared["last_created_signature"] = None
         cleared["last_created_ticket_id"] = None
+    return cleared
+
+
+def _is_reset_cancel(message: str) -> bool:
+    return " ".join(message.casefold().strip().split()) in {
+        "cancel", "cancel reset", "cancel password reset", "stop reset", "stop password reset",
+    }
+
+
+def _cleared_reset_slots(slots: Dict[str, Any]) -> Dict[str, Any]:
+    cleared = dict(slots)
+    for key in (
+        "employee_id", "security_question", "requested_slot", "reset_attempts",
+        "identity_verified", "reset_result", "reset_denied", "reset_error",
+    ):
+        cleared[key] = None
     return cleared
 
 
