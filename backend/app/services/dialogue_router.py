@@ -64,6 +64,7 @@ async def route(
     sender: str,
     message: str,
     session: Session,
+    auth_context: Optional[Dict[str, Any]] = None,
 ) -> RasaResult:
     """Forward a message to the role pack's Rasa instance and parse the result."""
     base_url = get_rasa_url(role_pack)
@@ -78,6 +79,10 @@ async def route(
             "slots": session.slots or {},
         },
     }
+
+    if auth_context:
+        # Trusted identity comes from the authenticated backend request, never chat text.
+        payload["auth_context"] = auth_context
 
     raw = await _post_to_rasa(url, payload)
 

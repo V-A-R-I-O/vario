@@ -199,3 +199,67 @@ def test_converse_endpoint_handles_fallback():
     assert response.status_code == 200
     assert response.json()["intent"] == "nlu_fallback"
     assert response.json()["confidence"] < 0.4
+
+
+def _ticket_turn(message, session=None, auth_context=True):
+    payload = {"sender": "user-test", "message": message, "session": session or {"current_form": None, "current_step": None, "slots": {}}}
+    if auth_context:
+        payload["auth_context"] = {"employee_id": "EMP-1042", "full_name": "Demo Employee"}
+    return client.post("/webhooks/vario/converse", json=payload)
+
+
+def test_ticket_creation_collects_details_confirms_and_emits_audit_event():
+    created = {"ticket_id": "IT-1004", "category": "network", "description": "VPN is unavailable", "reporter": "EMP-1042", "status": "Open"}
+    with patch.object(ITSMAdapter, "create_ticket", new_callable=AsyncMock, return_value=created) as create:
+        start = _ticket_turn("create a support ticket").json()
+        assert start["current_form"] == "raise_ticket_form"
+        assert start["current_step"] == "ask_category"
+        assert start["slots"]["requested_slot"] == "category"
+        assert create.await_count == 0
+        category = _ticket_turn("network", {"current_form": start["current_form"], "current_step": start["current_step"], "slots": start["slots"]}).json()
+        assert category["current_step"] == "ask_description"
+        description = _ticket_turn("VPN is unavailable", {"current_form": category["current_form"], "current_step": category["current_step"], "slots": category["slots"]}).json()
+        assert description["current_step"] == "confirm"
+        assert description["slots"]["confirmation_pending"] is True
+        assert create.await_count == 0
+        result = _ticket_turn("confirm", {"current_form": description["current_form"], "current_step": description["current_step"], "slots": description["slots"]}).json()
+    assert result["current_form"] is None
+    assert result["slots"]["ticket_id"] == "IT-1004"
+    assert result["slots"]["ticket_result"] is True
+    assert result["audit_event"]["action_type"] == "ticket_created"
+    assert result["audit_event"]["reference_id"] == "IT-1004"
+    create.assert_awaited_once_with(category="network", description="VPN is unavailable", reporter="EMP-1042")
+
+
+def test_ticket_creation_cancel_does_not_call_adapter():
+    with patch.object(ITSMAdapter, "create_ticket", new_callable=AsyncMock) as create:
+        start = _ticket_turn("create a support ticket").json()
+        category = _ticket_turn("hardware", {"current_form": start["current_form"], "current_step": start["current_step"], "slots": start["slots"]}).json()
+        description = _ticket_turn("Laptop will not start", {"current_form": category["current_form"], "current_step": category["current_step"], "slots": category["slots"]}).json()
+        cancelled = _ticket_turn("cancel", {"current_form": description["current_form"], "current_step": description["current_step"], "slots": description["slots"]}).json()
+    create.assert_not_awaited()
+    assert cancelled["current_form"] is None
+    assert cancelled["slots"]["ticket_id"] is None
+    assert "cancelled" in cancelled["response_text"].lower()
+
+
+def test_identical_immediate_ticket_request_reuses_previous_ticket():
+    created = {"ticket_id": "IT-1004", "status": "Open"}
+    with patch.object(ITSMAdapter, "create_ticket", new_callable=AsyncMock, return_value=created) as create:
+        state = {"current_form": None, "current_step": None, "slots": {}}
+        for message in ("create a support ticket", "network", "VPN is unavailable", "confirm"):
+            data = _ticket_turn(message, state).json()
+            state = {"current_form": data["current_form"], "current_step": data["current_step"], "slots": data["slots"]}
+        for message in ("create a support ticket", "network", "VPN is unavailable", "confirm"):
+            data = _ticket_turn(message, state).json()
+            state = {"current_form": data["current_form"], "current_step": data["current_step"], "slots": data["slots"]}
+        assert data["slots"]["ticket_id"] == "IT-1004"
+        assert data["slots"]["ticket_reused"] is True
+        assert create.await_count == 1
+
+
+def test_ticket_creation_requires_authenticated_reporter():
+    response = _ticket_turn("create a support ticket", auth_context=False)
+    assert response.status_code == 200
+    assert response.json()["current_form"] is None
+    assert "sign in" in response.json()["response_text"].lower()

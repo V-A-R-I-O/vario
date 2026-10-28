@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from pathlib import Path
 
 from actions.actions import ActionCheckTicketStatus
+from actions.itsm_adapter import BackendUnavailableError, ITSMAdapter, TicketCreationRejectedError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rasa_it_server")
@@ -72,6 +73,7 @@ class ConverseRequest(BaseModel):
     sender: str = Field(min_length=1, max_length=256)
     message: str = Field(min_length=1, max_length=2000)
     session: Optional[SessionState] = None
+    auth_context: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ConverseResponse(BaseModel):
@@ -83,6 +85,7 @@ class ConverseResponse(BaseModel):
     current_form: Optional[str] = None
     current_step: Optional[str] = None
     response_text: Optional[str] = None
+    audit_event: Optional[Dict[str, Any]] = None
 
 
 def _tokens(text: str) -> set[str]:
@@ -178,118 +181,184 @@ def health() -> Dict[str, Any]:
 @app.post("/webhooks/vario/converse", response_model=ConverseResponse)
 async def converse(req: ConverseRequest) -> ConverseResponse:
     """Primary endpoint consumed by the backend dialogue router."""
-    message = req.message
+    message = req.message.strip()
     session = req.session or SessionState()
+    slots = dict(session.slots or {})
+    reporter = str(req.auth_context.get("employee_id") or "").strip().upper()
+    in_create_form = session.current_form == "raise_ticket_form"
 
     if session.current_step == "await_ticket_id" or session.current_form == "check_ticket_status_form":
         ticket_match = TICKET_ID_REGEX.search(message)
         if not ticket_match:
             return ConverseResponse(
-                intent="check_ticket_status",
-                confidence=0.95,
-                entities={},
-                template_key=None,
-                slots=session.slots,
-                current_form="check_ticket_status_form",
+                intent="check_ticket_status", confidence=0.95, entities={},
+                template_key=None, slots=slots, current_form="check_ticket_status_form",
                 current_step="await_ticket_id",
                 response_text="Please provide a valid ticket ID such as TKT-1234.",
             )
         intent, confidence, entities = "check_ticket_status", 0.96, {"ticket_id": ticket_match.group(1).upper()}
+    elif in_create_form:
+        intent, confidence, entities = "raise_ticket", 0.96, {}
     else:
         intent, confidence, entities = classify_message(message)
 
-    logger.info(
-        "IT converse sender=%s intent=%s confidence=%.2f",
-        req.sender,
-        intent,
-        confidence,
-    )
+    # Dedupe only the immediately following create flow, not later requests.
+    if not in_create_form and intent != "raise_ticket":
+        slots["last_created_signature"] = None
+        slots["last_created_ticket_id"] = None
+        session = SessionState(current_form=session.current_form, current_step=session.current_step, slots=slots)
 
-    if intent == "nlu_fallback" or confidence < FALLBACK_THRESHOLD:
+    def workflow_response(text, workflow_slots, current_form, current_step, audit_event=None):
+        response_entities = dict(entities)
+        response_entities.update(workflow_slots)
         return ConverseResponse(
-            intent="nlu_fallback",
-            confidence=confidence,
-            entities=entities,
-            slots=session.slots,
-            current_form=session.current_form,
-            current_step=session.current_step,
-            response_text=(
-                "I'm sorry, I didn't understand that. You can ask me to check an IT ticket, "
-                "raise a support ticket, or get password-reset help."
-            ),
+            intent="raise_ticket", confidence=0.96, entities=response_entities,
+            slots=workflow_slots, current_form=current_form, current_step=current_step,
+            response_text=text, audit_event=audit_event,
         )
 
+    if in_create_form or intent == "raise_ticket":
+        if not reporter:
+            return workflow_response(
+                "I couldn't verify your employee profile. Please sign in again before creating an IT ticket.",
+                {**slots, "requested_slot": None, "confirmation_pending": False}, None, None,
+            )
+        if _is_cancel(message):
+            return workflow_response(
+                "Ticket creation cancelled. No ticket was created.",
+                _cleared_ticket_slots(slots, clear_dedupe=True), None, None,
+            )
+        if not in_create_form:
+            preserved = {k: slots[k] for k in ("last_created_signature", "last_created_ticket_id") if slots.get(k)}
+            start_slots = _cleared_ticket_slots(slots, clear_dedupe=False)
+            start_slots.update(preserved)
+            start_slots.update({"reporter": reporter, "requested_slot": "category", "confirmation_pending": False})
+            return workflow_response(
+                "What category best describes the issue? For example: hardware, software, access, network, or other.",
+                start_slots, "raise_ticket_form", "ask_category",
+            )
+
+        slots["reporter"] = reporter
+        if session.current_step == "ask_category":
+            category = message.strip()
+            if not category or len(category) > 80:
+                slots["requested_slot"] = "category"
+                return workflow_response("Please provide a category of 1–80 characters (for example, hardware or network).", slots, "raise_ticket_form", "ask_category")
+            slots.update({"category": category, "description": None, "requested_slot": "description", "confirmation_pending": False, "ticket_result": None, "ticket_reused": None, "ticket_id": None})
+            return workflow_response(
+                "Please describe the IT issue. Include what happened and any useful error message, but do not include passwords or other secrets.",
+                slots, "raise_ticket_form", "ask_description",
+            )
+
+        if session.current_step == "ask_description":
+            description = message.strip()
+            if not description or len(description) > 2000:
+                slots["requested_slot"] = "description"
+                return workflow_response("Please provide a description of 1–2000 characters, without passwords or other secrets.", slots, "raise_ticket_form", "ask_description")
+            slots.update({"description": description, "requested_slot": None, "confirmation_pending": True, "ticket_result": None, "ticket_reused": None, "ticket_id": None})
+            return workflow_response(
+                "Please review the ticket details below. Reply Confirm to create the ticket or Cancel to stop.",
+                slots, "raise_ticket_form", "confirm",
+            )
+
+        if session.current_step == "confirm":
+            if not _is_confirm(message):
+                slots["confirmation_pending"] = True
+                return workflow_response("Please reply Confirm to create this ticket, or Cancel to stop without creating it.", slots, "raise_ticket_form", "confirm")
+            signature = _ticket_signature(reporter, str(slots.get("category") or ""), str(slots.get("description") or ""))
+            previous_signature = slots.get("last_created_signature")
+            previous_ticket_id = slots.get("last_created_ticket_id")
+            if signature and signature == previous_signature and previous_ticket_id:
+                result_slots = _cleared_ticket_slots(slots, clear_dedupe=False)
+                result_slots.update({
+                    "reporter": reporter, "category": slots.get("category"), "description": slots.get("description"),
+                    "ticket_id": previous_ticket_id, "ticket_result": True, "ticket_reused": True,
+                    "last_created_signature": previous_signature, "last_created_ticket_id": previous_ticket_id,
+                    "confirmation_pending": False, "requested_slot": None,
+                })
+                return workflow_response("This matches the ticket you just created, so I reused the existing ticket instead of creating a duplicate.", result_slots, None, None)
+            try:
+                ticket = await ITSMAdapter.create_ticket(
+                    category=str(slots.get("category") or ""),
+                    description=str(slots.get("description") or ""),
+                    reporter=reporter,
+                )
+            except BackendUnavailableError:
+                slots["confirmation_pending"] = True
+                return workflow_response("I can't reach the IT ticket system right now. Your ticket was not created; please try Confirm again shortly.", slots, "raise_ticket_form", "confirm")
+            except TicketCreationRejectedError as exc:
+                slots["confirmation_pending"] = True
+                return workflow_response(f"I couldn't create the ticket: {exc}. Please check your details or Cancel.", slots, "raise_ticket_form", "confirm")
+
+            ticket_id = str(ticket["ticket_id"]).strip().upper()
+            result_slots = _cleared_ticket_slots(slots, clear_dedupe=False)
+            result_slots.update({
+                "reporter": reporter, "category": slots.get("category"), "description": slots.get("description"),
+                "ticket_id": ticket_id, "ticket_result": True, "ticket_reused": False,
+                "confirmation_pending": False, "requested_slot": None,
+                "last_created_signature": signature, "last_created_ticket_id": ticket_id,
+            })
+            return workflow_response(
+                "Ticket created successfully. Reference ID:", result_slots, None, None,
+                {"action_type": "ticket_created", "reference_id": ticket_id, "details": {"category": slots.get("category"), "reporter": reporter}},
+            )
+
+        restart_slots = _cleared_ticket_slots(slots, clear_dedupe=False)
+        restart_slots.update({"reporter": reporter, "requested_slot": "category", "confirmation_pending": False})
+        return workflow_response("Let's start your IT ticket again. What category best describes the issue?", restart_slots, "raise_ticket_form", "ask_category")
+
+    logger.info("IT converse sender=%s intent=%s confidence=%.2f", req.sender, intent, confidence)
+    if intent == "nlu_fallback" or confidence < FALLBACK_THRESHOLD:
+        return ConverseResponse(
+            intent="nlu_fallback", confidence=confidence, entities=entities, slots=slots,
+            current_form=session.current_form, current_step=session.current_step,
+            response_text="I'm sorry, I didn't understand that. You can ask me to check an IT ticket, raise a support ticket, or get password-reset help.",
+        )
     if intent == "check_ticket_status":
-        ticket_id = entities.get("ticket_id") or session.slots.get("ticket_id")
+        ticket_id = entities.get("ticket_id") or slots.get("ticket_id")
         action_result = await action_handler.lookup_logic(ticket_id)
-        merged_slots = dict(session.slots)
+        merged_slots = dict(slots)
         merged_slots.update(action_result.get("slots", {}))
         response_entities = dict(entities)
         response_entities.update(action_result.get("slots", {}))
-
         if action_result.get("missing_slot") == "ticket_id":
-            return ConverseResponse(
-                intent=intent,
-                confidence=confidence,
-                entities=response_entities,
-                slots=merged_slots,
-                current_form="check_ticket_status_form",
-                current_step="await_ticket_id",
-                response_text=action_result["response_text"],
-            )
-
+            return ConverseResponse(intent=intent, confidence=confidence, entities=response_entities, slots=merged_slots, current_form="check_ticket_status_form", current_step="await_ticket_id", response_text=action_result["response_text"])
         if action_result.get("backend_unavailable") or action_result.get("slots", {}).get("found") is False:
-            return ConverseResponse(
-                intent=intent,
-                confidence=confidence,
-                entities=response_entities,
-                slots=merged_slots,
-                template_key=None,
-                current_form=None,
-                current_step=None,
-                response_text=action_result["response_text"],
-            )
-
-        return ConverseResponse(
-            intent=intent,
-            confidence=confidence,
-            entities=response_entities,
-            slots=merged_slots,
-            template_key=action_result["template_key"],
-            current_form=None,
-            current_step=None,
-            response_text=action_result.get("response_text"),
-        )
-
-    if intent == "raise_ticket":
-        return ConverseResponse(
-            intent=intent,
-            confidence=confidence,
-            entities=entities,
-            slots=session.slots,
-            response_text="I can help with a new support ticket. The guided ticket-creation workflow is being connected.",
-        )
-
+            return ConverseResponse(intent=intent, confidence=confidence, entities=response_entities, slots=merged_slots, current_form=None, current_step=None, response_text=action_result["response_text"])
+        return ConverseResponse(intent=intent, confidence=confidence, entities=response_entities, slots=merged_slots, template_key=action_result["template_key"], current_form=None, current_step=None, response_text=action_result.get("response_text"))
     if intent == "reset_password":
-        return ConverseResponse(
-            intent=intent,
-            confidence=confidence,
-            entities=entities,
-            slots=session.slots,
-            response_text="I can help with password-reset guidance. The verified reset workflow is being connected.",
-        )
-
+        return ConverseResponse(intent=intent, confidence=confidence, entities=entities, slots=slots, response_text="I can help with password-reset guidance. The verified reset workflow is being connected.")
     if intent == "greet":
         response = "Hello! I am your VARIO IT Support Assistant. I can check a ticket status, help raise a ticket, or guide you to password-reset support."
     else:
         response = "Thanks for contacting IT Support. Have a good day!"
-    return ConverseResponse(
-        intent=intent,
-        confidence=confidence,
-        entities=entities,
-        slots=session.slots,
-        response_text=response,
-    )
+    return ConverseResponse(intent=intent, confidence=confidence, entities=entities, slots=slots, response_text=response)
+
+
+def _is_confirm(message: str) -> bool:
+    clean = " ".join(message.casefold().strip().split())
+    return clean in {"confirm", "yes", "yes create it", "create it", "submit", "proceed", "looks good", "go ahead"}
+
+
+def _is_cancel(message: str) -> bool:
+    clean = " ".join(message.casefold().strip().split())
+    return clean in {"cancel", "no", "no thanks", "don't create", "do not create", "discard", "stop", "never mind", "nevermind"}
+
+
+def _ticket_signature(reporter: str, category: str, description: str) -> str:
+    import hashlib
+    normalized = "|".join((reporter.strip().casefold(), category.strip().casefold(), " ".join(description.strip().casefold().split())))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _cleared_ticket_slots(slots: Dict[str, Any], *, clear_dedupe: bool) -> Dict[str, Any]:
+    cleared = dict(slots)
+    for key in ("category", "description", "reporter", "requested_slot", "confirmation_pending", "ticket_id", "ticket_result", "ticket_reused"):
+        cleared[key] = None
+    if clear_dedupe:
+        cleared["last_created_signature"] = None
+        cleared["last_created_ticket_id"] = None
+    return cleared
 
 
 if __name__ == "__main__":

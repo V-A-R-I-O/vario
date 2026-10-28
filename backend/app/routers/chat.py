@@ -24,6 +24,7 @@ from sqlalchemy.future import select
 from app.config import settings
 from app.database import get_db
 from app.models.conversation import Conversation
+from app.models.user import User
 from app.models.message import Message
 from app.schemas.chat import ChatRequest, ChatResponse, SessionState
 from app.services import dialogue_router, response_renderer, session_manager, tts_service, audit_log_service
@@ -72,11 +73,15 @@ async def chat(
     session = await session_manager.load_or_create(db, conversation.conversation_id)
 
     # --- 3. Route to the correct Rasa instance ---
+    auth_result = await db.execute(select(User).where(User.user_id == user_id))
+    auth_user = auth_result.scalars().first()
+    auth_context = {"employee_id": auth_user.external_id, "full_name": auth_user.full_name} if auth_user else {}
     rasa_result = await dialogue_router.route(
         role_pack=conversation.role_pack,
         sender=user_id,
         message=payload.message,
         session=session,
+        auth_context=auth_context,
     )
 
     # FR-5 — record the classification/routing decision for this turn.
