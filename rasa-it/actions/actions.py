@@ -118,7 +118,7 @@ class ActionCheckTicketStatus(Action):
         domain: Dict[str, Any],
     ) -> list:
         ticket_id = self.extract_ticket_id(tracker)
-        result = self.execute_logic(ticket_id)
+        result = await self.lookup_logic(ticket_id)
         if result.get("missing_slot"):
             dispatcher.utter_message(text=result["response_text"])
             return []
