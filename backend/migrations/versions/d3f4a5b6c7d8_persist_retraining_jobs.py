@@ -32,9 +32,18 @@ def upgrade() -> None:
     )
     op.create_index("ix_retraining_jobs_role_pack", "retraining_jobs", ["role_pack"])
     op.create_index("ix_retraining_jobs_state", "retraining_jobs", ["state"])
+    op.create_index(
+        "uq_retraining_jobs_one_active_per_pack",
+        "retraining_jobs",
+        ["role_pack"],
+        unique=True,
+        postgresql_where=sa.text("state IN ('pending', 'training')"),
+        sqlite_where=sa.text("state IN ('pending', 'training')"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("uq_retraining_jobs_one_active_per_pack", table_name="retraining_jobs")
     op.drop_index("ix_retraining_jobs_state", table_name="retraining_jobs")
     op.drop_index("ix_retraining_jobs_role_pack", table_name="retraining_jobs")
     op.drop_table("retraining_jobs")
