@@ -3,6 +3,10 @@ import asyncio, json, logging, time, uuid
 from datetime import datetime, timezone
 from typing import Any
 import httpx
+import io
+import zipfile
+from pathlib import Path
+import yaml
 from sqlalchemy import update
 from sqlalchemy.future import select
 from app.config import settings
@@ -27,23 +31,52 @@ async def load_rows(pack):
    if i.needs_retrain: dirty.append(i.intent_id)
   return rows,dirty
 
+def _prepare_assets(pack, rows):
+ root = Path(settings.ROLE_PACKS_DIR) / pack
+ config_path, domain_path = root / "config.yml", root / "domain.yml"
+ if not config_path.is_file() or not domain_path.is_file():
+  raise RuntimeError(f"Training assets unavailable for {pack}; check role-pack mounts.")
+ config = config_path.read_text(encoding="utf-8")
+ domain = yaml.safe_load(domain_path.read_text(encoding="utf-8")) or {}
+ intents = domain.setdefault("intents", [])
+ names = {x if isinstance(x, str) else next(iter(x), "") for x in intents}
+ for row in rows:
+  if row["examples"] and row["name"] not in names: intents.append(row["name"])
+ files = {}
+ data_dir = root / "data"
+ if data_dir.is_dir():
+  for path in data_dir.rglob("*"):
+   if path.is_file() and path.suffix in (".yml", ".yaml"):
+    files[path.relative_to(root).as_posix()] = path.read_text(encoding="utf-8")
+ nlu = yaml.safe_load(files.get("data/nlu.yml", 'version: "3.1"\nnlu: []')) or {}
+ nlu.setdefault("version", "3.1")
+ replace_names = {row["name"] for row in rows}
+ items = [item for item in nlu.setdefault("nlu", []) if item.get("intent") not in replace_names]
+ for row in rows:
+  if row["examples"]:
+   items.append({"intent": row["name"], "examples": "\n".join("- " + p for p in row["examples"])})
+ nlu["nlu"] = items
+ files["data/nlu.yml"] = yaml.safe_dump(nlu, sort_keys=False, allow_unicode=True)
+ archive = io.BytesIO()
+ with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+  for name, value in files.items(): zf.writestr(name, value)
+ return config, yaml.safe_dump(domain, sort_keys=False, allow_unicode=True), archive.getvalue()
+
 async def train(pack, rows):
- async with httpx.AsyncClient(timeout=httpx.Timeout(180,connect=5)) as c:
-  if pack=="it":
-   r=await c.post(URLS[pack].rstrip()+"/internal/retrain",
-     json={"examples_by_intent":{x["name"]:x["examples"] for x in rows if x["examples"]}},
-     headers={"X-Vario-Internal-Token":settings.RETRAINING_INTERNAL_TOKEN})
-   r.raise_for_status(); return
-  # Rasa's model API is used for real training and reload, not a simulated success.
-  nlu={"version":"3.1","nlu":[{"intent":x["name"],"examples":"\\n".join("- "+p for p in x["examples"])} for x in rows if x["examples"]]}
-  import yaml, io, zipfile
-  archive=io.BytesIO()
-  with zipfile.ZipFile(archive,"w",zipfile.ZIP_DEFLATED) as z: z.writestr("data/nlu.yml",yaml.safe_dump(nlu,sort_keys=False,allow_unicode=True))
-  config="recipe: default.v1\nlanguage: en\npipeline:\n  - name: WhitespaceTokenizer\n  - name: CountVectorsFeaturizer\n  - name: DIETClassifier\n    epochs: 30\n"
-  domain="version: \"3.1\"\nintents:\n"+"".join("  - "+x["name"]+"\n" for x in rows if x["examples"])+"  - nlu_fallback\n"
-  r=await c.post(URLS[pack].rstrip()+"/model/train",data={"config":config,"domain":domain,"save_to_default_model_directory":"true"},files={"training_files":("training-data.zip",archive.getvalue(),"application/zip")})
+ async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=5)) as c:
+  if pack == "it":
+   r = await c.post(URLS[pack].rstrip() + "/internal/retrain",
+    json={"examples_by_intent": {x["name"]: x["examples"] for x in rows if x["examples"]}},
+    headers={"X-Vario-Internal-Token": settings.RETRAINING_INTERNAL_TOKEN})
+   r.raise_for_status()
+   return
+  config, domain, archive = _prepare_assets(pack, rows)
+  r = await c.post(URLS[pack].rstrip() + "/model/train",
+   data={"config": config, "domain": domain, "save_to_default_model_directory": "true"},
+   files={"training_files": ("training-data.zip", archive, "application/zip")})
   r.raise_for_status()
-  r=await c.post(URLS[pack].rstrip()+"/model/reload"); r.raise_for_status()
+  r = await c.post(URLS[pack].rstrip() + "/model/reload")
+  r.raise_for_status()
 
 async def run(job_id,pack):
  async with LOCK: JOBS[job_id].update(state="training",started_at=now())
