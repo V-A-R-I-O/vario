@@ -60,17 +60,22 @@ async def chat(
     if conversation.user_id != user_id:
         raise HTTPException(status_code=403, detail="Conversation does not belong to this user")
 
-    # --- 1. Persist the user message ---
+    # --- 1. Load session state before persistence so sensitive workflow input can be redacted ---
+    session = await session_manager.load_or_create(db, conversation.conversation_id)
+
+    # Security answers go to mock ITSM for verification but must not be retained in chat history.
+    is_security_answer = (
+        conversation.role_pack == "it"
+        and session.current_form == "reset_password_form"
+        and session.current_step == "await_security_answer"
+    )
     user_msg = Message(
         conversation_id=conversation.conversation_id,
         sender="user",
-        content=payload.message,
+        content="[security answer redacted]" if is_security_answer else payload.message,
     )
     db.add(user_msg)
     await db.flush()
-
-    # --- 2. Load session state (Postgres is authoritative) ---
-    session = await session_manager.load_or_create(db, conversation.conversation_id)
 
     # --- 3. Route to the correct Rasa instance ---
     auth_result = await db.execute(select(User).where(User.user_id == user_id))
