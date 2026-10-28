@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     RASA_HR_URL: str = "http://localhost:5005"
     RASA_IT_URL: str = "http://localhost:5006"
     RASA_ADMISSIONS_URL: str = "http://localhost:5007"
+    RETRAINING_INTERNAL_TOKEN: str = "dev-retraining-token-change-me"
 
     # Chat engine tuning
     # Top intent below this confidence → clarification prompt instead of a workflow (FR-2).
