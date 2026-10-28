@@ -443,6 +443,26 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       }
     }
 
+    // Slice 21 — mock-verified IT password reset.
+    if (m.intent_name === 'reset_password') {
+      const resetSlots = { ...(m.entities ?? {}), ...(m.slots ?? {}) };
+      if (resetSlots.reset_denied) {
+        return <BotMessage key={m.id} message={{ type: 'error', text: m.content || 'Identity verification failed. No reset was initiated.' }} />;
+      }
+      if (resetSlots.reset_result && resetSlots.employee_id) {
+        return <BotMessage key={m.id} message={{ type: 'result', text: m.content || 'Password reset request initiated for employee:', referenceId: String(resetSlots.employee_id) }} />;
+      }
+      if (resetSlots.reset_error) {
+        return <BotMessage key={m.id} message={{ type: 'error', text: m.content || 'The mock password-reset service is temporarily unavailable.' }} />;
+      }
+      if (resetSlots.requested_slot === 'employee_id') {
+        return <BotMessage key={m.id} message={{ type: 'plain_text', text: m.content || 'Please enter your employee ID (for example, EMP-1042).' }} />;
+      }
+      if (resetSlots.requested_slot === 'security_answer') {
+        return <BotMessage key={m.id} message={{ type: 'plain_text', text: m.content || `Please answer: ${resetSlots.security_question || 'your stored security question'}` }} />;
+      }
+    }
+
     // Slice 19 — IT ticket creation slot prompts, confirmation and result.
     if (m.intent_name === 'raise_ticket') {
       const ticketSlots = { ...(m.entities ?? {}), ...(m.slots ?? {}) };
