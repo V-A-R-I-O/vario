@@ -1,7 +1,7 @@
 """Lightweight local IT role-pack runtime implementing the VARIO ADR-002 contract.
 
-The canonical Rasa training assets live beside this server. This small runtime keeps
-local development and CI lightweight; the live ticket lookup belongs to Slice 20.
+The canonical Rasa training assets live beside this server. The runtime calls the
+ITSM HTTP adapter for live ticket status and returns structured slots for the chat UI.
 """
 import logging
 import re
