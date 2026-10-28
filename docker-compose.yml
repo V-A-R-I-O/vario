@@ -41,8 +41,10 @@ services:
       RASA_HR_URL: http://rasa-hr:5005
       RASA_IT_URL: http://rasa-it:5006
       RASA_ADMISSIONS_URL: http://rasa-admissions:5005
+      RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-dev-retraining-token-change-me}
       MOCK_HRMS_URL: http://mock-hrms:9002
       MOCK_ITSM_URL: http://mock-itsm:9003
+      RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-dev-retraining-token-change-me}
       MOCK_ADMISSIONS_URL: http://mock-admissions:9004
     depends_on:
       postgres:
