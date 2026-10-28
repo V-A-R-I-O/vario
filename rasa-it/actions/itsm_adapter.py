@@ -102,3 +102,80 @@ class ITSMAdapter:
         if not isinstance(ticket, dict) or not ticket.get("ticket_id"):
             raise BackendUnavailableError("ITSM service returned an incomplete ticket response.")
         return ticket
+
+
+    @classmethod
+    async def get_security_question(cls, employee_id: str) -> Dict[str, Any]:
+        """Return the mock employee's security question, never the stored answer."""
+        clean_id = (employee_id or "").strip().upper()
+        if not clean_id:
+            return {"found": False, "employee_id": "", "detail": "Employee ID is required."}
+        try:
+            async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
+                response = await client.get(f"{cls.base_url()}/identity/{quote(clean_id, safe='')}/question")
+        except (httpx.RequestError, httpx.TimeoutException) as exc:
+            raise BackendUnavailableError("ITSM service is currently unavailable. Please try again shortly.") from exc
+        if response.status_code == 404:
+            return {"found": False, "employee_id": clean_id, "detail": "Employee was not found."}
+        if response.status_code != 200:
+            raise BackendUnavailableError(f"ITSM service returned HTTP {response.status_code}.")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise BackendUnavailableError("ITSM service returned a malformed identity response.") from exc
+        if not isinstance(payload, dict) or not payload.get("security_question"):
+            raise BackendUnavailableError("ITSM service returned an incomplete identity response.")
+        return {"found": True, "employee_id": str(payload.get("employee_id") or clean_id).upper(), "security_question": str(payload["security_question"])}
+
+    @classmethod
+    async def verify_identity(cls, employee_id: str, answer: str) -> Dict[str, Any]:
+        """Verify the submitted mock security answer; never return or log it."""
+        clean_id = (employee_id or "").strip().upper()
+        clean_answer = (answer or "").strip()
+        if not clean_id or not clean_answer:
+            return {"verified": False, "employee_id": clean_id, "detail": "Employee ID and answer are required."}
+        try:
+            async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
+                response = await client.post(f"{cls.base_url()}/identity/verify", json={"employee_id": clean_id, "answer": clean_answer})
+        except (httpx.RequestError, httpx.TimeoutException) as exc:
+            raise BackendUnavailableError("ITSM service is currently unavailable. Please try again shortly.") from exc
+        if response.status_code == 404:
+            return {"verified": False, "employee_id": clean_id, "detail": "Employee was not found."}
+        if response.status_code != 200:
+            raise BackendUnavailableError(f"ITSM service returned HTTP {response.status_code}.")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise BackendUnavailableError("ITSM service returned a malformed verification response.") from exc
+        if not isinstance(payload, dict):
+            raise BackendUnavailableError("ITSM service returned a malformed verification response.")
+        return {"verified": bool(payload.get("verified", False)), "employee_id": str(payload.get("employee_id") or clean_id).upper(), "detail": str(payload.get("detail") or "")}
+
+    @classmethod
+    async def reset_password(cls, employee_id: str) -> Dict[str, Any]:
+        """Request a mock password reset; Mock ITSM independently enforces verification."""
+        clean_id = (employee_id or "").strip().upper()
+        if not clean_id:
+            raise IdentityVerificationError("Employee ID is required for password reset.")
+        try:
+            async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
+                response = await client.post(f"{cls.base_url()}/password/reset", json={"employee_id": clean_id})
+        except (httpx.RequestError, httpx.TimeoutException) as exc:
+            raise BackendUnavailableError("ITSM service is currently unavailable. Please try again shortly.") from exc
+        if response.status_code == 403:
+            raise IdentityVerificationError("Identity verification is required before a password reset.")
+        if response.status_code == 404:
+            return {"success": False, "found": False, "employee_id": clean_id, "detail": "Employee was not found."}
+        if response.status_code != 200:
+            raise BackendUnavailableError(f"ITSM service returned HTTP {response.status_code}.")
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise BackendUnavailableError("ITSM service returned a malformed reset response.") from exc
+        if not isinstance(payload, dict) or payload.get("success") is not True or payload.get("reset_requested") is not True:
+            raise BackendUnavailableError("ITSM service did not confirm the mock password-reset request.")
+        return payload
+
+
+class IdentityVerificationError(Exception):
+    """The mock ITSM service rejected a reset because identity was not verified."""
