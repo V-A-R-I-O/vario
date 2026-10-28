@@ -5,6 +5,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.routers import auth, conversations, chat, admin, admin_crud, retraining
 from app.database import engine, Base
+from app.services.retraining_service import recover_stale_jobs
 from contextlib import asynccontextmanager
 
 from app.middleware import gateway_middleware
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI):
     # For dev/test, just create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await recover_stale_jobs()
     yield
 
 app = FastAPI(title="VARIO API", lifespan=lifespan)
