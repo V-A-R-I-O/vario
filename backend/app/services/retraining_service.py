@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 import yaml
 from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 
 from app.config import settings
@@ -171,6 +172,7 @@ async def recover_stale_jobs():
 
 
 async def create_job(pack, actor):
+    job_id = str(uuid.uuid4())
     async with AsyncSessionLocal() as db:
         active = await db.execute(
             select(RetrainingJob.job_id).where(
@@ -180,7 +182,6 @@ async def create_job(pack, actor):
         )
         if active.scalar_one_or_none():
             raise ValueError("A retraining job is already running for this role pack.")
-        job_id = str(uuid.uuid4())
         db.add(RetrainingJob(
             job_id=job_id,
             role_pack=pack,
@@ -188,7 +189,11 @@ async def create_job(pack, actor):
             state="pending",
             created_at=now(),
         ))
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise ValueError("A retraining job is already running for this role pack.") from exc
     import asyncio
     asyncio.create_task(run(job_id, pack))
     return {"retrain_job_id": job_id}
