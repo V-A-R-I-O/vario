@@ -505,7 +505,7 @@ class _InternalRetrainPayload(_RetrainRequest):
 async def internal_retrain(payload: _InternalRetrainPayload,
     x_vario_internal_token: str = Header(default="", alias="X-Vario-Internal-Token")):
     import os
-    expected = os.getenv("RETRAINING_INTERNAL_TOKEN", "dev-retraining-token-change-me")
+    expected = os.getenv("RETRAINING_INTERNAL_TOKEN", "")
     if not expected or x_vario_internal_token != expected:
         raise HTTPException(status_code=401, detail="Invalid internal retraining token")
     if not payload.examples_by_intent or any(not isinstance(v, list) for v in payload.examples_by_intent.values()):
