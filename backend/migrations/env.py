@@ -19,6 +19,7 @@ from app.models.training_phrase import TrainingPhrase
 from app.models.response_template import ResponseTemplate
 from app.models.response_variant import ResponseVariant
 from app.models.audit_log import AuditLog
+from app.models.retraining_job import RetrainingJob
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
