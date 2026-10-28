@@ -883,3 +883,10 @@ When rate limited, the response includes:
 ```
 
 Headers included: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
+
+
+## Admin — Retraining (Slice 10)
+
+- `POST /api/admin/retrain`: admin JWT required; role pack is derived from the JWT, returns `202` and `retrain_job_id`. Returns `409` if that pack already has an active job.
+- `GET /api/admin/retrain/:job_id`: returns job state (`pending`, `training`, `complete`, `failed`) and timestamps. Jobs are visible only to admins of the same role pack.
+- Current job registry is process-local; persistent queue/storage is a production hardening follow-up for multi-worker deployments.

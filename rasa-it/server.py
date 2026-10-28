@@ -490,3 +490,28 @@ def _cleared_reset_slots(slots: Dict[str, Any]) -> Dict[str, Any]:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("server:app", host="0.0.0.0", port=5006)
+
+
+# Slice 10 internal retraining endpoint for the lightweight IT classifier.
+from fastapi import Header, HTTPException
+from pydantic import BaseModel as _RetrainRequest
+
+
+class _InternalRetrainPayload(_RetrainRequest):
+    examples_by_intent: Dict[str, list[str]]
+
+
+@app.post("/internal/retrain")
+async def internal_retrain(payload: _InternalRetrainPayload,
+    x_vario_internal_token: str = Header(default="", alias="X-Vario-Internal-Token")):
+    import os
+    expected = os.getenv("RETRAINING_INTERNAL_TOKEN", "dev-retraining-token-change-me")
+    if not expected or x_vario_internal_token != expected:
+        raise HTTPException(status_code=401, detail="Invalid internal retraining token")
+    if not payload.examples_by_intent or any(not isinstance(v, list) for v in payload.examples_by_intent.values()):
+        raise HTTPException(status_code=422, detail="Invalid training examples")
+    global TRAINING_DATA
+    updated = dict(TRAINING_DATA)
+    updated.update({k: [p.strip().lower() for p in v if p.strip()] for k, v in payload.examples_by_intent.items()})
+    TRAINING_DATA = updated
+    return {"status": "success", "intents_updated": len(payload.examples_by_intent)}
