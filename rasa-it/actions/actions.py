@@ -124,10 +124,10 @@ class ActionCheckTicketStatus(Action):
             return []
         if result.get("backend_unavailable") or result.get("slots", {}).get("found") is False:
             dispatcher.utter_message(text=result["response_text"])
-            return [SlotSet(key, value) for key, value in result.get("slots", {}).items()]
+            return [SlotSet(key, value) for key, value in result.get("slots", {}).items() if key in {"ticket_id", "status"}]
         slots = result["slots"]
         dispatcher.utter_message(text=f"Ticket {slots['ticket_id']} is currently {slots['status']}.")
-        return [SlotSet(key, value) for key, value in slots.items()]
+        return [SlotSet("ticket_id", slots["ticket_id"]), SlotSet("status", slots["status"])]
 
 
 class ActionDefaultFallback(Action):
