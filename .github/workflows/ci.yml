@@ -126,6 +126,11 @@ jobs:
         working-directory: ${{ matrix.service }}
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
+      # HR's dialogue-router integration test imports backend services/models.
+      - name: Install backend integration-test dependencies
+        if: matrix.service == 'rasa-hr'
+        run: python -m pip install -r backend/requirements.txt
+
       - name: Validate Python syntax
         working-directory: ${{ matrix.service }}
         run: python -m compileall -q .
