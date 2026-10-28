@@ -49,7 +49,6 @@ services:
       ROLE_PACKS_DIR: /rolepacks
       MOCK_HRMS_URL: http://mock-hrms:9002
       MOCK_ITSM_URL: http://mock-itsm:9003
-      RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-dev-retraining-token-change-me}
       MOCK_ADMISSIONS_URL: http://mock-admissions:9004
     depends_on:
       postgres:
@@ -146,6 +145,7 @@ services:
     restart: unless-stopped
     environment:
       MOCK_ITSM_URL: http://mock-itsm:9003
+      RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-dev-retraining-token-change-me}
     depends_on:
       mock-itsm:
         condition: service_healthy
