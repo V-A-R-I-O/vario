@@ -39,7 +39,7 @@ services:
       JWT_EXPIRY_MINUTES: ${JWT_EXPIRY_MINUTES:-60}
       MOCK_AUTH_URL: http://mock-auth:9001
       RASA_HR_URL: http://rasa-hr:5005
-      RASA_IT_URL: http://rasa-it:5005
+      RASA_IT_URL: http://rasa-it:5006
       RASA_ADMISSIONS_URL: http://rasa-admissions:5005
       MOCK_HRMS_URL: http://mock-hrms:9002
       MOCK_ITSM_URL: http://mock-itsm:9003
@@ -126,13 +126,18 @@ services:
     command: ["run", "--enable-api", "--port", "5005"]
 
   rasa-it:
-    image: rasa/rasa:3.6.20-full
+    build:
+      context: ./rasa-it
     profiles: [full]
+    restart: unless-stopped
     ports:
-      - "5006:5005"
-    volumes:
-      - ./rasa-it:/app
-    command: ["run", "--enable-api", "--port", "5005"]
+      - "5006:5006"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5006/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   rasa-admissions:
     image: rasa/rasa:3.6.20-full
