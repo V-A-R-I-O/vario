@@ -1,0 +1,22 @@
+version: "3.1"
+
+rules:
+  - rule: Check ticket status
+    steps:
+      - intent: check_ticket_status
+      - action: action_check_ticket_status
+
+  - rule: Handle low confidence fallback
+    steps:
+      - intent: nlu_fallback
+      - action: action_default_fallback
+
+  - rule: Greet
+    steps:
+      - intent: greet
+      - action: utter_greet
+
+  - rule: Goodbye
+    steps:
+      - intent: goodbye
+      - action: utter_goodbye
