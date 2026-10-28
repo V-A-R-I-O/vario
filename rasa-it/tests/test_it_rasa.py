@@ -263,3 +263,66 @@ def test_ticket_creation_requires_authenticated_reporter():
     assert response.status_code == 200
     assert response.json()["current_form"] is None
     assert "sign in" in response.json()["response_text"].lower()
+
+
+def _reset_turn(message, session=None):
+    return client.post("/webhooks/vario/converse", json={
+        "sender": "user-test", "message": message,
+        "session": session or {"current_form": None, "current_step": None, "slots": {}},
+    })
+
+
+def test_password_reset_success_verifies_before_reset_and_emits_audit_event():
+    question = {"found": True, "employee_id": "EMP-1042", "security_question": "What city were you born in?"}
+    verification = {"verified": True, "employee_id": "EMP-1042", "detail": "Identity verified."}
+    reset = {"success": True, "employee_id": "EMP-1042", "reset_requested": True}
+    with patch.object(ITSMAdapter, "get_security_question", new_callable=AsyncMock, return_value=question), \
+         patch.object(ITSMAdapter, "verify_identity", new_callable=AsyncMock, return_value=verification) as verify, \
+         patch.object(ITSMAdapter, "reset_password", new_callable=AsyncMock, return_value=reset) as reset_call:
+        start = _reset_turn("I forgot my password").json()
+        assert start["current_form"] == "reset_password_form"
+        assert start["current_step"] == "ask_employee_id"
+        assert start["slots"]["requested_slot"] == "employee_id"
+        employee = _reset_turn("EMP-1042", {"current_form": start["current_form"], "current_step": start["current_step"], "slots": start["slots"]}).json()
+        assert employee["current_step"] == "await_security_answer"
+        assert employee["slots"]["security_question"] == question["security_question"]
+        assert reset_call.await_count == 0
+        result = _reset_turn("Mysuru", {"current_form": employee["current_form"], "current_step": employee["current_step"], "slots": employee["slots"]}).json()
+    verify.assert_awaited_once_with("EMP-1042", "Mysuru")
+    reset_call.assert_awaited_once_with("EMP-1042")
+    assert result["current_form"] is None
+    assert result["slots"]["reset_result"] is True
+    assert "Mysuru" not in str(result)
+    assert result["audit_event"]["action_type"] == "password_reset_initiated"
+    assert result["audit_event"]["reference_id"] == "EMP-1042"
+
+
+def test_password_reset_denies_after_three_wrong_answers_without_reset():
+    question = {"found": True, "employee_id": "EMP-1042", "security_question": "What city were you born in?"}
+    with patch.object(ITSMAdapter, "get_security_question", new_callable=AsyncMock, return_value=question), \
+         patch.object(ITSMAdapter, "verify_identity", new_callable=AsyncMock, return_value={"verified": False, "employee_id": "EMP-1042"}), \
+         patch.object(ITSMAdapter, "reset_password", new_callable=AsyncMock) as reset_call:
+        state = {"current_form": None, "current_step": None, "slots": {}}
+        for message in ("I forgot my password", "EMP-1042"):
+            data = _reset_turn(message, state).json()
+            state = {"current_form": data["current_form"], "current_step": data["current_step"], "slots": data["slots"]}
+        for attempt in ("wrong one", "wrong two"):
+            data = _reset_turn(attempt, state).json()
+            assert data["current_form"] == "reset_password_form"
+            state = {"current_form": data["current_form"], "current_step": data["current_step"], "slots": data["slots"]}
+        denied = _reset_turn("wrong three", state).json()
+    reset_call.assert_not_awaited()
+    assert denied["current_form"] is None
+    assert denied["slots"]["reset_denied"] is True
+    assert denied.get("audit_event") is None
+
+
+def test_password_reset_cancel_never_calls_identity_or_reset():
+    with patch.object(ITSMAdapter, "verify_identity", new_callable=AsyncMock) as verify, \
+         patch.object(ITSMAdapter, "reset_password", new_callable=AsyncMock) as reset_call:
+        start = _reset_turn("reset my password").json()
+        cancelled = _reset_turn("cancel reset", {"current_form": start["current_form"], "current_step": start["current_step"], "slots": start["slots"]}).json()
+    verify.assert_not_awaited()
+    reset_call.assert_not_awaited()
+    assert cancelled["current_form"] is None
+    assert "cancelled" in cancelled["response_text"].lower()
