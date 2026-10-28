@@ -80,6 +80,11 @@ nlu:
       - unlock my user account
       - I cannot log in to my laptop
       - my password has expired
+      - I need to reset my work login
+      - help me recover access to my employee account
+      - I cannot access my work account
+      - start the password reset process
+      - I need help getting back into my account
 
   - intent: greet
     examples: |
