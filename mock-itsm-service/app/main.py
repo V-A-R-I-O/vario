@@ -91,6 +91,19 @@ async def create_ticket(request: TicketCreateRequest) -> Dict[str, Any]:
     return dict(ticket)
 
 
+@app.get("/identity/{employee_id}/question")
+async def get_security_question(employee_id: str) -> Dict[str, Any]:
+    """Return only the configured question for a known demo employee."""
+    clean_id = (employee_id or "").strip().upper()
+    employee = sd.EMPLOYEES.get(clean_id)
+    if not employee:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Employee was not found.", "employee_id": clean_id},
+        )
+    return {"found": True, "employee_id": clean_id, "security_question": employee["security_question"]}
+
+
 @app.post("/identity/verify")
 async def verify_identity(request: IdentityVerifyRequest) -> Dict[str, Any]:
     employee_id = request.employee_id.strip().upper()
