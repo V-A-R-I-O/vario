@@ -1,6 +1,6 @@
 """Durable status for asynchronous role-pack retraining jobs."""
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Text, CheckConstraint, Integer
+from sqlalchemy import Column, String, DateTime, Text, CheckConstraint, Integer, Index
 from app.database import Base
 from .user import generate_uuid
 
@@ -21,4 +21,11 @@ class RetrainingJob(Base):
     __table_args__ = (
         CheckConstraint(role_pack.in_(["hr", "it", "admissions"]), name="chk_retraining_job_role_pack"),
         CheckConstraint(state.in_(["pending", "training", "complete", "failed"]), name="chk_retraining_job_state"),
+        Index(
+            "uq_retraining_jobs_one_active_per_pack",
+            "role_pack",
+            unique=True,
+            sqlite_where=state.in_(["pending", "training"]),
+            postgresql_where=state.in_(["pending", "training"]),
+        ),
     )
