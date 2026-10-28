@@ -137,6 +137,11 @@ services:
       context: ./rasa-it
     profiles: [full]
     restart: unless-stopped
+    environment:
+      MOCK_ITSM_URL: http://mock-itsm:9003
+    depends_on:
+      mock-itsm:
+        condition: service_healthy
     ports:
       - "5006:5006"
     healthcheck:
