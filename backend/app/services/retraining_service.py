@@ -155,6 +155,21 @@ async def run(job_id, pack):
         )
 
 
+async def recover_stale_jobs():
+    """Fail jobs interrupted by a process restart instead of leaving them pending forever."""
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            update(RetrainingJob)
+            .where(RetrainingJob.state.in_(ACTIVE_STATES))
+            .values(
+                state="failed",
+                completed_at=now(),
+                error_message="Retraining was interrupted by a backend restart; start a new job.",
+            )
+        )
+        await db.commit()
+
+
 async def create_job(pack, actor):
     async with AsyncSessionLocal() as db:
         active = await db.execute(
