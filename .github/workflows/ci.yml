@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# Cancel obsolete runs when a newer commit is pushed to the same PR/branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     name: Backend tests and build
@@ -92,4 +97,47 @@ jobs:
 
       - name: Run Mock Auth tests
         working-directory: mock-auth-service
+        run: python -m pytest
+
+  role-packs:
+    name: "${{ matrix.service }} validation and tests"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - rasa-hr
+          - rasa-admissions
+          - rasa-it
+    # Slice 17's IT role pack is not yet on main. Enable its matrix leg
+    # automatically as soon as the service requirements file exists.
+    if: ${{ matrix.service != 'rasa-it' || hashFiles('rasa-it/requirements.txt') != '' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ${{ matrix.service }}/requirements.txt
+
+      - name: Install role-pack dependencies
+        working-directory: ${{ matrix.service }}
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      - name: Validate Python syntax
+        working-directory: ${{ matrix.service }}
+        run: python -m compileall -q .
+
+      - name: Run critical Python static checks
+        working-directory: ${{ matrix.service }}
+        run: |
+          python -m pip install ruff
+          ruff check --select E9,F63,F7,F82 .
+
+      - name: Run role-pack tests
+        working-directory: ${{ matrix.service }}
         run: python -m pytest
