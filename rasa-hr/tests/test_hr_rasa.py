@@ -1,5 +1,6 @@
 import os
 import logging
+from datetime import date, timedelta
 from unittest.mock import patch, MagicMock
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +9,11 @@ from server import app, classify_message
 from actions.actions import ActionCheckLeaveBalance, ActionSubmitLeaveRequest
 
 client = TestClient(app)
+
+# Keep date-validation tests independent of the day CI happens to run.
+FUTURE_START_DATE = (date.today() + timedelta(days=7)).isoformat()
+FUTURE_END_DATE = (date.today() + timedelta(days=9)).isoformat()
+EARLIER_DATE = (date.today() + timedelta(days=6)).isoformat()
 
 
 def test_health_check_endpoint():
@@ -402,7 +408,7 @@ def test_action_submit_leave_validates_start_date():
     result = action.execute_logic(
         employee_id="EMP-1042",
         leave_type="casual",
-        start_date="2026-10-20"
+        start_date=FUTURE_START_DATE
     )
     assert result["missing_slot"] == "end_date"
 
@@ -415,7 +421,7 @@ def test_action_submit_leave_collects_end_date():
     result = action.execute_logic(
         employee_id="EMP-1042",
         leave_type="casual",
-        start_date="2026-10-20"
+        start_date=FUTURE_START_DATE
     )
 
     assert result["requires_input"] is True
@@ -432,8 +438,8 @@ def test_action_submit_leave_validates_date_range():
     result = action.execute_logic(
         employee_id="EMP-1042",
         leave_type="casual",
-        start_date="2026-10-20",
-        end_date="2026-10-19"
+        start_date=FUTURE_START_DATE,
+        end_date=EARLIER_DATE
     )
     assert result["requires_input"] is True
     assert result["slots"]["end_date"] is None
@@ -448,8 +454,8 @@ def test_action_submit_leave_collects_reason():
     result = action.execute_logic(
         employee_id="EMP-1042",
         leave_type="casual",
-        start_date="2026-10-20",
-        end_date="2026-10-22"
+        start_date=FUTURE_START_DATE,
+        end_date=FUTURE_END_DATE
     )
 
     assert result["requires_input"] is True
@@ -464,8 +470,8 @@ def test_action_submit_leave_shows_confirmation():
     result = action.execute_logic(
         employee_id="EMP-1042",
         leave_type="casual",
-        start_date="2026-10-20",
-        end_date="2026-10-22",
+        start_date=FUTURE_START_DATE,
+        end_date=FUTURE_END_DATE,
         reason="Family event"
     )
 
@@ -491,8 +497,8 @@ def test_action_submit_leave_submits_on_confirm():
         result = action.execute_logic(
             employee_id="EMP-1042",
             leave_type="casual",
-            start_date="2026-10-20",
-            end_date="2026-10-22",
+            start_date=FUTURE_START_DATE,
+            end_date=FUTURE_END_DATE,
             reason="Family event",
             confirmation_pending=True,
             user_action="confirm"
@@ -514,8 +520,8 @@ def test_action_submit_leave_cancels_gracefully():
     result = action.execute_logic(
         employee_id="EMP-1042",
         leave_type="casual",
-        start_date="2026-10-20",
-        end_date="2026-10-22",
+        start_date=FUTURE_START_DATE,
+        end_date=FUTURE_END_DATE,
         reason="Family event",
         confirmation_pending=True,
         user_action="cancel"
@@ -552,19 +558,19 @@ def test_converse_webhook_leave_request_multi_turn():
     assert data["slots"]["requested_slot"] == "start_date"
 
     # Turn 3: Provide start date
-    payload["message"] = "2026-10-20"
+    payload["message"] = FUTURE_START_DATE
     payload["session"]["slots"] = data["slots"]
     res = client.post("/webhooks/vario/converse", json=payload)
     data = res.json()
-    assert data["slots"]["start_date"] == "2026-10-20"
+    assert data["slots"]["start_date"] == FUTURE_START_DATE
     assert data["slots"]["requested_slot"] == "end_date"
 
     # Turn 4: Provide end date
-    payload["message"] = "2026-10-22"
+    payload["message"] = FUTURE_END_DATE
     payload["session"]["slots"] = data["slots"]
     res = client.post("/webhooks/vario/converse", json=payload)
     data = res.json()
-    assert data["slots"]["end_date"] == "2026-10-22"
+    assert data["slots"]["end_date"] == FUTURE_END_DATE
     assert data["slots"]["requested_slot"] == "reason"
 
     # Turn 5: Provide reason

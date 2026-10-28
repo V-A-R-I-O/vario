@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# Cancel obsolete runs when a newer commit is pushed to the same PR/branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     name: Backend tests and build
@@ -93,3 +98,119 @@ jobs:
       - name: Run Mock Auth tests
         working-directory: mock-auth-service
         run: python -m pytest
+
+  role-packs:
+    name: "${{ matrix.service }} validation and tests"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - rasa-hr
+          - rasa-admissions
+    # IT role-pack CI is being introduced with Slice 17 PR #40; keep this
+    # matrix limited to services present on main to avoid a broken checkout.
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ${{ matrix.service }}/requirements.txt
+
+      - name: Install role-pack dependencies
+        working-directory: ${{ matrix.service }}
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      # HR's dialogue-router integration test imports backend services/models.
+      - name: Install backend integration-test dependencies
+        if: matrix.service == 'rasa-hr'
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Validate Python syntax
+        working-directory: ${{ matrix.service }}
+        run: python -m compileall -q .
+
+      - name: Run critical Python static checks
+        working-directory: ${{ matrix.service }}
+        run: |
+          python -m pip install ruff
+          ruff check --select E9,F63,F7,F82 .
+
+      - name: Run role-pack tests
+        working-directory: ${{ matrix.service }}
+        run: python -m pytest
+
+  rasa-it:
+    name: IT role-pack validation and tests (when present)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Detect IT role-pack files
+        id: detect
+        run: |
+          if [ -f rasa-it/requirements.txt ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Explain pending Slice 17 dependency
+        if: steps.detect.outputs.present != 'true'
+        run: echo "::notice::rasa-it is not on the base branch yet; IT checks will run once Slice 17 is merged."
+
+      - name: Set up Python
+        if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: rasa-it/requirements.txt
+
+      - name: Install IT role-pack dependencies
+        if: steps.detect.outputs.present == 'true'
+        working-directory: rasa-it
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      - name: Validate Rasa YAML assets
+        if: steps.detect.outputs.present == 'true'
+        working-directory: rasa-it
+        run: |
+          python -c "import yaml; from pathlib import Path; [yaml.safe_load(p.read_text(encoding='utf-8')) for p in [Path('config.yml'), Path('domain.yml'), Path('credentials.yml'), Path('endpoints.yml'), Path('data/nlu.yml'), Path('data/rules.yml'), Path('data/stories.yml')]]"
+
+      - name: Validate Python syntax
+        if: steps.detect.outputs.present == 'true'
+        working-directory: rasa-it
+        run: python -m compileall -q .
+
+      - name: Run critical Python static checks
+        if: steps.detect.outputs.present == 'true'
+        working-directory: rasa-it
+        run: |
+          python -m pip install ruff
+          ruff check --select E9,F63,F7,F82 .
+
+      - name: Run IT role-pack tests
+        if: steps.detect.outputs.present == 'true'
+        working-directory: rasa-it
+        run: python -m pytest
+
+  compose-config:
+    name: Docker Compose configuration validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate full local stack configuration
+        run: |
+          cp .env.example .env
+          docker compose --profile full config --quiet
