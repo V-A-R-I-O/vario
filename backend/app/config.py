@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     JWT_EXPIRY_MINUTES: int = 60
     MOCK_AUTH_URL: str = "http://localhost:9001"
     MOCK_HRMS_URL: str = "http://localhost:9002"
+    MOCK_ITSM_URL: str = "http://localhost:9003"
     MOCK_ADMISSIONS_URL: str = "http://localhost:9004"
     DATABASE_URL: str = "sqlite+aiosqlite:///:memory:" # Default to in-memory for dev/tests
 
