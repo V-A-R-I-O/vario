@@ -127,6 +127,18 @@ def classify_message(text: str) -> tuple[str, float, Dict[str, Any]]:
     has_raise = any(word in clean for word in RAISE_WORDS) and any(word in clean for word in TICKET_WORDS)
     has_status = any(word in clean for word in STATUS_WORDS)
     has_ticket_context = any(word in clean for word in TICKET_WORDS)
+    has_it_context = has_ticket_context or has_password or any(
+        word in clean
+        for word in (
+            "computer", "laptop", "wifi", "network", "email", "vpn",
+            "software", "printer", "technical", "it support", "reset",
+            "account", "sign in", "sign-in", "login", "log in",
+        )
+    )
+
+    # Reject unrelated messages before token-overlap scoring (e.g. weather/jokes).
+    if not has_it_context and not ticket_match:
+        return "nlu_fallback", 0.15, entities
 
     # Specific requests take priority over the ticket-ID prior.
     if has_password:
