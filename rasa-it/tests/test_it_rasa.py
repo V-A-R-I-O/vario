@@ -1,6 +1,10 @@
+import asyncio
+from unittest.mock import AsyncMock, patch
+
 from fastapi.testclient import TestClient
 
 from server import app, classify_message, action_handler
+from actions.itsm_adapter import BackendUnavailableError, ITSMAdapter
 from actions.actions import ActionCheckTicketStatus
 
 client = TestClient(app)
@@ -71,6 +75,46 @@ def test_action_prompts_when_ticket_id_missing_or_invalid():
         assert result["slots"] == {}
         assert result["missing_slot"] == "ticket_id"
         assert "TKT-1234" in result["response_text"]
+
+
+
+def test_action_lookup_logic_returns_ticket_status_slots():
+    payload = {
+        "found": True,
+        "ticket_id": "IT-1001",
+        "status": "In Progress",
+        "category": "hardware",
+        "description": "Laptop battery drains quickly",
+        "reporter": "EMP-1042",
+        "updated_at": "2026-10-21T12:30:00Z",
+    }
+    with patch.object(ITSMAdapter, "get_ticket_status", new_callable=AsyncMock, return_value=payload):
+        result = asyncio.run(action_handler.lookup_logic("it-1001"))
+    assert result["template_key"] == "check_ticket_status_response"
+    assert result["slots"]["ticket_id"] == "IT-1001"
+    assert result["slots"]["status"] == "In Progress"
+    assert result["slots"]["found"] is True
+
+
+def test_action_lookup_logic_handles_backend_outage_gracefully():
+    with patch.object(ITSMAdapter, "get_ticket_status", new_callable=AsyncMock, side_effect=BackendUnavailableError()):
+        result = asyncio.run(action_handler.lookup_logic("TKT-1234"))
+    assert result["backend_unavailable"] is True
+    assert result["template_key"] is None
+    assert "try again" in result["response_text"].lower()
+
+
+def test_action_lookup_logic_returns_not_found_for_unknown_ticket():
+    with patch.object(
+        ITSMAdapter,
+        "get_ticket_status",
+        new_callable=AsyncMock,
+        return_value={"found": False, "ticket_id": "TKT-9999", "status": "Not Found"},
+    ):
+        result = asyncio.run(action_handler.lookup_logic("TKT-9999"))
+    assert result["slots"]["found"] is False
+    assert result["slots"]["status"] == "Not Found"
+    assert "couldn't find" in result["response_text"].lower()
 
 
 def test_converse_endpoint_prompts_for_missing_ticket_id():
