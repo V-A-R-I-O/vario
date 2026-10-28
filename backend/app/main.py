@@ -43,7 +43,8 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
-app.include_router(admin_crud.router, prefix="/api")\napp.include_router(retraining.router, prefix="/api")
+app.include_router(admin_crud.router, prefix="/api")
+app.include_router(retraining.router, prefix="/api")
 
 @app.get("/health")
 def health_check():
