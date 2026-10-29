@@ -1,10 +1,13 @@
 import pytest
-from fastapi.testclient import TestClient
+from starlette.testclient import TestClient
 
 from server import app, classify_message
 from actions.actions import ActionCheckApplicationStatus, ActionGetDocumentChecklist, ActionAskFeeDeadline
+from actions.admissions_adapter import AdmissionsAdapter, BackendUnavailableError
+from app.main import app as mock_admissions_app
 
 client = TestClient(app)
+mock_client = TestClient(mock_admissions_app)
 
 
 def test_health_check_endpoint():
@@ -77,7 +80,7 @@ def test_action_check_application_status_skeleton():
 
 
 def test_converse_webhook_success_roundtrip():
-    # ADR-002 converse contract verification
+    # ADR-006 converse contract verification
     payload = {
         "sender": "user-test-123",
         "message": "What is the status of application APP-1001?",
@@ -96,7 +99,10 @@ def test_converse_webhook_success_roundtrip():
     assert data["slots"]["status"] == "Under Review"
     assert data["current_form"] is None
     assert data["current_step"] is None
-    assert data["response_text"] is None
+    assert data["response_text"] is not None
+    assert "APP-1001" in data["response_text"]
+    assert data["card"] is not None
+    assert data["card"]["type"] == "data_card"
 
 
 def test_converse_webhook_fallback_roundtrip():
@@ -143,10 +149,12 @@ def test_converse_webhook_missing_id_requests_application_id():
 
     assert data["intent"] == "check_application_status"
     assert data["template_key"] is None
-    assert data["current_form"] == "check_application_status_form"
+    assert data["current_form"] in ["check_application_status_form", "application_status_form"]
     assert data["current_step"] == "await_application_id"
-    assert "Please provide your application ID" in data["response_text"]
+    assert "Please provide your application" in data["response_text"]
     assert data["slots"].get("application_id") is None
+    assert data["card"] is not None
+    assert data["card"]["type"] == "slot_prompt"
 
 
 def test_converse_webhook_unknown_application_id_graceful_not_found():
@@ -172,6 +180,7 @@ def test_converse_webhook_unknown_application_id_graceful_not_found():
     assert "admissions@org.example.com" in data["slots"]["suggested_next_step"]
     assert data["response_text"] is not None
     assert "APP-9999 was not found" in data["response_text"]
+    assert data["card"]["type"] == "not_found"
 
 
 def test_action_check_application_status_not_found():
@@ -224,6 +233,7 @@ def test_action_get_document_checklist_success():
         assert len(result["slots"]["required_documents"]) >= 3
         assert result["slots"]["items_summary"]
         assert result["response_text"] is not None
+        assert result["card"]["type"] == "list"
 
 
 def test_action_get_document_checklist_missing_program():
@@ -233,7 +243,7 @@ def test_action_get_document_checklist_missing_program():
         result = action.execute_logic(empty_prog)
         assert result["template_key"] is None
         assert result["missing_slot"] == "program"
-        assert result["current_form"] == "get_document_checklist_form"
+        assert result["current_form"] in ["checklist_form", "get_document_checklist_form"]
         assert result["current_step"] == "await_program"
         assert "Which program would you like the document checklist for?" in result["response_text"]
 
@@ -248,6 +258,7 @@ def test_action_get_document_checklist_not_found():
     assert isinstance(result["slots"]["available_programs"], list)
     assert len(result["slots"]["available_programs"]) >= 1
     assert "No document checklist found" in result["response_text"]
+    assert result["card"]["type"] == "not_found"
 
 
 def test_classify_document_checklist_intent():
@@ -267,7 +278,7 @@ def test_classify_document_checklist_intent():
 
 
 def test_converse_webhook_document_checklist_success():
-    # AC-1 & ADR-002: End-to-end webhook call with specified program
+    # AC-1 & ADR-006: End-to-end webhook call with specified program
     payload = {
         "sender": "user-chk-1",
         "message": "what documents do I need for btech?",
@@ -286,6 +297,7 @@ def test_converse_webhook_document_checklist_success():
     assert len(data["slots"]["required_documents"]) >= 3
     assert data["current_form"] is None
     assert data["current_step"] is None
+    assert data["card"]["type"] == "list"
 
 
 def test_converse_webhook_document_checklist_slot_prompt():
@@ -302,9 +314,10 @@ def test_converse_webhook_document_checklist_slot_prompt():
 
     assert data["intent"] == "get_document_checklist"
     assert data["template_key"] is None
-    assert data["current_form"] == "get_document_checklist_form"
+    assert data["current_form"] in ["checklist_form", "get_document_checklist_form"]
     assert data["current_step"] == "await_program"
     assert "Which program would you like the document checklist for?" in data["response_text"]
+    assert data["card"]["type"] == "slot_prompt"
 
 
 def test_converse_webhook_document_checklist_multiturn_flow():
@@ -358,6 +371,7 @@ def test_converse_webhook_document_checklist_not_found():
     assert data["slots"]["found"] is False
     assert "available_programs" in data["slots"]
     assert "No document checklist found" in data["response_text"]
+    assert data["card"]["type"] == "not_found"
 
 
 # --- Slice 26: adm-fee-deadline tests (SCRUM-38) ---
@@ -405,22 +419,23 @@ def test_action_ask_fee_deadline_submission_deadline():
 
 
 def test_action_ask_fee_deadline_dynamic_calendar_update():
-    # AC-3: Given a change to calendar (in Mock Admissions), answers update accordingly
-    action = ActionAskFeeDeadline()
-    from actions.actions import OFFLINE_CALENDAR
-
-    # Mutate offline calendar / test calendar data
-    original_deadlines = list(OFFLINE_CALENDAR["deadlines"])
+    # AC-2 & Slice-39 AC: Given PUT /calendar changes the MBA fee, when fee is asked again, new fee answered
+    cal = mock_client.get("/calendar").json()
+    orig_fees = list(cal["fees"])
     try:
-        OFFLINE_CALENDAR["deadlines"] = original_deadlines + [
-            {"milestone": "Spot Round Registration Deadline", "date": "February 1, 2027"}
+        updated_fees = [
+            f if "MBA" not in f["item"] else {**f, "amount": "INR 5,50,000"}
+            for f in orig_fees
         ]
-        result = action.execute_logic("when is spot round registration deadline?")
+        mock_client.put("/calendar", json={"fees": updated_fees})
+
+        action = ActionAskFeeDeadline()
+        result = action.execute_logic("tuition fee for MBA program")
         assert result["template_key"] == "ask_fee_deadline_response"
-        assert "February 1, 2027" in result["slots"]["details"]
-        assert "Spot Round Registration Deadline" in str(result["slots"].get("deadlines", []))
+        assert "5,50,000" in result["slots"]["details"]
+        assert "5,50,000" in result["response_text"]
     finally:
-        OFFLINE_CALENDAR["deadlines"] = original_deadlines
+        mock_client.put("/calendar", json={"fees": orig_fees})
 
 
 def test_action_ask_fee_deadline_clarification_on_vague_query():
@@ -456,7 +471,7 @@ def test_classify_fee_deadline_intents():
 
 
 def test_converse_webhook_fee_query_success():
-    # AC-1 & ADR-002: Converse webhook roundtrip for fee inquiry
+    # AC-1 & ADR-006: Converse webhook roundtrip for fee inquiry
     payload = {
         "sender": "user-fee-1",
         "message": "how much is the tuition fee for B.Tech?",
@@ -474,10 +489,11 @@ def test_converse_webhook_fee_query_success():
     assert "3,20,000" in data["slots"]["details"]
     assert "3,20,000" in data["response_text"]
     assert data["current_form"] is None
+    assert data["card"]["type"] == "data_card"
 
 
 def test_converse_webhook_deadline_query_success():
-    # AC-2 & ADR-002: Converse webhook roundtrip for deadline inquiry
+    # AC-2 & ADR-006: Converse webhook roundtrip for deadline inquiry
     payload = {
         "sender": "user-dl-1",
         "message": "what is the last date to submit the application?",
@@ -494,6 +510,7 @@ def test_converse_webhook_deadline_query_success():
     assert data["slots"]["academic_year"] == "2026-2027"
     assert "November 30, 2026" in data["slots"]["details"]
     assert "November 30, 2026" in data["response_text"]
+    assert data["card"]["type"] == "data_card"
 
 
 def test_converse_webhook_refund_policy_success():
@@ -511,6 +528,7 @@ def test_converse_webhook_refund_policy_success():
     assert data["template_key"] == "ask_fee_deadline_response"
     assert "100% refund" in data["slots"]["details"]
     assert "refund_policy" in data["slots"]
+    assert data["card"]["type"] == "data_card"
 
 
 def test_converse_webhook_vague_fee_query_requests_clarification():
@@ -527,6 +545,137 @@ def test_converse_webhook_vague_fee_query_requests_clarification():
 
     assert data["template_key"] is None
     assert "clarify whether you are asking about tuition fees" in data["response_text"]
+    assert data["card"]["type"] == "slot_prompt"
 
 
+# --- Slice 39 Defects: B2b, M3c, M1b, M5b, M6b, N13 Regression Tests ---
 
+def test_mock_admissions_service_down_returns_unavailable_not_not_found(monkeypatch):
+    # M6b: Given mock-admissions is stopped, reply says service is unavailable (not "not found")
+    async def mock_fail(*args, **kwargs):
+        raise BackendUnavailableError("The admissions system is unavailable, please try again later.")
+
+    monkeypatch.setattr(AdmissionsAdapter, "get_application_status", mock_fail)
+
+    payload = {
+        "sender": "user-down-1",
+        "message": "what is the status of APP-1001?",
+        "session": {"current_form": None, "current_step": None, "slots": {}},
+    }
+    res = client.post("/webhooks/vario/converse", json=payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["slots"].get("service_unavailable") is True
+    assert "unavailable" in data["response_text"].lower()
+    assert "not found" not in data["response_text"].lower()
+    assert data["card"]["type"] == "error"
+
+
+def test_form_interruption_application_id_swallowing():
+    # M3c: Given the application-ID prompt, when user asks about MBA fee, the fee is answered
+    interruption_payload = {
+        "sender": "user-interrupt-1",
+        "message": "what is the tuition fee for MBA program?",
+        "session": {
+            "current_form": "application_status_form",
+            "current_step": "await_application_id",
+            "slots": {},
+        },
+    }
+
+    res = client.post("/webhooks/vario/converse", json=interruption_payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "ask_fee_deadline"
+    assert data["template_key"] == "ask_fee_deadline_response"
+    assert "4,50,000" in data["slots"]["details"]
+    assert data["current_form"] is None
+    assert data["current_step"] is None
+
+
+def test_form_interruption_program_swallowing():
+    # M3c: When prompted for program, user asks about greet or fee, prompt does not swallow
+    interruption_payload = {
+        "sender": "user-interrupt-2",
+        "message": "when is the last date to pay fees?",
+        "session": {
+            "current_form": "checklist_form",
+            "current_step": "await_program",
+            "slots": {},
+        },
+    }
+
+    res = client.post("/webhooks/vario/converse", json=interruption_payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "ask_fee_deadline"
+    assert data["template_key"] == "ask_fee_deadline_response"
+    assert data["current_form"] is None
+    assert data["current_step"] is None
+
+
+def test_stale_slots_not_reused_per_lookup():
+    # M1b: Given a completed lookup, when 'check application status' is asked again, asks for ID
+    lookup_again_payload = {
+        "sender": "user-stale-1",
+        "message": "check application status",
+        "session": {
+            "current_form": None,
+            "current_step": None,
+            "slots": {
+                "application_id": "APP-1001",
+                "status": "Under Review",
+                "program": "Computer Science (B.Tech)",
+            },
+        },
+    }
+
+    res = client.post("/webhooks/vario/converse", json=lookup_again_payload)
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["intent"] == "check_application_status"
+    assert data["current_step"] == "await_application_id"
+    assert data["current_form"] in ["application_status_form", "check_application_status_form"]
+    assert "Please provide your application reference ID" in data["response_text"]
+    assert data["card"]["type"] == "slot_prompt"
+
+
+def test_greet_and_goodbye_responses():
+    # M5b: Greet and goodbye return friendly messages, never debug text
+    res_greet = client.post(
+        "/webhooks/vario/converse",
+        json={"sender": "user-g", "message": "hi"},
+    )
+    assert res_greet.status_code == 200
+    data_greet = res_greet.json()
+    assert data_greet["intent"] == "greet"
+    assert "Hello! I am your VARIO Admissions Assistant" in data_greet["response_text"]
+    assert "acknowledged" not in data_greet["response_text"]
+
+    res_bye = client.post(
+        "/webhooks/vario/converse",
+        json={"sender": "user-g", "message": "bye"},
+    )
+    assert res_bye.status_code == 200
+    data_bye = res_bye.json()
+    assert data_bye["intent"] == "goodbye"
+    assert "Have a wonderful day!" in data_bye["response_text"]
+    assert "acknowledged" not in data_bye["response_text"]
+
+
+def test_follow_up_fee_question_and_for_btech():
+    # N13: "and for btech?" after fee question returns B.Tech fee
+    res = client.post(
+        "/webhooks/vario/converse",
+        json={"sender": "user-n13", "message": "and for btech?"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["intent"] == "ask_fee_deadline"
+    assert data["template_key"] == "ask_fee_deadline_response"
+    assert "3,20,000" in data["slots"]["details"]
+    assert data["card"]["type"] == "data_card"

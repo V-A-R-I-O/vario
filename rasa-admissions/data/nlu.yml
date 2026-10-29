@@ -80,6 +80,26 @@ nlu:
       - orientation date and admission timeline
       - what is the second merit list deadline?
       - how much is the caution deposit?
+      - and for btech?
+      - and for b.tech?
+      - and for mba?
+      - and for mtech?
+      - and for data science?
+      - what about btech?
+      - what about mba?
+      - what about mtech?
+      - what about fees?
+      - and fees?
+      - any update on fees?
+      - what are the dates?
+      - what are the fee details?
+      - how about hostel?
+      - and hostel fees?
+      - what is the deadline?
+      - when are fees due?
+      - what about the fee?
+      - fees?
+      - deadlines?
 
   - intent: nlu_fallback
     examples: |
