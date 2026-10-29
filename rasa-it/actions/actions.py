@@ -143,11 +143,17 @@ class ActionSubmitRaiseTicket(Action):
         try:
             ticket = await ITSMAdapter.create_ticket(category, description, reporter)
         except TicketCreationRejectedError as exc:
-            dispatcher.utter_message(text=f"The IT system rejected this ticket: {exc}. Correct the details or cancel.")
-            return reset + _clear("last_ticket_signature", "last_ticket_id")
+            dispatcher.utter_message(text=f"The IT system rejected this ticket: {exc}. Please correct the details or cancel.")
+            return [
+                SlotSet("category", None), SlotSet("description", None),
+                SlotSet("confirmation", None), SlotSet("last_ticket_signature", None),
+                SlotSet("last_ticket_id", None), ActiveLoop("raise_ticket_form"),
+                SlotSet("requested_slot", "category"),
+            ]
         except BackendUnavailableError:
             dispatcher.utter_message(text="I can't reach the IT ticket system. Your request was not submitted; please try again shortly.")
-            return reset
+            return [SlotSet("confirmation", None), ActiveLoop("raise_ticket_form"),
+                    SlotSet("requested_slot", "confirmation")]
         ticket_id = str(ticket["ticket_id"]).strip().upper()
         dispatcher.utter_message(
             text=f"Your support ticket {ticket_id} has been created.",
@@ -182,6 +188,11 @@ class ValidateResetPasswordForm(FormValidationAction):
         if not question.get("found"):
             dispatcher.utter_message(text="I couldn't find that employee account. Please check the ID.")
             return {"employee_id": None}
+        if question.get("locked"):
+            dispatcher.utter_message(text="This account has reached the maximum number of verification attempts. Please contact IT Support.")
+            return {"employee_id": employee_id, "security_question": question["security_question"],
+                    "security_answer": "[locked]", "identity_verified": False,
+                    "reset_attempts": 3, "reset_error": "locked"}
         return {"employee_id": employee_id, "security_question": question["security_question"],
                 "identity_verified": False, "reset_attempts": 0, "reset_error": None}
 
