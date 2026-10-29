@@ -123,6 +123,10 @@ async def test_rasa_training_activates_model_after_training(monkeypatch, pack):
             calls.append((url, kwargs))
             return Response()
 
+        async def put(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return Response()
+
     monkeypatch.setattr(service.httpx, "AsyncClient", Client)
     monkeypatch.setattr(
         service,
@@ -133,9 +137,9 @@ async def test_rasa_training_activates_model_after_training(monkeypatch, pack):
     await service.train(pack, [{"name": "new_intent", "examples": ["example"]}])
 
     assert len(calls) == 2
-    assert calls[0][1].endswith("/model/train")
-    assert calls[1][1].endswith("/model")
-    assert calls[0][2]["data"]["save_to_default_model_directory"] == "true"
+    assert calls[0][0].endswith("/model/train")
+    assert calls[1][0].endswith("/model")
+    assert calls[0][1]["data"]["save_to_default_model_directory"] == "true"
 
 
 @pytest.mark.asyncio
