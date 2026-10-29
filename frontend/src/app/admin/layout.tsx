@@ -13,19 +13,6 @@ const NAV = [
     icon: <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />,
   },
   {
-    href: '/admin/retraining',
-    label: 'Retraining',
-    icon: (
-      <path
-        d="M4 12a8 8 0 1 1 2.3 5.6M4 20v-5h5"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    ),
-  },
-  {
     href: '/admin/audit-log',
     label: 'Audit log',
     icon: (
