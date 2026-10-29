@@ -29,7 +29,7 @@ Deliverables:
 No UI surface.
 
 ## Out of scope for this slice
-- Production orchestration on OCI (that's `slice-29-oci-cloudflare`).
+- Production orchestration on cloud hosting (that's `slice-29-oci-cloudflare`).
 - CI/CD (that's `slice-28-cicd`).
 - Kubernetes / any non-Compose orchestrator.
 
