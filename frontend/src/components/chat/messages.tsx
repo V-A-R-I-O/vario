@@ -40,7 +40,7 @@ export function DataCard({ title, rows }: Omit<DataCardMessage, 'type'>) {
   );
 }
 
-export function SlotPrompt({ text, options, onSelect }: Omit<SlotPromptMessage, 'type'>) {
+export function SlotPrompt({ text, options, onSelect, disabled }: Omit<SlotPromptMessage, 'type'>) {
   return (
     <div className="card-msg">
       <div className="card-body" style={{ paddingTop: 14 }}>{text}</div>
@@ -50,6 +50,7 @@ export function SlotPrompt({ text, options, onSelect }: Omit<SlotPromptMessage, 
             className="opt-btn"
             key={i}
             type="button"
+            disabled={disabled}
             onClick={() => onSelect?.(opt.value ?? opt.label)}
           >
             {opt.label}
@@ -67,16 +68,17 @@ export function Confirmation({
   cancelLabel = 'Cancel',
   onConfirm,
   onCancel,
+  disabled,
 }: Omit<ConfirmationMessage, 'type'>) {
   return (
     <div className="card-msg">
       {title && <div className="card-head">{title}</div>}
       <KeyValueRows rows={rows} />
       <div className="confirm-actions">
-        <button className="btn btn-primary btn-sm" type="button" onClick={onConfirm}>
+        <button className="btn btn-primary btn-sm" type="button" disabled={disabled} onClick={onConfirm}>
           {confirmLabel}
         </button>
-        <button className="btn btn-outline btn-sm" type="button" onClick={onCancel}>
+        <button className="btn btn-outline btn-sm" type="button" disabled={disabled} onClick={onCancel}>
           {cancelLabel}
         </button>
       </div>
