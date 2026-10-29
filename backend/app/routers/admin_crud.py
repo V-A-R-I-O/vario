@@ -47,7 +47,7 @@ from app.schemas.admin import (
     VariantResponse,
     VariantUpdate,
 )
-from app.services import rephraser
+from app.services import rephraser, audit_log_service
 from app.services.admin_guard import AdminContext, require_admin
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -210,6 +210,16 @@ async def create_intent(
 
     await db.commit()
     await db.refresh(intent)
+
+    await audit_log_service.record(
+        db,
+        actor_id=admin.user_id,
+        role_pack=admin.role_pack,
+        action_type="intent_created",
+        reference_id=intent.intent_id,
+        details={"name": intent.name, "intent_type": intent.intent_type},
+    )
+
     return IntentResponse(intent=await _intent_out(db, intent))
 
 
@@ -256,6 +266,15 @@ async def update_intent(
     await db.commit()
     await db.refresh(intent)
 
+    await audit_log_service.record(
+        db,
+        actor_id=admin.user_id,
+        role_pack=admin.role_pack,
+        action_type="intent_updated",
+        reference_id=intent.intent_id,
+        details={"name": intent.name},
+    )
+
     phrases = await _phrases_for(db, intent_id)
     return IntentUpdateResponse(
         intent=IntentUpdateOut(
@@ -284,9 +303,20 @@ async def delete_intent(
             await db.delete(v)
         await db.delete(template)
 
+    intent_name = intent.name
     # Intent cascade removes its training phrases.
     await db.delete(intent)
     await db.commit()
+
+    await audit_log_service.record(
+        db,
+        actor_id=admin.user_id,
+        role_pack=admin.role_pack,
+        action_type="intent_deleted",
+        reference_id=intent_id,
+        details={"name": intent_name},
+    )
+
     return IntentDeleteResponse(deleted_intent_id=intent_id, needs_retrain=True)
 
 
@@ -345,27 +375,39 @@ async def update_template(
     if template.role_pack != admin.role_pack:
         raise HTTPException(status_code=403, detail="Template belongs to another role pack")
 
+    base_text_changed = payload.base_text is not None and payload.base_text != template.base_text
+
     if payload.allow_rephrasing is not None:
         template.allow_rephrasing = payload.allow_rephrasing
     if payload.base_text is not None:
         template.base_text = payload.base_text
 
-    # Regenerate variants when rephrasing is on; otherwise keep the original
-    # (position 0) in sync with the new base_text.
+    # Regenerate variants only when base_text changes (M9a)
     existing = await _variants_for(db, template_id)
-    if template.allow_rephrasing:
-        for v in existing:
-            await db.delete(v)
-        await db.flush()
-        await _create_variants(db, template)
-    elif payload.base_text is not None:
-        if existing:
-            existing[0].variant_text = template.base_text
+    if base_text_changed:
+        if template.allow_rephrasing:
+            for v in existing:
+                await db.delete(v)
+            await db.flush()
+            await _create_variants(db, template)
         else:
-            db.add(ResponseVariant(template_id=template_id, variant_text=template.base_text, position=0))
+            if existing:
+                existing[0].variant_text = template.base_text
+            else:
+                db.add(ResponseVariant(template_id=template_id, variant_text=template.base_text, position=0))
 
     await db.commit()
     await db.refresh(template)
+
+    await audit_log_service.record(
+        db,
+        actor_id=admin.user_id,
+        role_pack=admin.role_pack,
+        action_type="template_edited",
+        reference_id=template.template_id,
+        details={"template_key": template.template_key},
+    )
+
     return TemplateResponse(template=await _template_out(db, template))
 
 
@@ -408,6 +450,16 @@ async def update_variant(
     variant.variant_text = payload.variant_text
     await db.commit()
     await db.refresh(variant)
+
+    await audit_log_service.record(
+        db,
+        actor_id=admin.user_id,
+        role_pack=admin.role_pack,
+        action_type="variant_edited",
+        reference_id=variant.variant_id,
+        details={"template_id": template.template_id, "position": variant.position},
+    )
+
     return VariantResponse(variant=_variant_out(variant))
 
 
@@ -420,6 +472,18 @@ async def delete_variant(
     variant, _template = await _get_variant_scoped(db, variant_id, admin)
     if variant.position == 0:
         raise HTTPException(status_code=400, detail="Cannot delete the original base_text variant")
+    template_id = _template.template_id
+    pos = variant.position
     await db.delete(variant)
     await db.commit()
+
+    await audit_log_service.record(
+        db,
+        actor_id=admin.user_id,
+        role_pack=admin.role_pack,
+        action_type="variant_deleted",
+        reference_id=variant_id,
+        details={"template_id": template_id, "position": pos},
+    )
+
     return VariantDeleteResponse(deleted_variant_id=variant_id)
