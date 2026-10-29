@@ -49,8 +49,8 @@ Full slice specs live in \`docs/slices/\`. Summary:
 | 02 | ⚠️ db-schema | D | 1 |
 | 27 | docker-compose | D | 1 |
 | 28 | ⚠️ cicd | B | 1 |
-| 29 | ⚠️ oci-cloudflare | A | 1 |
-| 30 | ⚠️ vercel-neon | C | 1 |
+| 29 | ~~⚠️ oci-cloudflare~~ — Won't Do (local demo, see slice-34) | A | 1 |
+| 30 | ~~⚠️ vercel-neon~~ — Won't Do (local demo, see slice-34) | C | 1 |
 | 03 | ⚠️ gateway-envelope | D | 2 |
 | 04 | conversation-store | D | 2 |
 | 05 | chat-core | D | 2 |
@@ -72,7 +72,18 @@ Full slice specs live in \`docs/slices/\`. Summary:
 | 21 | it-password-reset | B | 3 |
 | 25 | adm-checklist | C | 3 |
 | 26 | adm-fee-deadline | C | 3 |
-| 09 | ⚠️ rephraser | A | 4 |
+| 09 | ⚠️ rephraser (if time — after EPIC-5) | A | 4 |
 | 10 | retraining | B | 4 |
 | 11 | conversation-logs | C | 4 |
-| 31 | perf-hardening | D | 4 |
+| 31 | perf-hardening (minimal) | D | 4 |
+| **32** | ⚠️ rasa-contract-v2 | D | 4 (EPIC-5) |
+| **33** | chat-ui-hardening | D | 4 (EPIC-5) |
+| **34** | ⚠️ local-demo-stack | D | 4 (EPIC-5) |
+| **35** | hr-real-rasa | A | 4 (EPIC-5) |
+| **36** | hr-data-fixes | A | 4 (EPIC-5) |
+| **37** | it-real-rasa | B | 4 (EPIC-5) |
+| **38** | ⚠️ it-data-and-ci | B | 4 (EPIC-5) |
+| **39** | adm-real-rasa | C | 4 (EPIC-5) |
+| **40** | admin-console-fixes | C | 4 (EPIC-5) |
+
+Slices 32–40 come from the end-of-Sprint-3 integration audit (`docs/testing/sprint-3-integration-audit.md`), which logs 51 defects as Jira Bugs under EPIC-5. Import them with `docs/engineering/vario-epic5-jira-import.csv`.
