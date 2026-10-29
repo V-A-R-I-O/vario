@@ -1,0 +1,27 @@
+{
+  "intent": "check_leave_balance",
+  "confidence": 0.96,
+  "entities": {},
+  "template_key": "check_leave_balance_response",
+  "slots": {
+    "total": 22,
+    "casual": 4,
+    "sick": 6,
+    "earned": 12
+  },
+  "current_form": null,
+  "current_step": null,
+  "response_text": "You have 22 days of leave remaining: 4 casual, 6 sick, 12 earned.",
+  "audit_event": null,
+  "card": {
+    "type": "data_card",
+    "title": "Your leave balance",
+    "rows": [
+      { "label": "Casual", "value": "4 days" },
+      { "label": "Sick", "value": "6 days" },
+      { "label": "Earned", "value": "12 days" },
+      { "label": "Total", "value": "22 days" }
+    ]
+  },
+  "sensitive_next_input": false
+}

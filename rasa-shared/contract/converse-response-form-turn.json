@@ -1,0 +1,21 @@
+{
+  "intent": "submit_leave_request",
+  "confidence": 0.91,
+  "entities": {},
+  "template_key": null,
+  "slots": {},
+  "current_form": "leave_request_form",
+  "current_step": "leave_type",
+  "response_text": "What type of leave would you like to request?",
+  "audit_event": null,
+  "card": {
+    "type": "slot_prompt",
+    "text": "What type of leave would you like to request?",
+    "options": [
+      { "label": "Casual", "value": "casual" },
+      { "label": "Sick", "value": "sick" },
+      { "label": "Annual", "value": "annual" }
+    ]
+  },
+  "sensitive_next_input": false
+}
