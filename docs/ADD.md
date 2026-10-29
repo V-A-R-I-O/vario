@@ -8,8 +8,8 @@
 - **Database:** PostgreSQL (local Docker Compose service)
 - **TTS:** Google Cloud Text-to-Speech (Neural2 voices)
 - **Response & Phrase Variant Generation:** Provider-agnostic rephraser service (default: Gemini API via Google AI Studio free tier). Provider selectable via `REPHRASER_PROVIDER` env var.
-- **Hosting — Compute:** Oracle Cloud Infrastructure Always Free (ARM Ampere A1, 4 OCPUs, 24 GB RAM)
-- **Hosting — Frontend:** Local Next.js development server / Docker Compose
+- **Hosting — Compute:** Local development machine running Docker Compose
+- **Frontend runtime:** Local Next.js development server / Docker Compose
 - **Networking / HTTPS:** Local network / localhost (temporary tunnel only if needed for voice demo)
 - **Auth:** Delegated to org's identity provider via Auth Adapter. Mock Auth Service for dev/demo. VARIO issues its own JWT (with embedded role claim) after org validates.
 - **Local Dev:** Docker Compose (full stack)
