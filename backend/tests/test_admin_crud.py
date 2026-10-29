@@ -284,3 +284,95 @@ async def test_non_admin_forbidden_on_crud():
     async with _client() as client:
         res = await client.get("/api/admin/intents", headers=headers_for("u", "end_user"))
     assert res.status_code == 403
+
+
+# --- M9a, M9b, M9c (slice-40) -----------------------------------------------
+
+@pytest.mark.asyncio
+async def test_update_intent_preserves_variants_when_base_text_unchanged():
+    """M9a: Updating an intent (e.g. adding a phrase) does not wipe template variants."""
+    dyn_id, template_id = await seed_dynamic_intent(role_pack="hr", name="ask_policy_preserve")
+    ids_before = await get_ids(template_id)
+    assert len(ids_before) == 2
+
+    async with _client() as client:
+        # Add a phrase to the intent
+        res = await client.put(
+            f"/api/admin/intents/{dyn_id}",
+            headers=HR,
+            json={"training_phrases": {"add": ["New policy phrase?"]}},
+        )
+        assert res.status_code == 200
+
+        # Update template with allow_rephrasing but unchanged base_text
+        res_t = await client.put(
+            f"/api/admin/templates/{template_id}",
+            headers=HR,
+            json={"allow_rephrasing": True},
+        )
+        assert res_t.status_code == 200
+
+    ids_after = await get_ids(template_id)
+    assert ids_after == ids_before, "Variants should not be wiped when base_text is unchanged"
+
+
+@pytest.mark.asyncio
+async def test_delete_seeded_variant_at_position_nonzero_succeeds():
+    """M9b: Deleting a variant at position > 0 succeeds (only position 0 is protected)."""
+    dyn_id, template_id = await seed_dynamic_intent(role_pack="hr", name="ask_variant_del")
+    v0, v1 = await get_ids(template_id)
+
+    async with _client() as client:
+        # Position 1 variant deletion succeeds
+        res1 = await client.delete(f"/api/admin/variants/{v1}", headers=HR)
+        assert res1.status_code == 200
+        assert res1.json()["data"]["deleted_variant_id"] == v1
+
+        # Position 0 original variant deletion returns 400
+        res0 = await client.delete(f"/api/admin/variants/{v0}", headers=HR)
+        assert res0.status_code == 400
+        assert "Cannot delete the original base_text variant" in res0.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_admin_crud_writes_audit_log_entries():
+    """M9c: Admin configuration changes record audit log entries with role_pack."""
+    async with _client() as client:
+        # 1. Create FAQ intent
+        res_create = await client.post(
+            "/api/admin/intents",
+            headers=HR,
+            json={
+                "name": "ask_audit_test",
+                "training_phrases": ["Audit test phrase?"],
+                "response_template": {"base_text": "Audit test base text.", "allow_rephrasing": False},
+            },
+        )
+        assert res_create.status_code == 201
+        intent_id = res_create.json()["data"]["intent"]["id"]
+        template_id = res_create.json()["data"]["intent"]["response_template"]["id"]
+
+        # 2. Update intent
+        res_up = await client.put(
+            f"/api/admin/intents/{intent_id}",
+            headers=HR,
+            json={"training_phrases": {"add": ["Another phrase?"]}},
+        )
+        assert res_up.status_code == 200
+
+        # 3. Edit template
+        res_tpl = await client.put(
+            f"/api/admin/templates/{template_id}",
+            headers=HR,
+            json={"base_text": "Updated audit test base text."},
+        )
+        assert res_tpl.status_code == 200
+
+        # Query audit log for hr
+        res_audit = await client.get("/api/admin/audit-log", headers=HR)
+        assert res_audit.status_code == 200
+        entries = res_audit.json()["data"]["entries"]
+        action_types = [e["action_type"] for e in entries]
+        assert "intent_created" in action_types
+        assert "intent_updated" in action_types
+        assert "template_edited" in action_types
