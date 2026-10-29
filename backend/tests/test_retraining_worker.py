@@ -131,7 +131,7 @@ async def test_rasa_training_activates_model_after_training(monkeypatch, pack):
     monkeypatch.setattr(
         service,
         "_prepare_assets",
-        lambda _pack, _rows: "version: \"3.1\"\\nintents: []\\n",
+        lambda _pack, _rows: "version: \"3.1\"\nintents: []\n",
     )
 
     await service.train(pack, [{"name": "new_intent", "examples": ["example"]}])
@@ -182,7 +182,7 @@ async def test_rasa_training_fails_if_model_reload_fails(monkeypatch, pack):
     monkeypatch.setattr(
         service,
         "_prepare_assets",
-        lambda _pack, _rows: "version: \"3.1\"\\nintents: []\\n",
+        lambda _pack, _rows: "version: \"3.1\"\nintents: []\n",
     )
 
     with pytest.raises(RuntimeError, match="HTTP 500"):
@@ -225,7 +225,7 @@ async def test_it_training_uses_real_rasa_model_api(monkeypatch):
     monkeypatch.setattr(
         service,
         "_prepare_assets",
-        lambda _pack, _rows: "version: \"3.1\"\\nintents: []\\n",
+        lambda _pack, _rows: "version: \"3.1\"\nintents: []\n",
     )
     await service.train(
         "it", [{"name": "ask_vpn_renewal", "examples": ["renew my vpn certificate"]}]

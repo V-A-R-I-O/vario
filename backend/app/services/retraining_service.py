@@ -75,7 +75,7 @@ def _prepare_assets(pack, rows):
             if path.is_file() and path.suffix in (".yml", ".yaml"):
                 files[path.relative_to(root).as_posix()] = path.read_text(encoding="utf-8")
 
-    nlu = yaml.safe_load(files.get("data/nlu.yml", 'version: "3.1"\\nnlu: []')) or {}
+    nlu = yaml.safe_load(files.get("data/nlu.yml", 'version: "3.1"\nnlu: []')) or {}
     nlu.setdefault("version", "3.1")
     replace_names = {row["name"] for row in rows}
     items = [item for item in nlu.setdefault("nlu", []) if item.get("intent") not in replace_names]
@@ -83,7 +83,7 @@ def _prepare_assets(pack, rows):
         if row["examples"]:
             items.append({
                 "intent": row["name"],
-                "examples": "\\n".join("- " + phrase for phrase in row["examples"]),
+                "examples": "\n".join("- " + phrase for phrase in row["examples"]),
             })
     nlu["nlu"] = items
     files["data/nlu.yml"] = yaml.safe_dump(nlu, sort_keys=False, allow_unicode=True)
@@ -98,6 +98,8 @@ def _prepare_assets(pack, rows):
         for key, value in source.items():
             if isinstance(payload.get(key), list) and isinstance(value, list):
                 payload[key].extend(value)
+            elif isinstance(payload.get(key), dict) and isinstance(value, dict):
+                payload[key].update(value)
             else:
                 payload[key] = value
     return yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
