@@ -1,19 +1,28 @@
+"""
+Rasa Admissions Role Pack Runtime Server (ADR-006, slice-39).
+Implements the converse webhook for Admissions NLU and dialogue.
+"""
 import re
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 import yaml
 from fastapi import FastAPI, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from actions.actions import ActionCheckApplicationStatus, ActionGetDocumentChecklist, ActionAskFeeDeadline
+from actions.actions import (
+    ActionCheckApplicationStatus,
+    ActionGetDocumentChecklist,
+    ActionAskFeeDeadline,
+)
+from actions.admissions_adapter import BackendUnavailableError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rasa_admissions_server")
 
 app = FastAPI(
     title="Rasa Admissions Role Pack Runtime",
-    description="Implements ADR-002 converse webhook for Admissions NLU and dialogue.",
+    description="Implements ADR-006 converse webhook for Admissions NLU and dialogue.",
     version="1.0.0",
 )
 
@@ -32,7 +41,6 @@ STOPWORDS = {
     "would", "could", "like", "and", "or", "also", "any", "some"
 }
 
-# Configured FallbackClassifier thresholds from config.yml
 FALLBACK_THRESHOLD = 0.4
 AMBIGUITY_THRESHOLD = 0.10
 
@@ -58,46 +66,6 @@ def load_nlu_training_examples() -> Dict[str, List[str]]:
         except Exception as e:
             logger.warning("Could not parse nlu.yml: %s. Using default examples.", e)
 
-    if not training_data:
-        training_data = {
-            "check_application_status": [
-                "what is the status of application app-1001",
-                "check status of app-1002",
-                "track application app-1003",
-                "application status app-1004",
-                "check application status",
-                "i want to check my application status",
-            ],
-            "get_document_checklist": [
-                "what documents do i need for btech",
-                "document checklist for computer science",
-                "list of documents needed for admission",
-            ],
-            "ask_fee_deadline": [
-                "when is the last date to pay fees",
-                "what are the admission deadlines",
-                "how much is the tuition fee for b.tech",
-                "what is the last date to submit the application",
-                "admission fee structure and payment dates",
-                "when does the merit list come out",
-                "what is the refund policy for admission fees",
-                "when is the document verification deadline",
-                "tuition fee for mba program",
-                "what is the application fee",
-                "how much is the hostel fee",
-                "tuition fee for data science mtech",
-                "what are the fee deadlines",
-                "last date for admission application",
-                "important dates and fees for admission",
-                "what is the fee refund policy",
-                "when do classes commence",
-                "orientation date and admission timeline",
-                "what is the second merit list deadline",
-                "how much is the caution deposit",
-            ],
-            "greet": ["hello", "hi", "hey", "good morning"],
-            "goodbye": ["bye", "goodbye", "see you later"],
-        }
     return training_data
 
 
@@ -107,24 +75,29 @@ TRAINING_DATA = load_nlu_training_examples()
 class SessionState(BaseModel):
     current_form: Optional[str] = None
     current_step: Optional[str] = None
-    slots: Dict[str, Any] = {}
+    slots: Dict[str, Any] = Field(default_factory=dict)
 
 
 class ConverseRequest(BaseModel):
     sender: str
     message: str
     session: Optional[SessionState] = None
+    metadata: Optional[Dict[str, Any]] = None
+    auth_context: Optional[Dict[str, Any]] = None
 
 
 class ConverseResponse(BaseModel):
-    intent: Optional[str]
-    confidence: float
-    entities: Dict[str, Any] = {}
+    intent: Optional[str] = None
+    confidence: float = 0.0
+    entities: Dict[str, Any] = Field(default_factory=dict)
     template_key: Optional[str] = None
-    slots: Dict[str, Any] = {}
+    slots: Dict[str, Any] = Field(default_factory=dict)
     current_form: Optional[str] = None
     current_step: Optional[str] = None
     response_text: Optional[str] = None
+    card: Optional[Dict[str, Any]] = None
+    audit_event: Optional[Dict[str, Any]] = None
+    sensitive_next_input: bool = False
 
 
 def _tokenize(text: str, filter_stops: bool = True) -> set[str]:
@@ -142,6 +115,25 @@ def classify_message(text: str) -> tuple[str, float, Dict[str, Any]]:
     DIETClassifier, and FallbackClassifier) from config.yml using data/nlu.yml.
     """
     clean = text.strip().lower()
+
+    # Exact greeting / goodbye checks (M5b)
+    if clean in {"hi", "hello", "hey", "hey there", "good morning", "good afternoon", "greetings"}:
+        return "greet", 0.98, {}
+    if clean in {"bye", "goodbye", "see you later", "thanks, bye", "thank you, bye", "have a nice day"}:
+        return "goodbye", 0.98, {}
+
+    # Follow-up fee questions (N13: "and for btech?", "what about mba?", etc.)
+    followup_fee_match = re.search(
+        r"^(?:and\s+for|what\s+about|how\s+about)\s+(?:b\.?tech|m\.?tech|mba|computer\s+science|data\s+science)",
+        clean,
+    )
+    if followup_fee_match and "document" not in clean and "checklist" not in clean:
+        prog_match = PROGRAM_REGEX.search(text)
+        entities = {"program": prog_match.group(1).strip()} if prog_match else {}
+        return "ask_fee_deadline", 0.95, entities
+
+    if any(q in clean for q in ["any update on fees", "what are the dates", "what are the fee details", "how about hostel", "and hostel fees"]):
+        return "ask_fee_deadline", 0.95, {}
 
     # Entity extraction (RegexFeaturizer / DIET)
     entities: Dict[str, Any] = {}
@@ -223,127 +215,154 @@ def health() -> Dict[str, Any]:
 async def converse(req: ConverseRequest) -> ConverseResponse:
     """
     Primary conversation entrypoint consumed by backend dialogue-router.
-    Adheres strictly to docs/decisions/ADR-002-rasa-chat-contract.md.
+    Adheres strictly to docs/decisions/ADR-006-rasa-contract-v2.md.
     """
     message = req.message
     sender = req.sender
     session = req.session or SessionState()
 
-    # Multi-turn slot filling if session is currently waiting for a slot in an active form
-    if session.current_step == "await_program" or session.current_form == "get_document_checklist_form":
-        prog_match = PROGRAM_REGEX.search(message)
-        prog_val = prog_match.group(1).strip() if prog_match else message.strip()
-        intent = "get_document_checklist"
-        confidence = 0.95
-        entities = {"program": prog_val}
-    elif session.current_step == "await_application_id" or session.current_form == "check_application_status_form":
-        app_match = APP_ID_REGEX.search(message)
-        app_val = app_match.group(1).upper() if app_match else message.strip().upper()
-        intent = "check_application_status"
-        confidence = 0.95
-        entities = {"application_id": app_val}
+    classified_intent, classified_conf, extracted_entities = classify_message(message)
+
+    is_interruption = False
+    in_app_form = session.current_step == "await_application_id" or session.current_form in [
+        "check_application_status_form",
+        "application_status_form",
+    ]
+    in_prog_form = session.current_step == "await_program" or session.current_form in [
+        "get_document_checklist_form",
+        "checklist_form",
+    ]
+
+    # Check for form interruptions (M3c)
+    if in_app_form:
+        if (
+            classified_intent in ["ask_fee_deadline", "get_document_checklist", "greet", "goodbye"]
+            and not APP_ID_REGEX.search(message)
+        ):
+            is_interruption = True
+            intent = classified_intent
+            confidence = classified_conf
+            entities = extracted_entities
+        else:
+            app_match = APP_ID_REGEX.search(message)
+            app_val = app_match.group(1).upper() if app_match else message.strip().upper()
+            intent = "check_application_status"
+            confidence = 0.95
+            entities = {"application_id": app_val}
+    elif in_prog_form:
+        if (
+            classified_intent in ["ask_fee_deadline", "check_application_status", "greet", "goodbye"]
+            and not PROGRAM_REGEX.search(message)
+        ):
+            is_interruption = True
+            intent = classified_intent
+            confidence = classified_conf
+            entities = extracted_entities
+        else:
+            prog_match = PROGRAM_REGEX.search(message)
+            prog_val = prog_match.group(1).strip() if prog_match else message.strip()
+            intent = "get_document_checklist"
+            confidence = 0.95
+            entities = {"program": prog_val}
     else:
-        intent, confidence, entities = classify_message(message)
+        intent = classified_intent
+        confidence = classified_conf
+        entities = extracted_entities
 
     logger.info(
-        "Converse called: sender=%s intent=%s confidence=%.2f entities=%s",
-        sender, intent, confidence, entities
+        "Converse called: sender=%s intent=%s confidence=%.2f entities=%s interruption=%s",
+        sender, intent, confidence, entities, is_interruption
     )
 
-    # Low-confidence fallback / Ambiguity fallback (FallbackClassifier)
-    if confidence < FALLBACK_THRESHOLD or intent == "nlu_fallback":
+    # Greet (M5b)
+    if intent == "greet":
+        text = "Hello! I am your VARIO Admissions Assistant. You can ask me to check your application status, view required documents, or inquire about fees and deadlines."
         return ConverseResponse(
             intent=intent,
             confidence=confidence,
             entities=entities,
             template_key=None,
-            slots=session.slots,
-            current_form=session.current_form,
-            current_step=session.current_step,
-            response_text="I'm sorry, I didn't quite understand that. You can ask me to check your application status (e.g. 'status of APP-1001'), view required documents, or check fee deadlines.",
+            slots={},
+            current_form=None,
+            current_step=None,
+            response_text=text,
+            card={"type": "plain_text", "text": text},
         )
 
-    # Application status action
+    # Goodbye (M5b)
+    if intent == "goodbye":
+        text = "Thank you for reaching out to the Admissions Office. Have a wonderful day!"
+        return ConverseResponse(
+            intent=intent,
+            confidence=confidence,
+            entities=entities,
+            template_key=None,
+            slots={},
+            current_form=None,
+            current_step=None,
+            response_text=text,
+            card={"type": "plain_text", "text": text},
+        )
+
+    # Low-confidence fallback / Ambiguity fallback (FallbackClassifier)
+    if confidence < FALLBACK_THRESHOLD or intent == "nlu_fallback":
+        text = "I'm sorry, I didn't quite understand that. You can ask me to check your application status (e.g. 'status of APP-1001'), view required documents, or check fee deadlines."
+        return ConverseResponse(
+            intent=intent,
+            confidence=confidence,
+            entities=entities,
+            template_key=None,
+            slots={},
+            current_form=session.current_form if not is_interruption else None,
+            current_step=session.current_step if not is_interruption else None,
+            response_text=text,
+            card={"type": "plain_text", "text": text},
+        )
+
+    # Application status action (M1b: explicit entity in this turn required; slots reset per lookup)
     if intent == "check_application_status":
-        app_id = entities.get("application_id") or session.slots.get("application_id")
-        action_res = await action_handler.execute_logic_async(app_id)
-
-        merged_slots = dict(session.slots)
-        merged_slots.update(action_res.get("slots", {}))
-
-        # If application ID is missing, prompt for it instead of assuming another user's ID
-        if action_res.get("missing_slot") == "application_id":
+        app_id = entities.get("application_id")
+        if not app_id:
+            prompt_text = "Please provide your application reference ID (for example: APP-1001)."
             return ConverseResponse(
                 intent=intent,
                 confidence=confidence,
                 entities=entities,
                 template_key=None,
-                slots=merged_slots,
-                current_form="check_application_status_form",
+                slots={},
+                current_form="application_status_form",
                 current_step="await_application_id",
-                response_text=action_res.get("response_text"),
+                response_text=prompt_text,
+                card={
+                    "type": "slot_prompt",
+                    "text": prompt_text,
+                    "options": [],
+                },
             )
 
-        return ConverseResponse(
-            intent=intent,
-            confidence=confidence,
-            entities=entities,
-            template_key=action_res.get("template_key"),
-            slots=merged_slots,
-            current_form=None,
-            current_step=None,
-            response_text=action_res.get("response_text"),
-        )
+        try:
+            action_res = await action_handler.execute_logic_async(app_id)
+        except BackendUnavailableError:
+            action_res = {
+                "service_unavailable": True,
+                "response_text": "The admissions system is unavailable, please try again later.",
+                "card": {
+                    "type": "error",
+                    "text": "The admissions system is unavailable, please try again later.",
+                },
+            }
 
-    # Document checklist action (slice-25)
-    if intent == "get_document_checklist":
-        prog = entities.get("program") or session.slots.get("program")
-        action_res = await checklist_action_handler.execute_logic_async(prog)
-
-        merged_slots = dict(session.slots)
-        merged_slots.update(action_res.get("slots", {}))
-
-        # If program is missing, prompt for it (slot prompt)
-        if action_res.get("missing_slot") == "program":
+        if action_res.get("service_unavailable"):
             return ConverseResponse(
                 intent=intent,
                 confidence=confidence,
                 entities=entities,
                 template_key=None,
-                slots=merged_slots,
-                current_form="get_document_checklist_form",
-                current_step="await_program",
-                response_text=action_res.get("response_text"),
-            )
-
-        return ConverseResponse(
-            intent=intent,
-            confidence=confidence,
-            entities=entities,
-            template_key=action_res.get("template_key"),
-            slots=merged_slots,
-            current_form=None,
-            current_step=None,
-            response_text=action_res.get("response_text"),
-        )
-
-    # Fee and deadline inquiry (slice-26)
-    if intent == "ask_fee_deadline":
-        action_res = await fee_deadline_action_handler.execute_logic_async(message)
-        merged_slots = dict(session.slots)
-        merged_slots.update(action_res.get("slots", {}))
-
-        # If clarification is requested (AC-4)
-        if action_res.get("needs_clarification"):
-            return ConverseResponse(
-                intent=intent,
-                confidence=confidence,
-                entities=entities,
-                template_key=None,
-                slots=merged_slots,
+                slots={"service_unavailable": True, "found": False},
                 current_form=None,
                 current_step=None,
                 response_text=action_res.get("response_text"),
+                card=action_res.get("card"),
             )
 
         return ConverseResponse(
@@ -351,22 +370,126 @@ async def converse(req: ConverseRequest) -> ConverseResponse:
             confidence=confidence,
             entities=entities,
             template_key=action_res.get("template_key"),
-            slots=merged_slots,
+            slots=action_res.get("slots", {}),
             current_form=None,
             current_step=None,
             response_text=action_res.get("response_text"),
+            card=action_res.get("card"),
         )
 
-    # Greeting / Goodbye / Stubs
+    # Document checklist action (M1b: explicit entity in this turn required)
+    if intent == "get_document_checklist":
+        prog = entities.get("program")
+        if not prog:
+            prompt_text = "Which program would you like the document checklist for? (e.g. B.Tech, M.Tech, MBA)"
+            return ConverseResponse(
+                intent=intent,
+                confidence=confidence,
+                entities=entities,
+                template_key=None,
+                slots={},
+                current_form="checklist_form",
+                current_step="await_program",
+                response_text=prompt_text,
+                card={
+                    "type": "slot_prompt",
+                    "text": "Which program would you like the document checklist for?",
+                    "options": [
+                        {"label": "B.Tech", "value": "B.Tech"},
+                        {"label": "M.Tech", "value": "M.Tech"},
+                        {"label": "MBA", "value": "MBA"},
+                    ],
+                },
+            )
+
+        try:
+            action_res = await checklist_action_handler.execute_logic_async(prog)
+        except BackendUnavailableError:
+            action_res = {
+                "service_unavailable": True,
+                "response_text": "The admissions system is unavailable, please try again later.",
+                "card": {
+                    "type": "error",
+                    "text": "The admissions system is unavailable, please try again later.",
+                },
+            }
+
+        if action_res.get("service_unavailable"):
+            return ConverseResponse(
+                intent=intent,
+                confidence=confidence,
+                entities=entities,
+                template_key=None,
+                slots={"service_unavailable": True, "found": False},
+                current_form=None,
+                current_step=None,
+                response_text=action_res.get("response_text"),
+                card=action_res.get("card"),
+            )
+
+        return ConverseResponse(
+            intent=intent,
+            confidence=confidence,
+            entities=entities,
+            template_key=action_res.get("template_key"),
+            slots=action_res.get("slots", {}),
+            current_form=None,
+            current_step=None,
+            response_text=action_res.get("response_text"),
+            card=action_res.get("card"),
+        )
+
+    # Fee and deadline inquiry (slice-26, FR-16, N13)
+    if intent == "ask_fee_deadline":
+        try:
+            action_res = await fee_deadline_action_handler.execute_logic_async(message)
+        except BackendUnavailableError:
+            action_res = {
+                "service_unavailable": True,
+                "response_text": "The admissions system is unavailable, please try again later.",
+                "card": {
+                    "type": "error",
+                    "text": "The admissions system is unavailable, please try again later.",
+                },
+            }
+
+        if action_res.get("service_unavailable"):
+            return ConverseResponse(
+                intent=intent,
+                confidence=confidence,
+                entities=entities,
+                template_key=None,
+                slots={"service_unavailable": True, "found": False},
+                current_form=None,
+                current_step=None,
+                response_text=action_res.get("response_text"),
+                card=action_res.get("card"),
+            )
+
+        return ConverseResponse(
+            intent=intent,
+            confidence=confidence,
+            entities=entities,
+            template_key=action_res.get("template_key"),
+            slots=action_res.get("slots", {}),
+            current_form=None,
+            current_step=None,
+            response_text=action_res.get("response_text"),
+            card=action_res.get("card"),
+        )
+
+    # Default fallback response
+    text = "I'm sorry, I didn't quite understand that. You can ask me to check your application status, view required documents, or check fee deadlines."
     return ConverseResponse(
         intent=intent,
         confidence=confidence,
         entities=entities,
         template_key=None,
-        slots=session.slots,
+        slots={},
         current_form=None,
         current_step=None,
-        response_text=f"Intent '{intent}' acknowledged.",
+        response_text=text,
+        card={"type": "plain_text", "text": text},
     )
 
 

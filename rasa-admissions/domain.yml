@@ -101,6 +101,14 @@ actions:
   - action_ask_fee_deadline
   - action_default_fallback
 
+forms:
+  application_status_form:
+    required_slots:
+      - application_id
+  checklist_form:
+    required_slots:
+      - program
+
 session_config:
   session_expiration_time: 60
-  carry_over_slots_to_new_session: true
+  carry_over_slots_to_new_session: false

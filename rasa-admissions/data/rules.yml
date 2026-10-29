@@ -1,14 +1,36 @@
 version: "3.1"
 
 rules:
-  - rule: Check application status rule
+  - rule: Activate application status form
     steps:
       - intent: check_application_status
+      - action: application_status_form
+      - active_loop: application_status_form
+
+  - rule: Submit application status form
+    condition:
+      - active_loop: application_status_form
+    steps:
+      - action: application_status_form
+      - active_loop: null
+      - slot_was_set:
+          - requested_slot: null
       - action: action_check_application_status
 
-  - rule: Get document checklist rule
+  - rule: Activate checklist form
     steps:
       - intent: get_document_checklist
+      - action: checklist_form
+      - active_loop: checklist_form
+
+  - rule: Submit checklist form
+    condition:
+      - active_loop: checklist_form
+    steps:
+      - action: checklist_form
+      - active_loop: null
+      - slot_was_set:
+          - requested_slot: null
       - action: action_get_document_checklist
 
   - rule: Ask fee deadline rule
