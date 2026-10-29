@@ -95,28 +95,22 @@ def _prepare_assets(pack, rows):
 
 
 async def train(pack, rows):
-    async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=5)) as client:
-        if pack == "it":
-            if not settings.RETRAINING_INTERNAL_TOKEN:
-                raise RuntimeError("RETRAINING_INTERNAL_TOKEN must be configured before IT retraining.")
-            response = await client.post(
-                URLS[pack].rstrip() + "/internal/retrain",
-                json={"examples_by_intent": {
-                    row["name"]: row["examples"] for row in rows if row["examples"]
-                }},
-                headers={"X-Vario-Internal-Token": settings.RETRAINING_INTERNAL_TOKEN},
-            )
-            response.raise_for_status()
-            return
+    """Train and activate a role pack through the Rasa HTTP API.
 
-        config, domain, archive = _prepare_assets(pack, rows)
+    All three role packs use the same Rasa lifecycle. In particular, IT must not
+    call the legacy FastAPI server's /internal/retrain endpoint because Compose
+    now runs the real Rasa server on RASA_IT_URL.
+    """
+    config, domain, archive = _prepare_assets(pack, rows)
+    base_url = URLS[pack].rstrip()
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=5)) as client:
         response = await client.post(
-            URLS[pack].rstrip() + "/model/train",
+            base_url + "/model/train",
             data={"config": config, "domain": domain, "save_to_default_model_directory": "true"},
             files={"training_files": ("training-data.zip", archive, "application/zip")},
         )
         response.raise_for_status()
-        response = await client.post(URLS[pack].rstrip() + "/model/reload")
+        response = await client.post(base_url + "/model/reload")
         response.raise_for_status()
 
 
