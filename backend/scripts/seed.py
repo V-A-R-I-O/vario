@@ -255,15 +255,18 @@ async def seed_hr_data(session: AsyncSession):
         "Your leave balance: {total} days total. Breakdown: {casual} casual, {sick} sick, {earned} earned.",
         "You currently have {total} days available: {casual} casual days, {sick} sick days, and {earned} earned days.",
     ]
-    for variant_text in variants:
+    for idx, variant_text in enumerate(variants):
         variant_stmt = select(ResponseVariant).where(
             ResponseVariant.template_id == tmpl.template_id,
             ResponseVariant.variant_text == variant_text,
         )
-        existing_variant = await session.execute(variant_stmt)
-        if not existing_variant.scalar_one_or_none():
-            session.add(ResponseVariant(template_id=tmpl.template_id, variant_text=variant_text))
+        res_v = await session.execute(variant_stmt)
+        existing_variant = res_v.scalar_one_or_none()
+        if not existing_variant:
+            session.add(ResponseVariant(template_id=tmpl.template_id, variant_text=variant_text, position=idx))
             logger.info("Created response variant for check_leave_balance_response")
+        else:
+            existing_variant.position = idx
 
     # 7. Response Template: submit_leave_slot_prompt (slice-15)
     stmt_slot_prompt = select(ResponseTemplate).where(
@@ -307,14 +310,17 @@ async def seed_hr_data(session: AsyncSession):
         "Ready to submit? {leave_type} leave, {start_date} to {end_date}. Reason: {reason}",
         "Review your request: {leave_type} leave starting {start_date}, ending {end_date}. Reason: {reason}",
     ]
-    for variant_text in confirmation_variants:
+    for idx, variant_text in enumerate(confirmation_variants):
         variant_stmt = select(ResponseVariant).where(
             ResponseVariant.template_id == confirmation_tmpl.template_id,
             ResponseVariant.variant_text == variant_text,
         )
-        existing_variant = await session.execute(variant_stmt)
-        if not existing_variant.scalar_one_or_none():
-            session.add(ResponseVariant(template_id=confirmation_tmpl.template_id, variant_text=variant_text))
+        res_v = await session.execute(variant_stmt)
+        existing_variant = res_v.scalar_one_or_none()
+        if not existing_variant:
+            session.add(ResponseVariant(template_id=confirmation_tmpl.template_id, variant_text=variant_text, position=idx))
+        else:
+            existing_variant.position = idx
 
     # 9. Response Template: submit_leave_result (slice-15)
     stmt_result = select(ResponseTemplate).where(
@@ -341,14 +347,17 @@ async def seed_hr_data(session: AsyncSession):
         "All set! Your leave request reference is {reference_id}.",
         "Leave request created with reference ID {reference_id}.",
     ]
-    for variant_text in result_variants:
+    for idx, variant_text in enumerate(result_variants):
         variant_stmt = select(ResponseVariant).where(
             ResponseVariant.template_id == result_tmpl.template_id,
             ResponseVariant.variant_text == variant_text,
         )
-        existing_variant = await session.execute(variant_stmt)
-        if not existing_variant.scalar_one_or_none():
-            session.add(ResponseVariant(template_id=result_tmpl.template_id, variant_text=variant_text))
+        res_v = await session.execute(variant_stmt)
+        existing_variant = res_v.scalar_one_or_none()
+        if not existing_variant:
+            session.add(ResponseVariant(template_id=result_tmpl.template_id, variant_text=variant_text, position=idx))
+        else:
+            existing_variant.position = idx
 
     # 10. Response Template: submit_leave_cancelled (slice-15)
     stmt_cancelled = select(ResponseTemplate).where(
@@ -393,14 +402,17 @@ async def seed_hr_data(session: AsyncSession):
         "Under our leave policy, you get 20 annual, 10 sick, and 5 casual leave days per year. Unused annual leave carries over up to 5 days.",
         "Standard leave allotment is 20 annual, 10 sick, and 5 casual days per year. Up to 5 unused annual leave days can be carried forward.",
     ]
-    for variant_text in policy_variants:
+    for idx, variant_text in enumerate(policy_variants):
         variant_stmt = select(ResponseVariant).where(
             ResponseVariant.template_id == policy_tmpl.template_id,
             ResponseVariant.variant_text == variant_text,
         )
-        existing_variant = await session.execute(variant_stmt)
-        if not existing_variant.scalar_one_or_none():
-            session.add(ResponseVariant(template_id=policy_tmpl.template_id, variant_text=variant_text))
+        res_v = await session.execute(variant_stmt)
+        existing_variant = res_v.scalar_one_or_none()
+        if not existing_variant:
+            session.add(ResponseVariant(template_id=policy_tmpl.template_id, variant_text=variant_text, position=idx))
+        else:
+            existing_variant.position = idx
 
     # 12. Response Template: ask_wfh_policy_response (slice-16)
     stmt_wfh_tmpl = select(ResponseTemplate).where(
@@ -427,14 +439,17 @@ async def seed_hr_data(session: AsyncSession):
         "Remote work is permitted up to 3 days per week with managerial consent, adhering to core hours (10am–4pm).",
         "Under company policy, you may work remotely up to 3 days per week upon manager approval. Core hours apply.",
     ]
-    for variant_text in wfh_variants:
+    for idx, variant_text in enumerate(wfh_variants):
         variant_stmt = select(ResponseVariant).where(
             ResponseVariant.template_id == wfh_tmpl.template_id,
             ResponseVariant.variant_text == variant_text,
         )
-        existing_variant = await session.execute(variant_stmt)
-        if not existing_variant.scalar_one_or_none():
-            session.add(ResponseVariant(template_id=wfh_tmpl.template_id, variant_text=variant_text))
+        res_v = await session.execute(variant_stmt)
+        existing_variant = res_v.scalar_one_or_none()
+        if not existing_variant:
+            session.add(ResponseVariant(template_id=wfh_tmpl.template_id, variant_text=variant_text, position=idx))
+        else:
+            existing_variant.position = idx
 
 IT_TICKET_STATUS_PHRASES = [
     "what is the status of my ticket TKT-1234?",
@@ -558,15 +573,18 @@ async def seed_it_data(session: AsyncSession):
         "Support ticket {ticket_id} has the status: {status}.",
         "Your ticket {ticket_id} is marked as {status}.",
     ]
-    for variant_text in variants:
+    for idx, variant_text in enumerate(variants):
         result = await session.execute(
             select(ResponseVariant).where(
                 ResponseVariant.template_id == template.template_id,
                 ResponseVariant.variant_text == variant_text,
             )
         )
-        if result.scalar_one_or_none() is None:
-            session.add(ResponseVariant(template_id=template.template_id, variant_text=variant_text))
+        existing_v = result.scalar_one_or_none()
+        if existing_v is None:
+            session.add(ResponseVariant(template_id=template.template_id, variant_text=variant_text, position=idx))
+        else:
+            existing_v.position = idx
 
 from sqlalchemy import select
 from app.models.intent import Intent
@@ -796,14 +814,16 @@ async def seed_admissions_data(session: AsyncSession):
         logger.info("Created response template: check_application_status_response")
 
     # Seed 5 variants for check_application_status_response
-    for var_text in ADMISSIONS_STATUS_VARIANTS:
+    for idx, var_text in enumerate(ADMISSIONS_STATUS_VARIANTS):
         stmt_var = select(ResponseVariant).where(
             ResponseVariant.template_id == tmpl.template_id,
             ResponseVariant.variant_text == var_text,
         )
         existing_var = (await session.execute(stmt_var)).scalar_one_or_none()
         if not existing_var:
-            session.add(ResponseVariant(template_id=tmpl.template_id, variant_text=var_text))
+            session.add(ResponseVariant(template_id=tmpl.template_id, variant_text=var_text, position=idx))
+        else:
+            existing_var.position = idx
 
     # 5. Response Template: check_application_status_not_found_response + 5 variants (FR-17)
     stmt_tmpl_nf = select(ResponseTemplate).where(
@@ -824,14 +844,16 @@ async def seed_admissions_data(session: AsyncSession):
         logger.info("Created response template: check_application_status_not_found_response")
 
     # Seed 5 variants for check_application_status_not_found_response
-    for var_text in ADMISSIONS_NOT_FOUND_VARIANTS:
+    for idx, var_text in enumerate(ADMISSIONS_NOT_FOUND_VARIANTS):
         stmt_var_nf = select(ResponseVariant).where(
             ResponseVariant.template_id == tmpl_nf.template_id,
             ResponseVariant.variant_text == var_text,
         )
         existing_var_nf = (await session.execute(stmt_var_nf)).scalar_one_or_none()
         if not existing_var_nf:
-            session.add(ResponseVariant(template_id=tmpl_nf.template_id, variant_text=var_text))
+            session.add(ResponseVariant(template_id=tmpl_nf.template_id, variant_text=var_text, position=idx))
+        else:
+            existing_var_nf.position = idx
 
     # 6. Response Template: get_document_checklist_response + 5 variants (slice-25)
     stmt_tmpl_chk = select(ResponseTemplate).where(
@@ -851,14 +873,16 @@ async def seed_admissions_data(session: AsyncSession):
         await session.flush()
         logger.info("Created response template: get_document_checklist_response")
 
-    for var_text in ADMISSIONS_CHECKLIST_VARIANTS:
+    for idx, var_text in enumerate(ADMISSIONS_CHECKLIST_VARIANTS):
         stmt_var_chk = select(ResponseVariant).where(
             ResponseVariant.template_id == tmpl_chk.template_id,
             ResponseVariant.variant_text == var_text,
         )
         existing_var_chk = (await session.execute(stmt_var_chk)).scalar_one_or_none()
         if not existing_var_chk:
-            session.add(ResponseVariant(template_id=tmpl_chk.template_id, variant_text=var_text))
+            session.add(ResponseVariant(template_id=tmpl_chk.template_id, variant_text=var_text, position=idx))
+        else:
+            existing_var_chk.position = idx
 
     # 7. Response Template: get_document_checklist_not_found_response + 5 variants (slice-25)
     stmt_tmpl_chk_nf = select(ResponseTemplate).where(
@@ -878,14 +902,16 @@ async def seed_admissions_data(session: AsyncSession):
         await session.flush()
         logger.info("Created response template: get_document_checklist_not_found_response")
 
-    for var_text in ADMISSIONS_CHECKLIST_NOT_FOUND_VARIANTS:
+    for idx, var_text in enumerate(ADMISSIONS_CHECKLIST_NOT_FOUND_VARIANTS):
         stmt_var_chk_nf = select(ResponseVariant).where(
             ResponseVariant.template_id == tmpl_chk_nf.template_id,
             ResponseVariant.variant_text == var_text,
         )
         existing_var_chk_nf = (await session.execute(stmt_var_chk_nf)).scalar_one_or_none()
         if not existing_var_chk_nf:
-            session.add(ResponseVariant(template_id=tmpl_chk_nf.template_id, variant_text=var_text))
+            session.add(ResponseVariant(template_id=tmpl_chk_nf.template_id, variant_text=var_text, position=idx))
+        else:
+            existing_var_chk_nf.position = idx
 
     # 8. Response Template: ask_fee_deadline_response + 5 variants (slice-26)
     stmt_tmpl_fee = select(ResponseTemplate).where(
@@ -905,14 +931,16 @@ async def seed_admissions_data(session: AsyncSession):
         await session.flush()
         logger.info("Created response template: ask_fee_deadline_response")
 
-    for var_text in ADMISSIONS_FEE_DEADLINE_VARIANTS:
+    for idx, var_text in enumerate(ADMISSIONS_FEE_DEADLINE_VARIANTS):
         stmt_var_fee = select(ResponseVariant).where(
             ResponseVariant.template_id == tmpl_fee.template_id,
             ResponseVariant.variant_text == var_text,
         )
         existing_var_fee = (await session.execute(stmt_var_fee)).scalar_one_or_none()
         if not existing_var_fee:
-            session.add(ResponseVariant(template_id=tmpl_fee.template_id, variant_text=var_text))
+            session.add(ResponseVariant(template_id=tmpl_fee.template_id, variant_text=var_text, position=idx))
+        else:
+            existing_var_fee.position = idx
 
 async def main():
     logger.info(f"Connecting to database at {settings.DATABASE_URL}")
