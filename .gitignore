@@ -63,6 +63,10 @@ pip-delete-this-directory.txt
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.rasa/
+models/*.tar.gz
+*.tar.gz
+results/
 htmlcov/
 .coverage
 .coverage.*
