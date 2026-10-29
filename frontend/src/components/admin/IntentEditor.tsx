@@ -187,12 +187,17 @@ export function IntentEditor({ intentId }: { intentId?: string }) {
         if (update.name !== undefined || update.training_phrases) {
           await updateIntent(loaded.id, update);
         }
-        // Template base text + rephrasing toggle.
+        // Template base text + rephrasing toggle (update only if changed - M9a).
         if (loaded.response_template) {
-          await updateTemplate(loaded.response_template.id, {
-            base_text: baseText,
-            allow_rephrasing: allowRephrasing,
-          });
+          const templateChanged =
+            loaded.response_template.base_text !== baseText ||
+            loaded.response_template.allow_rephrasing !== allowRephrasing;
+          if (templateChanged) {
+            await updateTemplate(loaded.response_template.id, {
+              base_text: baseText,
+              allow_rephrasing: allowRephrasing,
+            });
+          }
           // Persist any inline variant text edits.
           const original = loaded.response_template.variants;
           await Promise.all(

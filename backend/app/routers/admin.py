@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -39,6 +39,14 @@ def _parse_iso(value: str, field: str) -> datetime:
         raise HTTPException(status_code=422, detail=f"Invalid ISO 8601 value for '{field}'")
 
 
+def _parse_iso_to(value: str, field: str = "to") -> datetime:
+    """Parse an ISO 8601 date/datetime query param, making plain YYYY-MM-DD inclusive of that day."""
+    dt = _parse_iso(value, field)
+    if len(value.strip()) == 10:
+        return dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return dt
+
+
 @router.get("/audit-log", response_model=AuditLogListResponse)
 async def get_audit_log(
     admin: AdminContext = Depends(require_admin),
@@ -60,7 +68,7 @@ async def get_audit_log(
     if from_:
         base = base.where(AuditLog.created_at >= _parse_iso(from_, "from"))
     if to:
-        base = base.where(AuditLog.created_at <= _parse_iso(to, "to"))
+        base = base.where(AuditLog.created_at <= _parse_iso_to(to, "to"))
 
     # Total matching the filters (before pagination).
     total_result = await db.execute(select(func.count()).select_from(base.subquery()))
@@ -127,16 +135,25 @@ async def get_admin_conversations(
         .scalar_subquery()
     )
 
-    # Base query for count
-    base_count = select(func.count(Conversation.conversation_id)).where(
-        Conversation.role_pack == admin.role_pack
+    # Base query for count (outerjoin User for actor name/email search - N15)
+    base_count = (
+        select(func.count(Conversation.conversation_id))
+        .outerjoin(User, Conversation.user_id == User.user_id)
+        .where(Conversation.role_pack == admin.role_pack)
     )
     if actor_id:
-        base_count = base_count.where(Conversation.user_id == actor_id)
+        actor_term = f"%{actor_id}%"
+        base_count = base_count.where(
+            or_(
+                Conversation.user_id == actor_id,
+                User.email.ilike(actor_term),
+                User.full_name.ilike(actor_term),
+            )
+        )
     if from_:
         base_count = base_count.where(Conversation.created_at >= _parse_iso(from_, "from"))
     if to:
-        base_count = base_count.where(Conversation.created_at <= _parse_iso(to, "to"))
+        base_count = base_count.where(Conversation.created_at <= _parse_iso_to(to, "to"))
 
     total = (await db.execute(base_count)).scalar_one()
 
@@ -153,11 +170,18 @@ async def get_admin_conversations(
         .where(Conversation.role_pack == admin.role_pack)
     )
     if actor_id:
-        query = query.where(Conversation.user_id == actor_id)
+        actor_term = f"%{actor_id}%"
+        query = query.where(
+            or_(
+                Conversation.user_id == actor_id,
+                User.email.ilike(actor_term),
+                User.full_name.ilike(actor_term),
+            )
+        )
     if from_:
         query = query.where(Conversation.created_at >= _parse_iso(from_, "from"))
     if to:
-        query = query.where(Conversation.created_at <= _parse_iso(to, "to"))
+        query = query.where(Conversation.created_at <= _parse_iso_to(to, "to"))
 
     rows = await db.execute(
         query.order_by(Conversation.last_message_at.desc(), Conversation.created_at.desc())

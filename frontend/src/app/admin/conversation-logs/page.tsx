@@ -60,18 +60,23 @@ export default function ConversationLogsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptState>>({});
 
-  // Filter inputs.
+  // Filter inputs (draft - N15).
   const [actor, setActor] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
 
+  // Applied filters (filters only fire on Apply / Clear - N15).
+  const [appliedFilters, setAppliedFilters] = useState<ConversationLogFilters>({
+    limit: PAGE_SIZE,
+    offset: 0,
+  });
+
   const load = useCallback(
-    (nextOffset: number) => {
+    (nextOffset: number, filtersToUse?: ConversationLogFilters) => {
       setState('loading');
+      const active = filtersToUse ?? appliedFilters;
       const filters: ConversationLogFilters = {
-        actor_id: actor || undefined,
-        from: fromDate || undefined,
-        to: toDate || undefined,
+        ...active,
         limit: PAGE_SIZE,
         offset: nextOffset,
       };
@@ -89,7 +94,7 @@ export default function ConversationLogsPage() {
         })
         .catch(() => setState('error'));
     },
-    [actor, fromDate, toDate]
+    [appliedFilters]
   );
 
   useEffect(() => {
@@ -137,7 +142,15 @@ export default function ConversationLogsPage() {
 
   const applyFilters = () => {
     setExpandedId(null);
-    if (offset === 0) load(0);
+    const newApplied: ConversationLogFilters = {
+      actor_id: actor.trim() || undefined,
+      from: fromDate || undefined,
+      to: toDate || undefined,
+      limit: PAGE_SIZE,
+      offset: 0,
+    };
+    setAppliedFilters(newApplied);
+    if (offset === 0) load(0, newApplied);
     else setOffset(0);
   };
 
@@ -146,20 +159,13 @@ export default function ConversationLogsPage() {
     setFromDate('');
     setToDate('');
     setExpandedId(null);
-    setState('loading');
-    fetchAdminConversations({ limit: PAGE_SIZE, offset: 0 })
-      .then((res) => {
-        if (res.status === 'success') {
-          const rows: AdminConversationItem[] = res.data.conversations ?? [];
-          setConversations(rows);
-          setTotal(res.data.total ?? rows.length);
-          setOffset(0);
-          setState(rows.length === 0 ? 'empty' : 'loaded');
-        } else {
-          setState('error');
-        }
-      })
-      .catch(() => setState('error'));
+    const cleared: ConversationLogFilters = {
+      limit: PAGE_SIZE,
+      offset: 0,
+    };
+    setAppliedFilters(cleared);
+    if (offset === 0) load(0, cleared);
+    else setOffset(0);
   };
 
   const rangeStart = total === 0 ? 0 : offset + 1;
@@ -242,16 +248,16 @@ export default function ConversationLogsPage() {
                 </thead>
                 <tbody>
                   {conversations.map((c) => {
-                    const isExpanded = expandedId === c.conversation_id;
-                    const transcriptState = transcripts[c.conversation_id];
+                    const isExpanded = expandedId === c.id;
+                    const transcriptState = transcripts[c.id];
 
                     return (
-                      <Fragment key={c.conversation_id}>
+                      <Fragment key={c.id}>
                         <tr
                           className="row-hover"
                           style={{ cursor: 'pointer' }}
-                          onClick={() => toggleExpand(c.conversation_id)}
-                          data-testid={`conv-row-${c.conversation_id}`}
+                          onClick={() => toggleExpand(c.id)}
+                          data-testid={`conv-row-${c.id}`}
                         >
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -273,7 +279,7 @@ export default function ConversationLogsPage() {
                                 {getUserInitials(c.user_name || c.user_email || 'User')}
                               </div>
                               <div>
-                                <div style={{ fontWeight: 600 }}>{c.user_name || c.user_email || c.user_id}</div>
+                                <div style={{ fontWeight: 600 }}>{c.user_name || c.user_email || 'User'}</div>
                                 {c.user_name && c.user_email && (
                                   <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{c.user_email}</div>
                                 )}
@@ -303,7 +309,7 @@ export default function ConversationLogsPage() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                toggleExpand(c.conversation_id);
+                                toggleExpand(c.id);
                               }}
                             >
                               {isExpanded ? 'Hide transcript ▴' : 'View transcript ▾'}
@@ -312,7 +318,7 @@ export default function ConversationLogsPage() {
                         </tr>
 
                         {isExpanded && (
-                          <tr data-testid={`transcript-row-${c.conversation_id}`}>
+                          <tr data-testid={`transcript-row-${c.id}`}>
                             <td colSpan={5} style={{ background: 'var(--paper)', padding: 0 }}>
                               {transcriptState?.loading && (
                                 <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -327,7 +333,7 @@ export default function ConversationLogsPage() {
                                   <button
                                     className="btn btn-outline btn-sm"
                                     type="button"
-                                    onClick={() => loadTranscript(c.conversation_id)}
+                                    onClick={() => loadTranscript(c.id)}
                                   >
                                     Retry
                                   </button>
@@ -381,10 +387,10 @@ export default function ConversationLogsPage() {
                                       </div>
                                     ) : (
                                       transcriptState.data.messages.map((m) => {
-                                        if (m.sender_type === 'user') {
+                                        if (m.sender === 'user') {
                                           return (
                                             <div
-                                              key={m.message_id}
+                                              key={m.id}
                                               className="msg-row user"
                                               style={{
                                                 alignSelf: 'flex-end',
@@ -428,7 +434,7 @@ export default function ConversationLogsPage() {
 
                                         return (
                                           <div
-                                            key={m.message_id}
+                                            key={m.id}
                                             className="msg-row bot"
                                             style={{
                                               alignSelf: 'flex-start',

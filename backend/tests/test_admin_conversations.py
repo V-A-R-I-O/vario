@@ -331,3 +331,48 @@ async def test_admin_transcript_cross_role_pack_forbidden_and_not_found():
         )
         assert res_missing.status_code == 404
         assert "not found" in str(res_missing.json().get("error")).lower()
+
+
+# --- N15 (slice-40) ---------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_admin_conversations_filter_inclusive_to_date_and_actor_search():
+    """N15: 'to' date is inclusive of today; actor search matches name and email."""
+    now = datetime.utcnow()
+    today_str = now.strftime("%Y-%m-%d")
+
+    await seed_user("emp_deepa", "Deepa Krishnan", "end_user")
+    await seed_conversation_with_messages(
+        "conv-adm-today",
+        "emp_deepa",
+        "admissions",
+        "Today inquiry",
+        [{"sender": "user", "content": "When are classes?"}],
+        created_at=now,
+    )
+
+    async with _client() as client:
+        # Search with to=today includes today's conversation
+        res_today = await client.get(
+            f"/api/admin/conversations?to={today_str}",
+            headers=headers_for("adm_admin_user", "admissions_admin"),
+        )
+        assert res_today.status_code == 200
+        ids = [c["id"] for c in res_today.json()["data"]["conversations"]]
+        assert "conv-adm-today" in ids
+
+        # Search by actor name "Deepa"
+        res_name = await client.get(
+            "/api/admin/conversations?actor_id=Deepa",
+            headers=headers_for("adm_admin_user", "admissions_admin"),
+        )
+        assert res_name.status_code == 200
+        assert any(c["id"] == "conv-adm-today" for c in res_name.json()["data"]["conversations"])
+
+        # Search by actor email "emp_deepa@test.com"
+        res_email = await client.get(
+            "/api/admin/conversations?actor_id=emp_deepa@test.com",
+            headers=headers_for("adm_admin_user", "admissions_admin"),
+        )
+        assert res_email.status_code == 200
+        assert any(c["id"] == "conv-adm-today" for c in res_email.json()["data"]["conversations"])

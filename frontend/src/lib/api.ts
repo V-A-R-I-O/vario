@@ -162,13 +162,10 @@ export interface ConversationLogFilters {
 }
 
 export interface AdminConversationItem {
-  conversation_id: string;
-  user_id: string;
+  id: string;
   user_name?: string | null;
   user_email?: string | null;
   title?: string | null;
-  role_pack: string;
-  status: string;
   message_count: number;
   last_intent?: string | null;
   started_at: string;
@@ -176,9 +173,8 @@ export interface AdminConversationItem {
 }
 
 export interface AdminTranscriptMessage {
-  message_id: string;
-  conversation_id: string;
-  sender_type: 'user' | 'bot';
+  id: string;
+  sender: 'user' | 'bot' | string;
   content: string;
   intent_name?: string | null;
   confidence?: number | null;
@@ -189,11 +185,7 @@ export interface AdminTranscriptMessage {
 export interface AdminTranscriptData {
   conversation_id: string;
   role_pack: string;
-  user_id: string;
   user_name?: string | null;
-  user_email?: string | null;
-  title?: string | null;
-  started_at: string;
   messages: AdminTranscriptMessage[];
 }
 

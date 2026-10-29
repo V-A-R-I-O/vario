@@ -19,14 +19,18 @@ interface AuditEntry {
 
 const PAGE_SIZE = 20;
 
-// A few common action types for the filter dropdown (values are machine keys).
+// Recorded action types for the filter dropdown (M9c).
 const ACTION_OPTIONS = [
   { value: '', label: 'All actions' },
   { value: 'leave_submitted', label: 'Leave submitted' },
   { value: 'ticket_created', label: 'Ticket created' },
+  { value: 'password_reset_initiated', label: 'Password reset initiated' },
   { value: 'intent_created', label: 'Intent created' },
   { value: 'intent_updated', label: 'Intent updated' },
+  { value: 'intent_deleted', label: 'Intent deleted' },
   { value: 'template_edited', label: 'Template edited' },
+  { value: 'variant_edited', label: 'Variant edited' },
+  { value: 'variant_deleted', label: 'Variant deleted' },
 ];
 
 function humanizeAction(action: string): string {
