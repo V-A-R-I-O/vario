@@ -1,7 +1,7 @@
 # ADR 002: Rasa Chat Contract & Confidence Threshold
 
 **Date:** 2026-10-10
-**Status:** Accepted
+**Status:** Accepted — request/response shape superseded by [ADR-006](ADR-006-rasa-contract-v2.md) (endpoint path and confidence threshold still apply)
 **Slice:** slice-05-chat-core
 
 ## Context
