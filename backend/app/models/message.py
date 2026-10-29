@@ -16,6 +16,8 @@ class Message(Base):
     intent_name = Column(String, nullable=True)
     confidence = Column(Float, nullable=True)
     entities = Column(JSON().with_variant(JSONB, 'postgresql'), nullable=True)
+    # The UI card for this bot turn (ADR-006), so cards survive a reload.
+    card = Column(JSON().with_variant(JSONB, 'postgresql'), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
