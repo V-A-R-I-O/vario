@@ -43,3 +43,37 @@ async def test_it_retraining_trains_and_reloads_the_real_rasa_server(monkeypatch
     assert second_call.args[0] == "http://rasa-it:5006/model"
     assert second_call.kwargs["json"] == {"model_file": "models/it-model.tar.gz"}
     assert first_call.kwargs["headers"]["Content-Type"] == "application/x-yaml"
+
+
+def test_prepare_assets_combines_config_domain_nlu_and_rules(monkeypatch, tmp_path):
+    import yaml
+
+    role_pack = tmp_path / "it"
+    (role_pack / "data").mkdir(parents=True)
+    (role_pack / "config.yml").write_text(
+        "recipe: default.v1\nlanguage: en\npipeline: []\npolicies: []\n",
+        encoding="utf-8",
+    )
+    (role_pack / "domain.yml").write_text(
+        'version: "3.1"\nintents:\n  - greet\nresponses:\n  utter_greet:\n    - text: Hi\n',
+        encoding="utf-8",
+    )
+    (role_pack / "data" / "nlu.yml").write_text(
+        'version: "3.1"\nnlu:\n  - intent: greet\n    examples: |\n      - hi\n',
+        encoding="utf-8",
+    )
+    (role_pack / "data" / "rules.yml").write_text(
+        'version: "3.1"\nrules:\n  - rule: greet\n    steps:\n      - intent: greet\n      - action: utter_greet\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(retraining_service.settings, "ROLE_PACKS_DIR", str(tmp_path))
+
+    payload = yaml.safe_load(retraining_service._prepare_assets(
+        "it", [{"name": "ask_vpn_renewal", "examples": ["renew my vpn certificate"]}]
+    ))
+
+    assert payload["pipeline"] == []
+    assert "ask_vpn_renewal" in payload["intents"]
+    assert {item["intent"] for item in payload["nlu"]} == {"greet", "ask_vpn_renewal"}
+    assert payload["rules"][0]["rule"] == "greet"
+    assert payload["responses"]["utter_greet"][0]["text"] == "Hi"
