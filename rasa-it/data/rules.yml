@@ -141,6 +141,27 @@ rules:
       - active_loop: null
       - action: raise_ticket_form
       - active_loop: raise_ticket_form
+  - rule: Fallback interrupts ticket status form
+    condition: [{active_loop: ticket_status_form}]
+    steps:
+      - intent: nlu_fallback
+      - action: action_cancel_form
+      - active_loop: null
+      - action: action_default_fallback
+  - rule: Fallback interrupts ticket creation form
+    condition: [{active_loop: raise_ticket_form}]
+    steps:
+      - intent: nlu_fallback
+      - action: action_cancel_form
+      - active_loop: null
+      - action: action_default_fallback
+  - rule: Fallback interrupts password reset form
+    condition: [{active_loop: reset_password_form}]
+    steps:
+      - intent: nlu_fallback
+      - action: action_cancel_form
+      - active_loop: null
+      - action: action_default_fallback
   - rule: Handle fallback
     steps:
       - intent: nlu_fallback
