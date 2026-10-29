@@ -29,6 +29,8 @@ export interface SlotPromptMessage {
   text: string;
   options: Option[];
   onSelect?: (value: string) => void;
+  // UI-only: set while a send is in flight or once the prompt was answered.
+  disabled?: boolean;
 }
 
 export interface ConfirmationMessage {
@@ -39,6 +41,8 @@ export interface ConfirmationMessage {
   cancelLabel?: string;
   onConfirm?: () => void;
   onCancel?: () => void;
+  // UI-only: set while a send is in flight or once the confirmation was answered.
+  disabled?: boolean;
 }
 
 export interface ResultMessage {

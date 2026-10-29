@@ -2,17 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchMessages, sendChatMessage, fetchConversations } from '@/lib/api';
+import { ApiError, SEND_ERROR_TEXT, sendErrorKind, type SendErrorKind } from '@/lib/apiError';
+import { cardForReply, withActions, type SessionSnapshot } from '@/lib/chatCards';
+import { notifyConversationsChanged } from '@/lib/conversationEvents';
 import { useSpeechRecognition } from '@/lib/useSpeechRecognition';
-import {
-  BotMessage,
-  UserMessage,
-  type BotMessageData,
-  HRLeaveBalanceCard,
-  createHRLeaveBalanceMessage,
-  createAdmissionsFeeDeadlineMessage,
-  createITTicketStatusMessage,
-  createITTicketNotFoundMessage,
-} from '@/components/chat';
+import { BotMessage, UserMessage } from '@/components/chat';
 
 interface ThreadMessage {
   id: string;
@@ -21,7 +15,12 @@ interface ThreadMessage {
   intent_name?: string | null;
   confidence?: number | null;
   entities?: Record<string, any> | null;
-  slots?: Record<string, any> | null;
+  // The role pack's card for this reply (ADR-006); stored, so it survives reload.
+  card?: unknown;
+  // Live turns only — lets the transitional v1 adapter read this turn's form state.
+  session?: SessionSnapshot | null;
+  // A user message that never reached the server.
+  failed?: boolean;
   // Talk mode (slice-06): audio attached to a bot reply, replayable via speaker.
   audioBase64?: string | null;
   audioContentType?: string | null;
@@ -35,6 +34,27 @@ const ROLE_META: Record<string, { badge: string; name: string; cls: string }> = 
   admissions: { badge: 'AD', name: 'Admissions Assistant', cls: 'role-adm' },
 };
 
+const VOICE_NEEDS_SECURE_PAGE =
+  'Voice needs HTTPS or localhost. Open VARIO from its https:// link (or on this computer at localhost) to use talk mode — typing still works here.';
+const VOICE_SEND_FAILED = "Your message couldn't be sent, so talk mode was turned off.";
+const VOICE_NO_SPEECH = "I didn't catch anything, so talk mode was turned off. Tap the mic to try again.";
+
+function voiceErrorText(code: string): string {
+  switch (code) {
+    case 'not-allowed':
+    case 'service-not-allowed':
+      return 'Microphone access was blocked. Allow the microphone for this site, or keep typing.';
+    case 'no-speech':
+      return VOICE_NO_SPEECH;
+    case 'audio-capture':
+      return 'No microphone was found. Check your microphone, or keep typing.';
+    case 'network':
+      return 'Voice recognition needs an internet connection. You can keep typing.';
+    default:
+      return 'Voice input stopped unexpectedly. Tap the mic to try again.';
+  }
+}
+
 function audioSrc(base64: string, contentType?: string | null): string {
   return `data:${contentType || 'audio/mp3'};base64,${base64}`;
 }
@@ -45,7 +65,9 @@ export default function ChatPage({ params }: { params: { id: string } }) {
   const [meta, setMeta] = useState<{ role_pack: string; title: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [connectionError, setConnectionError] = useState(false);
+  // A ref too: two clicks in the same tick must not both send.
+  const sendingRef = useRef(false);
+  const [sendError, setSendError] = useState<SendErrorKind | null>(null);
   const [input, setInput] = useState('');
   const threadRef = useRef<HTMLDivElement>(null);
 
@@ -53,6 +75,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
   const [talkActive, setTalkActive] = useState(false);
   const [talkState, setTalkState] = useState<TalkState>('idle');
   const [ttsUnavailable, setTtsUnavailable] = useState(false);
+  const [talkNotice, setTalkNotice] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const talkActiveRef = useRef(false);
   useEffect(() => {
@@ -65,7 +88,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    setConnectionError(false);
+    setSendError(null);
 
     Promise.all([fetchMessages(convId), fetchConversations()])
       .then(([msgRes, convRes]) => {
@@ -79,6 +102,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
               intent_name: m.intent_name,
               confidence: m.confidence,
               entities: m.entities,
+              card: m.card,
             }))
           );
         }
@@ -87,7 +111,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
           if (found) setMeta({ role_pack: found.role_pack, title: found.title });
         }
       })
-      .catch(() => active && setConnectionError(true))
+      .catch((err) => active && setSendError(sendErrorKind(err)))
       .finally(() => active && setLoading(false));
 
     return () => {
@@ -101,33 +125,41 @@ export default function ChatPage({ params }: { params: { id: string } }) {
 
   // --- Core send; `mode` decides whether the reply is spoken --------------
   const sendMessage = useCallback(
-    async (text: string, mode: 'chat' | 'talk'): Promise<ThreadMessage | null> => {
-      setConnectionError(false);
-      setMessages((prev) => [...prev, { id: `local-${Date.now()}`, sender: 'user', content: text }]);
+    async (text: string, mode: 'chat' | 'talk', retryOf?: string): Promise<ThreadMessage | null> => {
+      if (sendingRef.current) return null;
+      sendingRef.current = true;
+      setSendError(null);
+      const localId = `local-${Date.now()}`;
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== retryOf),
+        { id: localId, sender: 'user', content: text },
+      ]);
       setSending(true);
       try {
         const res = await sendChatMessage(convId, text, mode);
-        if (res.status === 'success') {
-          const botMsg: ThreadMessage = {
-            id: `bot-${Date.now()}`,
-            sender: 'bot',
-            content: res.data.response_text,
-            intent_name: res.data.intent,
-            confidence: res.data.confidence,
-            entities: res.data.entities,
-            slots: res.data.session?.slots,
-            // Only keep audio when TTS actually succeeded.
-            audioBase64: res.data.tts_available ? res.data.audio_base64 ?? null : null,
-            audioContentType: res.data.audio_content_type ?? null,
-          };
-          setMessages((prev) => [...prev, botMsg]);
-          return botMsg;
-        }
-        return null;
-      } catch {
-        setConnectionError(true);
+        if (res?.status !== 'success') throw new ApiError(500, 'Unexpected response');
+        const botMsg: ThreadMessage = {
+          id: `bot-${Date.now()}`,
+          sender: 'bot',
+          content: res.data.response_text,
+          intent_name: res.data.intent,
+          confidence: res.data.confidence,
+          entities: res.data.entities,
+          card: res.data.card,
+          session: res.data.session ?? null,
+          // Only keep audio when TTS actually succeeded.
+          audioBase64: res.data.tts_available ? res.data.audio_base64 ?? null : null,
+          audioContentType: res.data.audio_content_type ?? null,
+        };
+        setMessages((prev) => [...prev, botMsg]);
+        notifyConversationsChanged();
+        return botMsg;
+      } catch (err) {
+        setSendError(sendErrorKind(err));
+        setMessages((prev) => prev.map((m) => (m.id === localId ? { ...m, failed: true } : m)));
         return null;
       } finally {
+        sendingRef.current = false;
         setSending(false);
       }
     },
@@ -136,7 +168,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || sending) return;
+    if (!text || sendingRef.current) return;
     setInput('');
     await sendMessage(text, 'chat');
   };
@@ -163,8 +195,9 @@ export default function ChatPage({ params }: { params: { id: string } }) {
     [stopAudio]
   );
 
-  // Declared before the STT hook so the transcript handler can call it.
+  // Declared before the STT hook so its callbacks can reach them.
   const startListeningRef = useRef<() => void>(() => {});
+  const exitTalkRef = useRef<(notice?: string) => void>(() => {});
 
   const handleTranscript = useCallback(
     async (transcript: string) => {
@@ -172,8 +205,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
       const reply = await sendMessage(transcript, 'talk');
       setInput('');
       if (!reply) {
-        // Network/connection error — drop out of the hands-free loop.
-        setTalkState('idle');
+        exitTalkRef.current(VOICE_SEND_FAILED);
         return;
       }
       if (reply.audioBase64) {
@@ -191,7 +223,11 @@ export default function ChatPage({ params }: { params: { id: string } }) {
     [sendMessage, playAudio]
   );
 
-  const stt = useSpeechRecognition({ onResult: handleTranscript });
+  const handleNoSpeech = useCallback(() => {
+    if (talkActiveRef.current) exitTalkRef.current(VOICE_NO_SPEECH);
+  }, []);
+
+  const stt = useSpeechRecognition({ onResult: handleTranscript, onNoSpeech: handleNoSpeech });
 
   // Reflect the live transcript into the input bar while listening.
   useEffect(() => {
@@ -209,464 +245,66 @@ export default function ChatPage({ params }: { params: { id: string } }) {
 
   const startTalk = useCallback(() => {
     if (!stt.supported) return;
+    if (!stt.secure) {
+      setTalkNotice(VOICE_NEEDS_SECURE_PAGE);
+      return;
+    }
+    setTalkNotice(null);
+    talkActiveRef.current = true;
     setTalkActive(true);
     startListening();
-  }, [stt.supported, startListening]);
+  }, [stt.supported, stt.secure, startListening]);
 
-  const exitTalk = useCallback(() => {
-    setTalkActive(false);
-    setTalkState('idle');
-    stt.stop();
-    stopAudio();
-    setInput('');
-  }, [stt, stopAudio]);
+  const exitTalk = useCallback(
+    (notice?: string) => {
+      // Synchronously, so a recognition `end` fired by stop() is ignored.
+      talkActiveRef.current = false;
+      setTalkActive(false);
+      setTalkState('idle');
+      stt.stop();
+      stopAudio();
+      setInput('');
+      if (notice) setTalkNotice(notice);
+    },
+    [stt, stopAudio]
+  );
+  useEffect(() => {
+    exitTalkRef.current = exitTalk;
+  }, [exitTalk]);
 
-  const toThreadRow = (m: ThreadMessage) => {
-    if (m.sender === 'user') return <UserMessage key={m.id} text={m.content} />;
+  // Any recognition error while talking ends talk mode with an explanation.
+  useEffect(() => {
+    if (stt.error && stt.error !== 'aborted' && talkActiveRef.current) {
+      exitTalk(voiceErrorText(stt.error));
+    }
+  }, [stt.error, exitTalk]);
 
-    // 1. Not Found warning card (FR-17 / slice-25 AC-3)
-    const isNotFound =
-      m.slots?.found === false ||
-      m.slots?.status === 'Not Found' ||
-      m.content.toLowerCase().includes('not found') ||
-      m.content.toLowerCase().includes('could not be located') ||
-      m.content.toLowerCase().includes("couldn't find");
+  const retry = (m: ThreadMessage) => {
+    sendMessage(m.content, 'chat', m.id);
+  };
 
-    if (isNotFound && m.intent_name === 'check_ticket_status') {
-      const ticketId = m.slots?.ticket_id || m.entities?.ticket_id || m.content.match(/\b(?:TKT|IT)-\d{4}\b/i)?.[0]?.toUpperCase();
+  const toThreadRow = (m: ThreadMessage, index: number) => {
+    if (m.sender === 'user') {
       return (
-        <BotMessage
+        <UserMessage
           key={m.id}
-          message={createITTicketNotFoundMessage(ticketId)}
+          text={m.content}
+          failed={m.failed}
+          onRetry={m.failed ? () => retry(m) : undefined}
         />
       );
     }
-
-    if (isNotFound && (role === 'admissions' || m.intent_name === 'check_application_status' || m.intent_name === 'get_document_checklist')) {
-      return (
-        <BotMessage
-          key={m.id}
-          message={{
-            type: 'not_found',
-            text: m.content,
-          }}
-        />
-      );
-    }
-
-    // 2. Admissions Document Checklist Slot Prompt (slice-25 AC-2)
-    const isChecklistPrompt =
-      (m.intent_name === 'get_document_checklist' && !m.slots?.required_documents) ||
-      m.content.toLowerCase().includes('which program') ||
-      m.content.toLowerCase().includes('document checklist for?');
-
-    if (isChecklistPrompt && (role === 'admissions' || m.intent_name === 'get_document_checklist')) {
-      return (
-        <BotMessage
-          key={m.id}
-          message={{
-            type: 'slot_prompt',
-            text: m.content,
-            options: [
-              { label: 'Computer Science (B.Tech)', value: 'Computer Science (B.Tech)' },
-              { label: 'Data Science (M.Tech)', value: 'Data Science (M.Tech)' },
-              { label: 'MBA', value: 'MBA' },
-            ],
-            onSelect: (val) => {
-              sendMessage(val, 'chat');
-            },
-          }}
-        />
-      );
-    }
-
-    // 3. Admissions Document Checklist List Card (slice-25 AC-1)
-    const isChecklist =
-      (m.intent_name === 'get_document_checklist' && !isNotFound) ||
-      Array.isArray(m.slots?.required_documents);
-
-    if (isChecklist && (role === 'admissions' || m.intent_name === 'get_document_checklist')) {
-      let docs: string[] = [];
-      if (Array.isArray(m.slots?.required_documents) && m.slots.required_documents.length > 0) {
-        docs = m.slots.required_documents;
-      } else {
-        const colonIdx = m.content.indexOf(':');
-        if (colonIdx !== -1) {
-          const listPart = m.content.slice(colonIdx + 1).trim().replace(/\.$/, '');
-          docs = listPart.split(',').map((s) => s.trim()).filter(Boolean);
-        }
-      }
-
-      if (docs.length > 0) {
-        const progName = m.slots?.program || m.entities?.program || 'Admission';
-        return (
-          <BotMessage
-            key={m.id}
-            message={{
-              type: 'list',
-              title: `${progName} Required Documents:`,
-              ordered: true,
-              items: docs,
-            }}
-          />
-        );
-      }
-    }
-
-    // 2. HR Leave Balance Card (Slice-14)
-    const isLeaveBalanceCheck =
-      m.intent_name === 'check_leave_balance' ||
-      (m.slots?.total !== undefined && m.slots?.casual !== undefined) ||
-      (/\b(?:leave balance|days of leave|days left|days available)\b/i.test(m.content) &&
-        /\bcasual\b/i.test(m.content) &&
-        /\bsick\b/i.test(m.content) &&
-        /\bearned\b/i.test(m.content));
-
-    if (isLeaveBalanceCheck && (role === 'hr' || m.intent_name === 'check_leave_balance')) {
-      let total = m.slots?.total;
-      let casual = m.slots?.casual;
-      let sick = m.slots?.sick;
-      let earned = m.slots?.earned;
-
-      // Fallback: parse from rendered template text if slots are not present (e.g. on reload from DB)
-      if (total === undefined || casual === undefined || sick === undefined || earned === undefined) {
-        const totalMatch = m.content.match(/(\d+)\s*(?:days(?: of leave)?(?: remaining| left| available| total)?|days\s*(?:\(|\:)|total)/i);
-        const casualMatch = m.content.match(/(\d+)\s*(?:casual)/i);
-        const sickMatch = m.content.match(/(\d+)\s*(?:sick)/i);
-        const earnedMatch = m.content.match(/(\d+)\s*(?:earned)/i);
-
-        if (casualMatch && sickMatch && earnedMatch) {
-          casual = Number(casualMatch[1]);
-          sick = Number(sickMatch[1]);
-          earned = Number(earnedMatch[1]);
-          total = totalMatch ? Number(totalMatch[1]) : (casual + sick + earned);
-        }
-      }
-
-      if (total !== undefined && casual !== undefined && sick !== undefined && earned !== undefined) {
-        return (
-          <BotMessage
-            key={m.id}
-            message={createHRLeaveBalanceMessage({
-              total: Number(total),
-              casual: Number(casual),
-              sick: Number(sick),
-              earned: Number(earned),
-            })}
-          />
-        );
-      }
-    }
-
-    // 4. Admissions Status Card (Data Card composition, slice-24)
-    const isStatusCheck =
-      m.intent_name === 'check_application_status' ||
-      Boolean(m.slots?.application_id) ||
-      /\bAPP-\d{4}\b/i.test(m.content);
-
-    if (isStatusCheck && (role === 'admissions' || m.intent_name === 'check_application_status')) {
-      const appId =
-        m.slots?.application_id ||
-        m.entities?.application_id ||
-        m.content.match(/\b(APP-\d{4})\b/i)?.[1]?.toUpperCase();
-
-      if (m.slots?.status && m.slots?.next_step && appId) {
-        const rows = [
-          { label: 'Application ID', value: appId },
-          { label: 'Status', value: m.slots.status },
-          { label: 'Next Step', value: m.slots.next_step },
-        ];
-        if (m.slots.applicant_name) rows.push({ label: 'Applicant', value: m.slots.applicant_name });
-        if (m.slots.program) rows.push({ label: 'Program', value: m.slots.program });
-        if (m.slots.fee_status) rows.push({ label: 'Fee Status', value: m.slots.fee_status });
-
-        return (
-          <BotMessage
-            key={m.id}
-            message={{
-              type: 'data_card',
-              title: `Application ${appId} Status`,
-              rows,
-            }}
-          />
-        );
-      }
-
-      // Parse from rendered template text
-      const nextStepMatch = m.content.match(/(?:Next step(?: is)?:|What to do next:|Your next step:)\s*([^.]+.*)$/i);
-      const statusMatch = m.content.match(/(?:is currently|status:?|is marked as|is)\s+([A-Za-z ]+?)(?:\.|$)/i);
-
-      if (appId && (nextStepMatch || statusMatch)) {
-        const statusVal = statusMatch ? statusMatch[1].trim() : 'Under Review';
-        const nextStepVal = nextStepMatch ? nextStepMatch[1].trim() : 'Under committee review.';
-
-        return (
-          <BotMessage
-            key={m.id}
-            message={{
-              type: 'data_card',
-              title: `Application ${appId} Status`,
-              rows: [
-                { label: 'Application ID', value: appId },
-                { label: 'Status', value: statusVal },
-                { label: 'Next Step', value: nextStepVal },
-              ],
-            }}
-          />
-        );
-      }
-    }
-
-    // IT Ticket Status Card (Slice 20): slots are available on the live turn;
-    // entities preserve the same fields so the card also renders after reload.
-    if (m.intent_name === 'check_ticket_status') {
-      const ticketId =
-        m.slots?.ticket_id ||
-        m.entities?.ticket_id ||
-        m.content.match(/\b(?:TKT|IT)-\d{4}\b/i)?.[0]?.toUpperCase();
-      const ticketStatus = m.slots?.status || m.entities?.status;
-      const found = m.slots?.found ?? m.entities?.found;
-      if (ticketId && ticketStatus && found !== false && ticketStatus !== 'Not Found') {
-        return (
-          <BotMessage
-            key={m.id}
-            message={createITTicketStatusMessage({
-              ticketId,
-              status: String(ticketStatus),
-              category: m.slots?.category || m.entities?.category,
-              description: m.slots?.description || m.entities?.description,
-              reporter: m.slots?.reporter || m.entities?.reporter,
-              updatedAt: m.slots?.updated_at || m.entities?.updated_at,
-            })}
-          />
-        );
-      }
-    }
-
-    // Slice 21 — mock-verified IT password reset.
-    if (m.intent_name === 'reset_password') {
-      const resetSlots = { ...(m.entities ?? {}), ...(m.slots ?? {}) };
-      if (resetSlots.reset_denied) {
-        return <BotMessage key={m.id} message={{ type: 'error', text: m.content || 'Identity verification failed. No reset was initiated.' }} />;
-      }
-      if (resetSlots.reset_result && resetSlots.employee_id) {
-        return <BotMessage key={m.id} message={{ type: 'result', text: m.content || 'Password reset request initiated for employee:', referenceId: String(resetSlots.employee_id) }} />;
-      }
-      if (resetSlots.reset_error) {
-        return <BotMessage key={m.id} message={{ type: 'error', text: m.content || 'The mock password-reset service is temporarily unavailable.' }} />;
-      }
-      if (resetSlots.requested_slot === 'employee_id') {
-        return <BotMessage key={m.id} message={{ type: 'plain_text', text: m.content || 'Please enter your employee ID (for example, EMP-1042).' }} />;
-      }
-      if (resetSlots.requested_slot === 'security_answer') {
-        return <BotMessage key={m.id} message={{ type: 'plain_text', text: m.content || `Please answer: ${resetSlots.security_question || 'your stored security question'}` }} />;
-      }
-    }
-
-    // Slice 19 — IT ticket creation slot prompts, confirmation and result.
-    if (m.intent_name === 'raise_ticket') {
-      const ticketSlots = { ...(m.entities ?? {}), ...(m.slots ?? {}) };
-      if (ticketSlots.requested_slot === 'category') {
-        return (
-          <BotMessage key={m.id} message={{
-            type: 'slot_prompt',
-            text: m.content || 'What category best describes the issue?',
-            options: [
-              { label: 'Hardware', value: 'hardware' },
-              { label: 'Software', value: 'software' },
-              { label: 'Access', value: 'access' },
-              { label: 'Network', value: 'network' },
-              { label: 'Other', value: 'other' },
-            ],
-            onSelect: (value: string) => { sendMessage(value, 'chat'); },
-          }} />
-        );
-      }
-      if (ticketSlots.requested_slot === 'description') {
-        return <BotMessage key={m.id} message={{ type: 'plain_text', text: m.content || 'Please describe the IT issue.' }} />;
-      }
-      if (ticketSlots.confirmation_pending && ticketSlots.category && ticketSlots.description) {
-        return (
-          <BotMessage key={m.id} message={{
-            type: 'confirmation',
-            title: 'Confirm IT Support Ticket',
-            rows: [
-              { label: 'Category', value: String(ticketSlots.category) },
-              { label: 'Description', value: String(ticketSlots.description) },
-              { label: 'Reporter', value: String(ticketSlots.reporter || 'Authenticated user') },
-            ],
-            confirmLabel: 'Confirm',
-            cancelLabel: 'Cancel',
-            onConfirm: () => { sendMessage('confirm', 'chat'); },
-            onCancel: () => { sendMessage('cancel', 'chat'); },
-          }} />
-        );
-      }
-      if (ticketSlots.ticket_result && ticketSlots.ticket_id) {
-        return (
-          <BotMessage key={m.id} message={{
-            type: 'result',
-            text: ticketSlots.ticket_reused
-              ? 'This matches a ticket you just created. Reusing existing ticket:'
-              : 'Ticket created successfully. Reference ID:',
-            referenceId: String(ticketSlots.ticket_id),
-          }} />
-        );
-      }
-    }
-
-    // 4. HR Leave Request Workflow (Slice-15) - Slot Prompt, Confirmation, Result
-    const isLeaveRequest = m.intent_name === 'submit_leave_request' || m.slots?.requested_slot;
-
-    if (isLeaveRequest && role === 'hr') {
-      // Slot prompt for leave_type
-      if (m.slots?.requested_slot === 'leave_type') {
-        return (
-          <BotMessage
-            key={m.id}
-            message={{
-              type: 'slot_prompt',
-              text: 'What type of leave would you like to request?',
-              options: [
-                { label: 'Casual', value: 'casual' },
-                { label: 'Sick', value: 'sick' },
-                { label: 'Earned', value: 'earned' },
-              ],
-              onSelect: (value: string) => {
-                sendMessage(value, 'chat');
-              },
-            }}
-          />
-        );
-      }
-
-      // Slot prompt for start_date
-      if (m.slots?.requested_slot === 'start_date') {
-        return (
-          <BotMessage
-            key={m.id}
-            message={{
-              type: 'plain_text',
-              text: m.content || 'When should your leave start? (YYYY-MM-DD)',
-            }}
-          />
-        );
-      }
-
-      // Slot prompt for end_date
-      if (m.slots?.requested_slot === 'end_date') {
-        return (
-          <BotMessage
-            key={m.id}
-            message={{
-              type: 'plain_text',
-              text: m.content || 'When should your leave end? (YYYY-MM-DD)',
-            }}
-          />
-        );
-      }
-
-      // Slot prompt for reason
-      if (m.slots?.requested_slot === 'reason') {
-        return (
-          <BotMessage
-            key={m.id}
-            message={{
-              type: 'plain_text',
-              text: m.content || 'Please provide a reason for your leave request.',
-            }}
-          />
-        );
-      }
-
-      // Confirmation step
-      if (m.slots?.confirmation_pending && m.slots?.leave_type && m.slots?.start_date && m.slots?.end_date) {
-        const rows = [
-          { label: 'Leave Type', value: m.slots.leave_type },
-          { label: 'Start Date', value: m.slots.start_date },
-          { label: 'End Date', value: m.slots.end_date },
-          { label: 'Reason', value: m.slots.reason || 'N/A' },
-        ];
-        return (
-          <BotMessage
-            key={m.id}
-            message={{
-              type: 'confirmation',
-              title: 'Confirm Leave Request',
-              rows,
-              confirmLabel: 'Confirm',
-              cancelLabel: 'Cancel',
-              onConfirm: () => {
-                sendMessage('confirm', 'chat');
-              },
-              onCancel: () => {
-                sendMessage('cancel', 'chat');
-              },
-            }}
-          />
-        );
-      }
-
-      // Result card after successful submission
-      if (m.slots?.reference_id && !m.slots?.confirmation_pending) {
-        return (
-          <BotMessage
-            key={m.id}
-            message={{
-              type: 'result',
-              text: 'Leave request submitted successfully! Reference ID:',
-              referenceId: m.slots.reference_id,
-            }}
-          />
-        );
-      }
-    }
-
+    // Only the latest reply's buttons are live, and not while a send is in flight.
+    const answerable = index === messages.length - 1 && !sending;
+    const data = withActions(cardForReply(m), {
+      send: (text) => {
+        sendMessage(text, 'chat');
+      },
+      disabled: !answerable,
+    });
     const onReplay = m.audioBase64
       ? () => playAudio(m.audioBase64 as string, m.audioContentType)
       : undefined;
-
-    // 5. Admissions Fees & Deadlines Card / FAQ (slice-26, FR-16)
-    if (m.intent_name === 'ask_fee_deadline' && (role === 'admissions' || !role)) {
-      const fees = Array.isArray(m.slots?.fees) ? m.slots.fees : [];
-      const deadlines = Array.isArray(m.slots?.deadlines) ? m.slots.deadlines : [];
-      const refundPolicy = m.slots?.refund_policy;
-      const academicYear = m.slots?.academic_year || '2026-2027';
-
-      const feeMsg = createAdmissionsFeeDeadlineMessage({
-        academicYear,
-        fees,
-        deadlines,
-        refundPolicy,
-        text: m.content,
-      });
-
-      return <BotMessage key={m.id} message={feeMsg} onReplay={onReplay} />;
-    }
-
-    // 6. Policy FAQ Answer (Slice-16)
-    const isFaq =
-      m.intent_name === 'ask_policy_faq' ||
-      m.intent_name === 'ask_wfh_policy' ||
-      Boolean(m.intent_name && m.intent_name.startsWith('ask_') && (m.intent_name.includes('policy') || m.intent_name.includes('faq'))) ||
-      m.slots?.is_faq === true ||
-      m.slots?.intent_type === 'static_faq' ||
-      (role === 'hr' && /\b(?:wfh|work from home|remote work|leave policy|maternity policy|bereavement policy|paternity policy)\b/i.test(m.content));
-
-    if (isFaq) {
-      return (
-        <BotMessage
-          key={m.id}
-          message={{
-            type: 'faq_answer',
-            text: m.content,
-          }}
-          onReplay={onReplay}
-        />
-      );
-    }
-
-    const data: BotMessageData = { type: 'plain_text', text: m.content };
     return <BotMessage key={m.id} message={data} onReplay={onReplay} />;
   };
 
@@ -691,12 +329,12 @@ export default function ChatPage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
-      {connectionError && (
+      {sendError && (
         <div className="banner banner-danger" role="alert">
           <svg viewBox="0 0 24 24" fill="none" style={{ width: 15, height: 15 }}>
             <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
           </svg>
-          Connection lost — messages may not send.
+          {SEND_ERROR_TEXT[sendError]}
         </div>
       )}
 
@@ -708,6 +346,18 @@ export default function ChatPage({ params }: { params: { id: string } }) {
           Talk mode is temporarily unavailable.
           <button className="btn btn-outline btn-sm" type="button" onClick={() => setTtsUnavailable(false)}>
             Switch to text
+          </button>
+        </div>
+      )}
+
+      {talkNotice && (
+        <div className="banner banner-warn" role="status">
+          <svg viewBox="0 0 24 24" fill="none" style={{ width: 15, height: 15 }}>
+            <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+          </svg>
+          {talkNotice}
+          <button className="btn btn-outline btn-sm" type="button" onClick={() => setTalkNotice(null)}>
+            Dismiss
           </button>
         </div>
       )}
@@ -752,7 +402,13 @@ export default function ChatPage({ params }: { params: { id: string } }) {
           <button
             className={`icon-btn ${talkActive ? 'mic-on' : 'mic-idle'}`}
             type="button"
-            title={stt.supported ? 'Talk mode' : 'Voice input not supported in this browser'}
+            title={
+              !stt.supported
+                ? 'Voice input not supported in this browser'
+                : !stt.secure
+                  ? 'Voice needs HTTPS or localhost'
+                  : 'Talk mode'
+            }
             aria-label="Talk mode"
             onClick={startTalk}
             disabled={!stt.supported || loading}
@@ -789,7 +445,7 @@ export default function ChatPage({ params }: { params: { id: string } }) {
               className="btn btn-outline"
               type="button"
               style={{ position: 'absolute', top: 16, right: 16, borderColor: 'var(--ink-line)', color: 'var(--text-inv)' }}
-              onClick={exitTalk}
+              onClick={() => exitTalk()}
             >
               Switch to text
             </button>

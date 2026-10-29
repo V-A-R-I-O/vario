@@ -90,6 +90,8 @@ Every Rasa server serves this through the shared custom input channel `vario_ras
 
 Packs compose the generic UI types (e.g. a leave balance is a `data_card`), so a new role pack needs no frontend code (FR-3).
 
+**What the UI sends back** (slice-33): a `slot_prompt` option sends its `value` (or its `label` when there is no value) as the next user message. A `confirmation` sends `confirm` or `cancel`, so packs must classify those two words as their affirm/deny intents. Only the latest reply's buttons are clickable, and only while no message is in flight.
+
 **How a Rasa pack produces these fields.** Actions — or domain responses, via `custom:` — emit the VARIO fields as custom JSON under the `vario` key:
 
 ```python
@@ -194,6 +196,8 @@ tracker_store:
 ### 8. Transition
 
 Until slices 35, 37 and 39 replace the v1 packs, the gateway keeps sending `session` and the top-level `auth_context`. The v1 packs already return their full state in `slots`, so storing the mirror without merging preserves their behaviour. This was verified end-to-end against the current HR, IT and Admissions packs. Remove both deprecated fields, and the legacy IT redaction rule, after slice-37.
+
+On the frontend, v1 replies carry no `card`. `legacyCard()` in `frontend/src/lib/chatCards.ts` derives one from the live turn instead, gated on that turn's intent *and* form/step so leftover slots can't produce a stale card. Delete it together with the v1 packs.
 
 ## Consequences
 

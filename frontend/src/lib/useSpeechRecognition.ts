@@ -38,23 +38,37 @@ export function isSpeechRecognitionSupported(): boolean {
   return getRecognitionCtor() !== null;
 }
 
+// Browsers only grant the microphone on HTTPS or localhost. The API object can
+// still exist on an insecure page, so check the context separately.
+export function isSecureVoiceContext(): boolean {
+  return typeof window === 'undefined' || window.isSecureContext !== false;
+}
+
 interface UseSpeechRecognitionOptions {
   // Called with the final transcript when the user stops speaking.
   onResult: (transcript: string) => void;
+  // Called when recognition ends with nothing heard and no error.
+  onNoSpeech?: () => void;
   lang?: string;
 }
 
-export function useSpeechRecognition({ onResult, lang = 'en-US' }: UseSpeechRecognitionOptions) {
+export function useSpeechRecognition({ onResult, onNoSpeech, lang = 'en-US' }: UseSpeechRecognitionOptions) {
   const supported = isSpeechRecognitionSupported();
+  const secure = isSecureVoiceContext();
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState('');
+  // The SpeechRecognitionErrorEvent `error` code (e.g. "not-allowed"), if any.
+  const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const finalRef = useRef('');
-  // Keep the latest callback without re-creating the recognition instance.
+  const erroredRef = useRef(false);
+  // Keep the latest callbacks without re-creating the recognition instance.
   const onResultRef = useRef(onResult);
+  const onNoSpeechRef = useRef(onNoSpeech);
   useEffect(() => {
     onResultRef.current = onResult;
-  }, [onResult]);
+    onNoSpeechRef.current = onNoSpeech;
+  }, [onResult, onNoSpeech]);
 
   useEffect(() => {
     const Ctor = getRecognitionCtor();
@@ -77,9 +91,12 @@ export function useSpeechRecognition({ onResult, lang = 'en-US' }: UseSpeechReco
       setListening(false);
       const text = finalRef.current.trim();
       if (text) onResultRef.current(text);
+      else if (!erroredRef.current) onNoSpeechRef.current?.();
     };
-    recognition.onerror = () => {
+    recognition.onerror = (e) => {
+      erroredRef.current = true;
       setListening(false);
+      setError((e as { error?: string } | null)?.error || 'unknown');
     };
 
     recognitionRef.current = recognition;
@@ -96,6 +113,8 @@ export function useSpeechRecognition({ onResult, lang = 'en-US' }: UseSpeechReco
     const recognition = recognitionRef.current;
     if (!recognition || listening) return;
     finalRef.current = '';
+    erroredRef.current = false;
+    setError(null);
     setTranscript('');
     try {
       recognition.start();
@@ -109,5 +128,5 @@ export function useSpeechRecognition({ onResult, lang = 'en-US' }: UseSpeechReco
     recognitionRef.current?.stop();
   }, []);
 
-  return { supported, listening, transcript, start, stop };
+  return { supported, secure, listening, transcript, error, start, stop };
 }
