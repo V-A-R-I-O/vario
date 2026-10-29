@@ -29,8 +29,6 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js/) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## VARIO local-first runtime
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/deployment) for more details.
+Run the frontend locally with `npm run dev`, or use the full local Docker Compose workflow documented in the repository root README and `docs/slices/slice-34-local-demo-stack.md`. GitHub Actions validates pull requests; cloud hosting is not part of the current project plan. See `docs/decisions/ADR-007-local-first-runtime.md`.
