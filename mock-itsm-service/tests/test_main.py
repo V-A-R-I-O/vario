@@ -63,3 +63,15 @@ def test_security_question_endpoint_returns_question_without_answer():
 def test_security_question_endpoint_rejects_unknown_employee():
     response = client.get("/identity/EMP-9999/question")
     assert response.status_code == 404
+
+
+def test_three_failed_answers_lock_account_across_flow_restarts():
+    for attempt in range(3):
+        response = client.post("/identity/verify", json={"employee_id": "EMP-1042", "answer": f"wrong-{attempt}"})
+        assert response.status_code == 200
+        assert response.json()["verified"] is False
+    locked = client.post("/identity/verify", json={"employee_id": "EMP-1042", "answer": "Mysuru"})
+    assert locked.status_code == 200
+    assert locked.json()["locked"] is True
+    assert locked.json()["attempts_remaining"] == 0
+    assert client.post("/password/reset", json={"employee_id": "EMP-1042"}).status_code == 403

@@ -1,18 +1,18 @@
 version: "3.1"
-
 intents:
   - check_ticket_status:
-      use_entities:
-        - ticket_id
+      use_entities: [ticket_id]
   - raise_ticket
   - reset_password
-  - nlu_fallback
   - greet
   - goodbye
-
+  - cancel
+  - affirm
+  - deny
+  - inform
+  - nlu_fallback
 entities:
   - ticket_id
-
 slots:
   ticket_id:
     type: text
@@ -20,17 +20,88 @@ slots:
     mappings:
       - type: from_entity
         entity: ticket_id
+        conditions:
+          - active_loop: ticket_status_form
+            requested_slot: ticket_id
   status:
     type: text
     influence_conversation: false
     mappings:
       - type: custom
+  category:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_text
+        conditions:
+          - active_loop: raise_ticket_form
+            requested_slot: category
+  description:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_text
+        conditions:
+          - active_loop: raise_ticket_form
+            requested_slot: description
+  confirmation:
+    type: bool
+    influence_conversation: true
+    mappings:
+      - type: from_intent
+        intent: affirm
+        value: true
+        conditions:
+          - active_loop: raise_ticket_form
+            requested_slot: confirmation
+      - type: from_intent
+        intent: deny
+        value: false
+        conditions:
+          - active_loop: raise_ticket_form
+            requested_slot: confirmation
   employee_id:
+    type: text
+    influence_conversation: true
+    mappings:
+      - type: from_text
+        conditions:
+          - active_loop: reset_password_form
+            requested_slot: employee_id
+  security_question:
     type: text
     influence_conversation: false
     mappings:
       - type: custom
-  security_question:
+  security_answer:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: from_text
+        conditions:
+          - active_loop: reset_password_form
+            requested_slot: security_answer
+  identity_verified:
+    type: bool
+    influence_conversation: false
+    mappings:
+      - type: custom
+  reset_attempts:
+    type: float
+    influence_conversation: false
+    mappings:
+      - type: custom
+  reset_error:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+  last_ticket_signature:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: custom
+  last_ticket_id:
     type: text
     influence_conversation: false
     mappings:
@@ -40,40 +111,45 @@ slots:
     influence_conversation: false
     mappings:
       - type: custom
-  reset_attempts:
-    type: float
-    influence_conversation: false
-    mappings:
-      - type: custom
-  identity_verified:
-    type: bool
-    influence_conversation: false
-    mappings:
-      - type: custom
-  reset_result:
-    type: bool
-    influence_conversation: false
-    mappings:
-      - type: custom
-
+forms:
+  ticket_status_form:
+    required_slots: [ticket_id]
+  raise_ticket_form:
+    required_slots: [category, description, confirmation]
+  reset_password_form:
+    required_slots: [employee_id, security_answer]
 responses:
   utter_greet:
-    - text: "Hello! I am your VARIO IT Support Assistant. I can check a ticket status, help raise a ticket, or guide you to password-reset support."
+    - text: "Hello! I am your VARIO IT Support Assistant. I can check a ticket status, help raise a support ticket, or guide you through password-reset verification."
   utter_goodbye:
     - text: "Thanks for contacting IT Support. Have a good day!"
-  utter_ask_ticket_id:
-    - text: "Please provide your ticket ID (for example, TKT-1234) so I can check its status."
+  utter_ask_ticket_status_form_ticket_id:
+    - text: "Please provide your ticket ID (for example, IT-1001) so I can check its status."
+  utter_ask_raise_ticket_form_category:
+    - text: "What category best describes the issue? Choose hardware, software, network, access, email, or other."
+  utter_ask_raise_ticket_form_description:
+    - text: "Please describe the issue. Include what happened and any useful error message, but do not include passwords or other secrets."
+  utter_ask_raise_ticket_form_confirmation:
+    - text: "Please review your request. Reply Confirm to create the ticket or Cancel to stop."
+      buttons:
+        - title: Confirm
+          payload: /affirm
+        - title: Cancel
+          payload: /deny
+  utter_ask_reset_password_form_employee_id:
+    - text: "Please enter the employee ID for the account you need to recover (for example, EMP-1001)."
   utter_default_fallback:
-    - text: "I'm sorry, I didn't understand that. You can ask me to check an IT ticket, raise a support ticket, or get password-reset help."
-  utter_raise_ticket_stub:
-    - text: "I can help with a new support ticket. The guided ticket-creation workflow is being connected."
-  utter_reset_password_stub:
-    - text: "I can help with password-reset guidance. The verified reset workflow is being connected."
-
+    - text: "I'm sorry, I didn't understand that. You can check a ticket status, raise a support ticket, or get password-reset help."
 actions:
+  - validate_ticket_status_form
   - action_check_ticket_status
+  - validate_raise_ticket_form
+  - action_submit_raise_ticket
+  - validate_reset_password_form
+  - action_ask_reset_password_form_security_answer
+  - action_submit_reset_password
+  - action_cancel_form
   - action_default_fallback
-
 session_config:
   session_expiration_time: 60
   carry_over_slots_to_new_session: true

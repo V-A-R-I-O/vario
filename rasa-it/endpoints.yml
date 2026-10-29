@@ -1,7 +1,9 @@
-# Endpoints configuration for Rasa IT
 action_endpoint:
-  url: "http://localhost:5055/webhook"
-
-models:
-  url: ""
-  wait_time_between_pulls: 10
+  url: "http://rasa-it-actions:5055/webhook"
+tracker_store:
+  type: vario_rasa.tracker_store.RedactingSQLTrackerStore
+  dialect: postgresql
+  url: ${POSTGRES_HOST}
+  db: ${POSTGRES_DB}
+  username: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}
