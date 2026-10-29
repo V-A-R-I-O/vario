@@ -242,7 +242,7 @@ Admin adds an intent + phrases + response template → Admin CRUD persists it an
 - Team of 4, one semester, alongside other coursework — scope is deliberately tight.
 - No access to real HRMS/ITSM/Admissions — everything is mocked but behind a documented adapter interface so the swap is theoretically painless later.
 - English only, web only, no push notifications — don't scope-creep into these.
-- Expected load is **20 concurrent sessions for a demo**, not production traffic — infra choices (cloud hosting (retired) free tier, Neon free tier, Gemini free tier) reflect that.
+- Expected load is **20 concurrent sessions for a demo**, not production traffic — the local Compose runtime and Gemini free tier reflect that.
 - Assumes a few hundred hand-labelled training examples per intent will be "good enough" for Rasa accuracy within scope.
 - User provisioning and password management are the org's responsibility, not VARIO's.
 
