@@ -74,7 +74,8 @@ def test_ticket_creation_uses_trusted_reporter_and_returns_ticket_id():
         events = asyncio.run(ActionSubmitRaiseTicket().run(dispatcher, tracker, {}))
     assert create.await_args.args == ("network", "VPN drops every hour", "EMP-1042")
     assert "IT-1004" in dispatcher.messages[0]["text"]
-    assert any(getattr(event, "key", None) == "last_ticket_id" and event.value == "IT-1004" for event in events)
+    # Rasa SDK SlotSet events are mappings with "name" and "value" keys.
+    assert any(event.get("name") == "last_ticket_id" and event.get("value") == "IT-1004" for event in events)
 
 
 @pytest.mark.asyncio
