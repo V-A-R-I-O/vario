@@ -1,7 +1,7 @@
 """Persist asynchronous retraining job status.
 
 Revision ID: d3f4a5b6c7d8
-Revises: c2d3e4f5a6b7
+Revises: e4f5a6b7c8d9
 Create Date: 2026-10-29
 """
 from typing import Sequence, Union
