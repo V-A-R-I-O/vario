@@ -99,7 +99,7 @@ async def test_worker_failure_keeps_dirty_flag_and_marks_job_failed(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("pack", ["hr", "admissions"])
+@pytest.mark.parametrize("pack", ["hr", "it", "admissions"])
 async def test_rasa_training_activates_model_after_training(monkeypatch, pack):
     calls = []
 
@@ -137,7 +137,7 @@ async def test_rasa_training_activates_model_after_training(monkeypatch, pack):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("pack", ["hr", "admissions"])
+@pytest.mark.parametrize("pack", ["hr", "it", "admissions"])
 async def test_rasa_training_fails_if_model_reload_fails(monkeypatch, pack):
     calls = []
 
@@ -179,9 +179,8 @@ async def test_rasa_training_fails_if_model_reload_fails(monkeypatch, pack):
 
 
 @pytest.mark.asyncio
-async def test_it_training_posts_examples_to_internal_runtime(monkeypatch):
+async def test_it_training_uses_real_rasa_model_api(monkeypatch):
     calls = []
-    monkeypatch.setattr(service.settings, "RETRAINING_INTERNAL_TOKEN", "test-only-token")
 
     class Response:
         def raise_for_status(self):
@@ -202,14 +201,18 @@ async def test_it_training_posts_examples_to_internal_runtime(monkeypatch):
             return Response()
 
     monkeypatch.setattr(service.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(
+        service,
+        "_prepare_assets",
+        lambda _pack, _rows: ("recipe: default.v1", "intents: []", b"training archive"),
+    )
     await service.train(
         "it", [{"name": "ask_vpn_renewal", "examples": ["renew my vpn certificate"]}]
     )
 
-    assert len(calls) == 1
-    url, kwargs = calls[0]
-    assert url.endswith("/internal/retrain")
-    assert kwargs["headers"]["X-Vario-Internal-Token"] == "test-only-token"
-    assert kwargs["json"]["examples_by_intent"]["ask_vpn_renewal"] == [
-        "renew my vpn certificate"
-    ]
+    assert len(calls) == 2
+    assert calls[0][0].endswith("/model/train")
+    assert calls[1][0].endswith("/model/reload")
+    assert calls[0][1]["data"]["save_to_default_model_directory"] == "true"
+    assert calls[0][1]["files"]["training_files"][1] == b"training archive"
+    assert "headers" not in calls[0][1]
