@@ -1,0 +1,7 @@
+# Shared VARIO Rasa code (ADR-006). Rasa 3.6 needs Python 3.8-3.10.
+rasa==3.6.20
+rasa-sdk>=3.6.2,<3.7.0
+# Rasa 3.6 imports pkg_resources; venvs created by uv or Python 3.12+ omit it.
+setuptools<70
+requests
+pytest==8.1.1
