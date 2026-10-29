@@ -3,11 +3,7 @@ version: "3.1"
 intents:
   - check_leave_balance:
       use_entities:
-        - employee_id
         - leave_type
-  - ask_leave_status:
-      use_entities:
-        - request_id
   - submit_leave_request:
       use_entities:
         - leave_type
@@ -17,44 +13,43 @@ intents:
       use_entities:
         - policy_topic
   - ask_wfh_policy
-  - nlu_fallback
+  - inform:
+      use_entities:
+        - leave_type
+        - start_date
+        - end_date
+        - reason
+  - affirm
+  - deny
+  - cancel
   - greet
   - goodbye
+  - nlu_fallback
 
 entities:
-  - employee_id
   - leave_type
-  - request_id
   - start_date
   - end_date
+  - reason
   - policy_topic
+  - employee_id
 
 slots:
-  employee_id:
-    type: text
-    influence_conversation: true
-    mappings:
-      - type: from_entity
-        entity: employee_id
-
   leave_type:
     type: text
     influence_conversation: true
     mappings:
       - type: from_entity
         entity: leave_type
-
-  balance:
-    type: any
-    influence_conversation: false
-    mappings:
-      - type: custom
-
-  status:
-    type: any
-    influence_conversation: false
-    mappings:
-      - type: custom
+        intent: submit_leave_request
+      - type: from_entity
+        entity: leave_type
+        conditions:
+          - active_loop: leave_request_form
+      - type: from_text
+        conditions:
+          - active_loop: leave_request_form
+            requested_slot: leave_type
 
   start_date:
     type: text
@@ -62,6 +57,12 @@ slots:
     mappings:
       - type: from_entity
         entity: start_date
+        conditions:
+          - active_loop: leave_request_form
+      - type: from_text
+        conditions:
+          - active_loop: leave_request_form
+            requested_slot: start_date
 
   end_date:
     type: text
@@ -69,52 +70,174 @@ slots:
     mappings:
       - type: from_entity
         entity: end_date
+        conditions:
+          - active_loop: leave_request_form
+      - type: from_text
+        conditions:
+          - active_loop: leave_request_form
+            requested_slot: end_date
 
   reason:
     type: text
     influence_conversation: true
     mappings:
       - type: from_text
+        conditions:
+          - active_loop: leave_request_form
+            requested_slot: reason
 
-  requested_slot:
-    type: text
-    influence_conversation: false
-    mappings:
-      - type: custom
-
-  confirmation_pending:
+  leave_confirm:
     type: bool
-    influence_conversation: false
+    influence_conversation: true
     mappings:
-      - type: custom
+      - type: from_intent
+        value: true
+        intent: affirm
+        conditions:
+          - active_loop: leave_request_form
+            requested_slot: leave_confirm
+      - type: from_intent
+        value: false
+        intent: deny
+        conditions:
+          - active_loop: leave_request_form
+            requested_slot: leave_confirm
+      - type: from_intent
+        value: false
+        intent: cancel
+        conditions:
+          - active_loop: leave_request_form
+            requested_slot: leave_confirm
+      - type: from_text
+        conditions:
+          - active_loop: leave_request_form
+            requested_slot: leave_confirm
+
+forms:
+  leave_request_form:
+    required_slots:
+      - leave_type
+      - start_date
+      - end_date
+      - reason
+      - leave_confirm
 
 responses:
   utter_greet:
-    - text: "Hello! I am your VARIO HR Assistant. You can ask me to check your leave balance, view leave request status, or ask about HR policies."
+    - text: "Hello! I am your VARIO HR Assistant. You can ask me to check your leave balance, submit a leave request, or ask about HR and remote work policies."
 
   utter_goodbye:
     - text: "Thank you for contacting HR. Have a wonderful day!"
 
   utter_ask_leave_type:
-    - text: "Which type of leave would you like to check (annual, sick, or casual)?"
+    - text: "What type of leave would you like to request?"
+      buttons:
+        - title: "Casual"
+          payload: "casual"
+        - title: "Sick"
+          payload: "sick"
+        - title: "Earned"
+          payload: "earned"
+        - title: "Annual"
+          payload: "annual"
+      custom:
+        vario:
+          template_key: submit_leave_slot_prompt
+          card:
+            type: slot_prompt
+            text: "What type of leave would you like to request?"
+            options:
+              - label: "Casual"
+                value: "casual"
+              - label: "Sick"
+                value: "sick"
+              - label: "Earned"
+                value: "earned"
+              - label: "Annual"
+                value: "annual"
 
-  utter_ask_employee_id:
-    - text: "Please provide your employee ID (e.g., EMP-1042) to check your leave balance."
+  utter_ask_start_date:
+    - text: "What is the start date for your leave (YYYY-MM-DD or e.g. 'tomorrow')?"
+      custom:
+        vario:
+          template_key: submit_leave_slot_prompt
+          card:
+            type: slot_prompt
+            text: "What is the start date for your leave (YYYY-MM-DD or e.g. 'tomorrow')?"
 
-  utter_default_fallback:
-    - text: "I'm sorry, I didn't quite catch that. You can ask me about your leave balance (e.g. 'what is my leave balance?'), leave application status, or HR policies."
+  utter_ask_end_date:
+    - text: "What is the end date for your leave (YYYY-MM-DD)?"
+      custom:
+        vario:
+          template_key: submit_leave_slot_prompt
+          card:
+            type: slot_prompt
+            text: "What is the end date for your leave (YYYY-MM-DD)?"
+
+  utter_ask_reason:
+    - text: "Please provide a reason for your leave request."
+      custom:
+        vario:
+          template_key: submit_leave_slot_prompt
+          card:
+            type: slot_prompt
+            text: "Please provide a reason for your leave request."
+
+  utter_ask_leave_confirm:
+    - text: "Please confirm your leave request: {leave_type} leave from {start_date} to {end_date}. Reason: {reason}."
+      buttons:
+        - title: "Confirm"
+          payload: "confirm"
+        - title: "Cancel"
+          payload: "cancel"
+      custom:
+        vario:
+          template_key: submit_leave_confirmation
+          card:
+            type: confirmation
+            title: "Confirm leave request"
+            text: "Please confirm your leave request."
+            options:
+              - label: "Confirm"
+                value: "confirm"
+              - label: "Cancel"
+                value: "cancel"
 
   utter_ask_policy_faq:
     - text: "Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days."
+      custom:
+        vario:
+          template_key: ask_policy_faq_response
+          card:
+            type: faq_answer
+            title: "Company Leave Policy"
+            text: "Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days."
 
   utter_ask_wfh_policy:
     - text: "Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location."
+      custom:
+        vario:
+          template_key: ask_wfh_policy_response
+          card:
+            type: faq_answer
+            title: "Work From Home Policy"
+            text: "Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location."
+
+  utter_default_fallback:
+    - text: "I can help with leave balances, leave requests, and leave or WFH policies. For travel or expense policies, please check the employee portal or contact HR."
+      custom:
+        vario:
+          card:
+            type: plain_text
+            text: "I can help with leave balances, leave requests, and leave or WFH policies. For travel or expense policies, please check the employee portal or contact HR."
 
 actions:
   - action_check_leave_balance
-  - action_submit_leave_request
-  - action_default_fallback
+  - validate_leave_request_form
+  - action_ask_leave_confirm
+  - action_submit_leave
+  - action_cancel_leave_request
 
 session_config:
   session_expiration_time: 60
-  carry_over_slots_to_new_session: true
+  carry_over_slots_to_new_session: false
