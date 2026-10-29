@@ -12,6 +12,8 @@ Add these under **GitHub → V-A-R-I-O/vario → Settings → Secrets and variab
 
 The account needs permission to browse, comment on, and transition the relevant Jira issues. Do not put the token in source code, PR text, or Jira comments. The workflow uses the repository-provided `GITHUB_TOKEN` for read-only check-run inspection.
 
+**Security note:** the Jira workflow uses `pull_request_target` and checks out only the trusted default branch before loading Jira credentials. Do not change it to check out or execute code from the pull-request head; that could expose the Jira API token to untrusted PR code. The regular CI workflow continues to test the PR branch without Jira credentials.
+
 Until the Jira secrets are configured, non-merge events emit a notice and skip synchronization; a merged-PR event fails visibly rather than silently pretending that Jira was updated.
 
 ## PR title and verification checklist
