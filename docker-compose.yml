@@ -148,6 +148,7 @@ services:
       dockerfile: rasa-it/Dockerfile
     profiles: [full]
     restart: unless-stopped
+    # The entrypoint runs the Rasa server from the persistent volume so retrained models survive recreation.
     environment:
       MOCK_ITSM_URL: http://mock-itsm:9003
       RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-}
