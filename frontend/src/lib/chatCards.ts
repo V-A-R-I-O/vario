@@ -10,6 +10,10 @@ import {
   createITTicketStatusMessage,
 } from '@/components/chat/ITTicketStatusCard';
 import { createAdmissionsFeeDeadlineMessage } from '@/components/chat/AdmissionsFeeDeadlineCard';
+import {
+  createAdmissionsStatusMessage,
+  createAdmissionsNotFoundMessage,
+} from '@/components/chat/AdmissionsStatusCard';
 
 // Must match rasa-shared/contract/card-types.json.
 export const CARD_TYPES = [
@@ -188,17 +192,16 @@ export function legacyCard(reply: BotReply): BotMessageData | null {
 
     case 'check_application_status': {
       if (form || !s.application_id) return null;
-      if (s.found === false) return { type: 'not_found', text: reply.content };
+      if (s.found === false) return createAdmissionsNotFoundMessage(String(s.application_id), reply.content);
       if (!s.status || !s.next_step) return null;
-      const rows: KeyValue[] = [
-        { label: 'Application ID', value: String(s.application_id) },
-        { label: 'Status', value: String(s.status) },
-        { label: 'Next Step', value: String(s.next_step) },
-      ];
-      if (s.applicant_name) rows.push({ label: 'Applicant', value: String(s.applicant_name) });
-      if (s.program) rows.push({ label: 'Program', value: String(s.program) });
-      if (s.fee_status) rows.push({ label: 'Fee Status', value: String(s.fee_status) });
-      return { type: 'data_card', title: `Application ${s.application_id} Status`, rows };
+      return createAdmissionsStatusMessage({
+        applicationId: String(s.application_id),
+        status: String(s.status),
+        nextStep: String(s.next_step),
+        applicantName: s.applicant_name ? String(s.applicant_name) : undefined,
+        program: s.program ? String(s.program) : undefined,
+        feeStatus: s.fee_status ? String(s.fee_status) : undefined,
+      });
     }
 
     case 'get_document_checklist':
