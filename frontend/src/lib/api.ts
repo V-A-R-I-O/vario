@@ -15,6 +15,7 @@ export async function loginUser(email: string, password: string) {
 }
 
 import { getToken } from './auth';
+import { ApiError } from './apiError';
 
 async function authFetch(path: string, options: RequestInit = {}) {
   const token = getToken();
@@ -23,19 +24,26 @@ async function authFetch(path: string, options: RequestInit = {}) {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers,
   };
-  
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-  });
-  
-  const data = await res.json();
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch {
+    // Network failure or the server is down — the request never got a response.
+    throw new ApiError(0, 'Network request failed');
+  }
+
+  // A proxy or crash page may not be JSON; don't let that mask the status.
+  const data = await res.json().catch(() => null);
   if (!res.ok) {
     if (res.status === 401 && typeof window !== 'undefined') {
         localStorage.removeItem('vario_token');
         window.location.href = '/login';
     }
-    throw new Error(data.error || 'Request failed');
+    throw new ApiError(res.status, data?.error || 'Request failed');
   }
   return data;
 }
