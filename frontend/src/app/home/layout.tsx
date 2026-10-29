@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { getToken, clearToken } from '@/lib/auth';
 import { fetchConversations } from '@/lib/api';
+import { onConversationsChanged } from '@/lib/conversationEvents';
 
 export default function HomeLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -13,20 +15,7 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
   const [isRailOpen, setIsRailOpen] = useState(false);
   const [user, setUser] = useState<any>(null); // To decode from JWT if needed
 
-  useEffect(() => {
-    setMounted(true);
-    const token = getToken();
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-    
-    try {
-      // Very basic JWT decode for user info
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      setUser(payload);
-    } catch(e) {}
-
+  const loadConversations = useCallback(() => {
     fetchConversations()
       .then(res => {
         if (res.status === 'success') {
@@ -35,9 +24,30 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
       })
       .catch(err => console.error(err))
       .finally(() => setLoading(false));
-  }, [router]);
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
+    const token = getToken();
+    if (!token) {
+      router.push('/login');
+      return;
+    }
+
+    try {
+      // Very basic JWT decode for user info
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      setUser(payload);
+    } catch(e) {}
+
+    loadConversations();
+    // Reload when a conversation is created or gets a new message.
+    return onConversationsChanged(loadConversations);
+  }, [router, loadConversations]);
 
   if (!mounted) return null;
+
+  const isAdmin = typeof user?.role === 'string' && user.role.endsWith('_admin');
 
   const handleLogout = () => {
     clearToken();
@@ -81,6 +91,16 @@ export default function HomeLayout({ children }: { children: React.ReactNode }) 
           </svg>
           New conversation
         </button>
+        {isAdmin && (
+          <nav className="rail-nav" aria-label="Admin">
+            <Link href="/admin">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 3 4 6v6c0 4.5 3.4 8.3 8 9 4.6-.7 8-4.5 8-9V6l-8-3Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+              </svg>
+              Admin console
+            </Link>
+          </nav>
+        )}
         <div className="rail-section-label">Conversations</div>
         
         <div className="rail-scroll">

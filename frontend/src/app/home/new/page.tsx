@@ -1,19 +1,36 @@
 'use client';
 
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createConversation } from '@/lib/api';
+import { notifyConversationsChanged } from '@/lib/conversationEvents';
 
 export default function NewConversationPage() {
   const router = useRouter();
+  const [creating, setCreating] = useState(false);
+  // A ref too: a double-click must not create two conversations.
+  const creatingRef = useRef(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleCreate = async (role_pack: string) => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
+    setCreating(true);
+    setError(null);
     try {
       const res = await createConversation(role_pack);
       if (res.status === 'success') {
+        notifyConversationsChanged();
         router.push(`/home/chat/${res.data.id}`);
+        return;
       }
+      setError("Couldn't start the conversation. Please try again.");
     } catch (e) {
       console.error('Failed to create conversation', e);
+      setError("Couldn't start the conversation. Please try again.");
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
     }
   };
 
@@ -33,9 +50,15 @@ export default function NewConversationPage() {
             Choose which department you&apos;d like to talk to. You can switch anytime by starting another conversation.
           </p>
 
+          {error && (
+            <div className="banner banner-danger" role="alert" style={{ marginBottom: '18px' }}>
+              {error}
+            </div>
+          )}
+
           <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px'}}>
 
-            <button className="panel role-hr" style={{textAlign: 'left', padding: '0', borderLeft: '3px solid var(--role)', cursor: 'pointer'}} onClick={() => handleCreate('hr')}>
+            <button className="panel role-hr" style={{textAlign: 'left', padding: '0', borderLeft: '3px solid var(--role)', cursor: 'pointer'}} disabled={creating} onClick={() => handleCreate('hr')}>
               <div style={{padding: '22px 20px'}}>
                 <div style={{width: '38px', height: '38px', borderRadius: '9px', background: 'var(--role-tint)', color: 'var(--role-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '12.5px', marginBottom: '16px'}}>HR</div>
                 <h3 style={{fontSize: '15.5px', marginBottom: '6px'}}>HR</h3>
@@ -44,7 +67,7 @@ export default function NewConversationPage() {
               </div>
             </button>
 
-            <button className="panel role-it" style={{textAlign: 'left', padding: '0', borderLeft: '3px solid var(--role)', cursor: 'pointer'}} onClick={() => handleCreate('it')}>
+            <button className="panel role-it" style={{textAlign: 'left', padding: '0', borderLeft: '3px solid var(--role)', cursor: 'pointer'}} disabled={creating} onClick={() => handleCreate('it')}>
               <div style={{padding: '22px 20px'}}>
                 <div style={{width: '38px', height: '38px', borderRadius: '9px', background: 'var(--role-tint)', color: 'var(--role-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '12.5px', marginBottom: '16px'}}>IT</div>
                 <h3 style={{fontSize: '15.5px', marginBottom: '6px'}}>IT Support</h3>
@@ -53,7 +76,7 @@ export default function NewConversationPage() {
               </div>
             </button>
 
-            <button className="panel role-adm" style={{textAlign: 'left', padding: '0', borderLeft: '3px solid var(--role)', cursor: 'pointer'}} onClick={() => handleCreate('admissions')}>
+            <button className="panel role-adm" style={{textAlign: 'left', padding: '0', borderLeft: '3px solid var(--role)', cursor: 'pointer'}} disabled={creating} onClick={() => handleCreate('admissions')}>
               <div style={{padding: '22px 20px'}}>
                 <div style={{width: '38px', height: '38px', borderRadius: '9px', background: 'var(--role-tint)', color: 'var(--role-dark)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '12.5px', marginBottom: '16px'}}>AD</div>
                 <h3 style={{fontSize: '15.5px', marginBottom: '6px'}}>Admissions</h3>
