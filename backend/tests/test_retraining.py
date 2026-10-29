@@ -19,11 +19,15 @@ USER = auth("retrain-user", "end_user")
 async def test_retraining_job_is_persisted_and_role_scoped(monkeypatch):
     # Keep the background worker dormant so this test exercises durable job creation
     # and retrieval without calling a live role-pack runtime.
-    import asyncio
     from app.services import retraining_service
     from tests.conftest import TestingSessionLocal
 
-    monkeypatch.setattr(asyncio, "create_task", lambda coroutine: coroutine.close())
+    async def skip_training(_job_id, _pack):
+        return None
+
+    # Stub only the retraining worker. Do not patch asyncio.create_task globally:
+    # SQLAlchemy uses it internally while closing AsyncSession instances.
+    monkeypatch.setattr(retraining_service, "run", skip_training)
     monkeypatch.setattr(retraining_service, "AsyncSessionLocal", TestingSessionLocal)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post("/api/admin/retrain", headers=HR)
