@@ -12,3 +12,4 @@ pytest-asyncio==0.23.5
 aiosqlite==0.20.0
 alembic
 google-cloud-texttospeech==2.16.3
+PyYAML==6.0.2

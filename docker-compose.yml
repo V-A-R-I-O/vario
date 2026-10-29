@@ -30,6 +30,10 @@ services:
   gateway:
     build:
       context: ./backend
+    volumes:
+      - ./rasa-hr:/rolepacks/hr:ro
+      - ./rasa-it:/rolepacks/it:ro
+      - ./rasa-admissions:/rolepacks/admissions:ro
     restart: unless-stopped
     ports:
       - "${API_PORT:-8000}:8000"
@@ -37,6 +41,8 @@ services:
       DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-vario}:${POSTGRES_PASSWORD:-vario}@postgres:5432/${POSTGRES_DB:-vario}"
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
       JWT_EXPIRY_MINUTES: ${JWT_EXPIRY_MINUTES:-60}
+      RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-}
+      ROLE_PACKS_DIR: /rolepacks
       MOCK_AUTH_URL: http://mock-auth:9001
       RASA_HR_URL: http://rasa-hr:5005
       RASA_IT_URL: http://rasa-it:5006
@@ -139,6 +145,10 @@ services:
     restart: unless-stopped
     environment:
       MOCK_ITSM_URL: http://mock-itsm:9003
+      RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-}
+      RETRAINING_DATA_PATH: /var/lib/vario/training_examples.json
+    volumes:
+      - rasa-it-data:/var/lib/vario
     depends_on:
       mock-itsm:
         condition: service_healthy
@@ -162,3 +172,4 @@ services:
 
 volumes:
   pgdata:
+  rasa-it-data:

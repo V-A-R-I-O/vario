@@ -6,6 +6,8 @@ ITSM HTTP adapter for live ticket status and returns structured slots for the ch
 import logging
 import re
 from typing import Any, Dict, Optional
+import json
+import os
 
 import yaml
 from fastapi import FastAPI
@@ -61,6 +63,28 @@ def load_nlu_training_examples() -> Dict[str, list[str]]:
 
 
 TRAINING_DATA = load_nlu_training_examples()
+
+
+def load_persisted_training_examples() -> None:
+    """Overlay retrained examples saved on the persistent runtime volume."""
+    path = Path(os.getenv("RETRAINING_DATA_PATH", "/var/lib/vario/training_examples.json"))
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(saved, dict):
+            TRAINING_DATA.update({
+                str(intent): [str(phrase).strip().lower() for phrase in phrases
+                              if isinstance(phrase, str) and phrase.strip()]
+                for intent, phrases in saved.items()
+                if isinstance(phrases, list)
+            })
+    except FileNotFoundError:
+        return
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Unable to load persisted retraining data: %s", type(exc).__name__)
+
+
+load_persisted_training_examples()
+
 
 
 class SessionState(BaseModel):
@@ -490,3 +514,39 @@ def _cleared_reset_slots(slots: Dict[str, Any]) -> Dict[str, Any]:
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("server:app", host="0.0.0.0", port=5006)
+
+
+# Slice 10 internal retraining endpoint for the lightweight IT classifier.
+from fastapi import Header, HTTPException
+from pydantic import BaseModel as _RetrainRequest
+
+
+class _InternalRetrainPayload(_RetrainRequest):
+    examples_by_intent: Dict[str, list[str]]
+
+
+@app.post("/internal/retrain")
+async def internal_retrain(payload: _InternalRetrainPayload,
+    x_vario_internal_token: str = Header(default="", alias="X-Vario-Internal-Token")):
+    expected = os.getenv("RETRAINING_INTERNAL_TOKEN", "")
+    if not expected or x_vario_internal_token != expected:
+        raise HTTPException(status_code=401, detail="Invalid internal retraining token")
+    if not payload.examples_by_intent or any(not isinstance(v, list) for v in payload.examples_by_intent.values()):
+        raise HTTPException(status_code=422, detail="Invalid training examples")
+    global TRAINING_DATA
+    updated = dict(TRAINING_DATA)
+    updated.update({
+        intent: [phrase.strip().lower() for phrase in phrases if phrase.strip()]
+        for intent, phrases in payload.examples_by_intent.items()
+    })
+    path = Path(os.getenv("RETRAINING_DATA_PATH", "/var/lib/vario/training_examples.json"))
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = path.with_suffix(path.suffix + ".tmp")
+        temporary_path.write_text(json.dumps(updated, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporary_path, path)
+    except OSError as exc:
+        logger.exception("Unable to persist retraining data")
+        raise HTTPException(status_code=503, detail="Unable to persist retraining data") from exc
+    TRAINING_DATA = updated
+    return {"status": "success", "intents_updated": len(payload.examples_by_intent)}

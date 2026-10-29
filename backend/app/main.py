@@ -3,8 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.routers import auth, conversations, chat, admin, admin_crud
+from app.routers import auth, conversations, chat, admin, admin_crud, retraining
 from app.database import engine, Base
+from app.services.retraining_service import recover_stale_jobs
 from contextlib import asynccontextmanager
 
 from app.middleware import gateway_middleware
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI):
     # For dev/test, just create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await recover_stale_jobs()
     yield
 
 app = FastAPI(title="VARIO API", lifespan=lifespan)
@@ -44,6 +46,7 @@ app.include_router(conversations.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(admin_crud.router, prefix="/api")
+app.include_router(retraining.router, prefix="/api")
 
 @app.get("/health")
 def health_check():
