@@ -145,7 +145,11 @@ async def test_chat_missing_message_unprocessable():
 
 @pytest.mark.asyncio
 async def test_multi_turn_slots_persist():
-    """AC: session slots persist across turns (FR-4)."""
+    """AC: session context persists across turns (FR-4).
+
+    Under ADR-006 the role pack owns its dialogue state: the gateway hands the
+    stored state back on the next turn and stores whatever the pack reports.
+    """
     await seed_template("leave_form_response", ["Got it."])
     async with _client() as client:
         conv_id = await make_conversation(client, headers_for("u1"))
@@ -167,20 +171,23 @@ async def test_multi_turn_slots_persist():
         turn2 = rasa_payload(
             intent="request_leave",
             template_key="leave_form_response",
-            slots={"start_date": "Sep 10"},
+            slots={"leave_type": "casual", "start_date": "Sep 10"},
             current_form="leave_request_form",
             current_step="confirm",
         )
-        with patch("app.services.dialogue_router._post_to_rasa", new=AsyncMock(return_value=turn2)):
+        mock_post = AsyncMock(return_value=turn2)
+        with patch("app.services.dialogue_router._post_to_rasa", new=mock_post):
             res = await client.post(
                 "/api/chat",
                 json={"conversation_id": conv_id, "message": "Sep 10"},
                 headers=headers_for("u1"),
             )
 
+    sent_session = mock_post.await_args.args[1]["session"]
+    assert sent_session["slots"] == {"leave_type": "casual"}   # turn 1's state handed back
+    assert sent_session["current_step"] == "ask_dates"
     slots = res.json()["data"]["session"]["slots"]
-    assert slots.get("leave_type") == "casual"   # from turn 1
-    assert slots.get("start_date") == "Sep 10"   # from turn 2
+    assert slots == {"leave_type": "casual", "start_date": "Sep 10"}
     assert res.json()["data"]["session"]["current_step"] == "confirm"
 
 
