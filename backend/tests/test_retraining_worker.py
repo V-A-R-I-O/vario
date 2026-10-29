@@ -30,7 +30,6 @@ async def test_worker_success_activates_model_and_clears_dirty_flag(
     db_session.add_all([intent, job])
     await db_session.commit()
 
-    monkeypatch.setattr(service, "AsyncSessionLocal", service.AsyncSessionLocal)
     from tests.conftest import TestingSessionLocal
     monkeypatch.setattr(service, "AsyncSessionLocal", TestingSessionLocal)
 
@@ -101,7 +100,45 @@ async def test_worker_failure_keeps_dirty_flag_and_marks_job_failed(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("pack", ["hr", "admissions"])
-async def test_rasa_training_requires_successful_reload(monkeypatch, pack):
+async def test_rasa_training_activates_model_after_training(monkeypatch, pack):
+    calls = []
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+    class Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return Response()
+
+    monkeypatch.setattr(service.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(
+        service,
+        "_prepare_assets",
+        lambda _pack, _rows: ("recipe: default.v1", "intents: []", b"training archive"),
+    )
+
+    await service.train(pack, [{"name": "new_intent", "examples": ["example"]}])
+
+    assert len(calls) == 2
+    assert calls[0][0].endswith("/model/train")
+    assert calls[1][0].endswith("/model/reload")
+    assert calls[0][1]["data"]["save_to_default_model_directory"] == "true"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pack", ["hr", "admissions"])
+async def test_rasa_training_fails_if_model_reload_fails(monkeypatch, pack):
     calls = []
 
     class Response:
@@ -124,7 +161,6 @@ async def test_rasa_training_requires_successful_reload(monkeypatch, pack):
 
         async def post(self, url, **kwargs):
             calls.append((url, kwargs))
-            # The activation endpoint failing must make train() fail, not report success.
             return Response(500 if url.endswith("/model/reload") else 200)
 
     monkeypatch.setattr(service.httpx, "AsyncClient", Client)
