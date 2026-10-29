@@ -12,7 +12,7 @@
 - `.env.example` (`DATABASE_URL`)
 
 ## What to build
-The full relational schema for VARIO's 9 entities, as SQLAlchemy models plus an Alembic migration, runnable against Postgres/Neon. This is the single source of truth — Postgres, no in-memory cache.
+The full relational schema for VARIO's 9 entities, as SQLAlchemy models plus an Alembic migration, runnable against Postgres/local PostgreSQL. This is the single source of truth — Postgres, no in-memory cache.
 
 Deliverables:
 - **SQLAlchemy models** for all 9 entities: `users`, `conversations`, `messages`, `sessions`, `intents`, `training_phrases`, `response_templates`, `response_variants`, `audit_log`.
@@ -33,7 +33,7 @@ Schema specifics (from `docs/ADD.md`):
 
 ## Acceptance criteria
 - [ ] Given a fresh database, when the migration runs `up`, then all 9 tables are created with the columns/types above; `down` drops them cleanly.
-- [ ] Given the migration, when it runs against a **Neon** database (via `DATABASE_URL`), then it succeeds.
+- [ ] Given the migration, when it runs against a **local PostgreSQL** database (via `DATABASE_URL`), then it succeeds.
 - [ ] Given the schema, then foreign keys enforce: `conversations→users`, `messages→conversations`, `sessions→conversations` (unique 1:1), `training_phrases→intents`, `response_variants→response_templates`, `audit_log→users`.
 - [ ] Given the schema, then JSONB columns exist for `messages.entities`, `sessions.slots`, `audit_log.details`, and `response_templates.available_variables` is a string array.
 - [ ] Given the schema, then check/enum constraints enforce `messages.sender ∈ {user,bot}`, `intents.intent_type ∈ {dynamic_workflow,static_faq}`, and `role_pack ∈ {hr,it,admissions}` on `intents`, `response_templates`, and `conversations`.
@@ -46,7 +46,7 @@ No UI surface.
 ## Out of scope for this slice
 - Seeding role-pack intents / phrases / templates (each role owner does this in their own slice).
 - Business logic, CRUD endpoints, ORM query helpers beyond what the migration needs.
-- Provisioning the Neon instance itself (that's `slice-30-vercel-neon`) — this slice consumes the `DATABASE_URL` it provides.
+- Provisioning the local PostgreSQL instance itself (that's `slice-30-vercel-neon`) — this slice consumes the `DATABASE_URL` it provides.
 
 ## Human review required?
 **Yes** — schema / data-model change. Coordinate the `DATABASE_URL` with `slice-30`.

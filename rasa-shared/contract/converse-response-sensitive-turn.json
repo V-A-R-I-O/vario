@@ -1,0 +1,13 @@
+{
+  "intent": "reset_password",
+  "confidence": 0.94,
+  "entities": {},
+  "template_key": null,
+  "slots": {},
+  "current_form": "reset_password_form",
+  "current_step": "security_answer",
+  "response_text": "Security question: What was the name of your first school?",
+  "audit_event": null,
+  "card": null,
+  "sensitive_next_input": true
+}

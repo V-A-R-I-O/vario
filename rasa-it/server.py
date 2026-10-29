@@ -3,11 +3,11 @@
 The canonical Rasa training assets live beside this server. The runtime calls the
 ITSM HTTP adapter for live ticket status and returns structured slots for the chat UI.
 """
-import json
 import logging
-import os
 import re
 from typing import Any, Dict, Optional
+import json
+import os
 
 import yaml
 from fastapi import FastAPI
@@ -84,6 +84,7 @@ def load_persisted_training_examples() -> None:
 
 
 load_persisted_training_examples()
+
 
 
 class SessionState(BaseModel):

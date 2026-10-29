@@ -1,0 +1,28 @@
+version: "3.1"
+rules:
+  - rule: greet
+    steps:
+      - intent: greet
+      - action: utter_greet
+  - rule: balance
+    steps:
+      - intent: check_balance
+      - action: utter_balance
+  - rule: activate leave form
+    steps:
+      - intent: request_leave
+      - action: leave_form
+      - active_loop: leave_form
+  - rule: submit leave form
+    condition:
+      - active_loop: leave_form
+    steps:
+      - action: leave_form
+      - active_loop: null
+      - slot_was_set:
+          - requested_slot: null
+      - action: utter_leave_done
+  - rule: fallback
+    steps:
+      - intent: nlu_fallback
+      - action: utter_default

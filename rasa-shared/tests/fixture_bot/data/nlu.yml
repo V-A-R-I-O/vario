@@ -1,0 +1,26 @@
+version: "3.1"
+nlu:
+  - intent: greet
+    examples: |
+      - hello
+      - hi
+      - hey there
+      - good morning
+      - hello bot
+      - hi there
+  - intent: check_balance
+    examples: |
+      - what is my leave balance
+      - how many leave days do I have
+      - show my balance
+      - check my leave balance
+      - how much leave is left
+      - leave balance please
+  - intent: request_leave
+    examples: |
+      - I want to apply for leave
+      - I need to apply for leave
+      - request leave
+      - book a day off
+      - I want to take leave
+      - apply leave

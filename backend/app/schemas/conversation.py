@@ -32,6 +32,7 @@ class MessageResponse(BaseModel):
     intent_name: Optional[str] = None
     confidence: Optional[float] = None
     entities: Optional[Dict[str, Any]] = None
+    card: Optional[Dict[str, Any]] = None
     created_at: datetime
 
 class MessageListResponse(BaseModel):

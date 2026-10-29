@@ -1,0 +1,23 @@
+{
+  "sender": "6f1d2c3b-0a4e-4b5f-9c8d-7e6f5a4b3c2d",
+  "message": "What's my leave balance?",
+  "metadata": {
+    "auth_context": {
+      "employee_id": "EMP-1001",
+      "full_name": "Employee One",
+      "role": "end_user"
+    },
+    "user_id": "00000000-0000-0000-0000-000000000001",
+    "sensitive": false
+  },
+  "session": {
+    "current_form": null,
+    "current_step": null,
+    "slots": {}
+  },
+  "auth_context": {
+    "employee_id": "EMP-1001",
+    "full_name": "Employee One",
+    "role": "end_user"
+  }
+}

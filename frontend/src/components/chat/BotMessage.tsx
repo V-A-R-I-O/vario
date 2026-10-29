@@ -22,7 +22,14 @@ export function BotMessageContent({ message }: { message: BotMessageData }) {
     case 'data_card':
       return <DataCard title={message.title} rows={message.rows} />;
     case 'slot_prompt':
-      return <SlotPrompt text={message.text} options={message.options} onSelect={message.onSelect} />;
+      return (
+        <SlotPrompt
+          text={message.text}
+          options={message.options}
+          onSelect={message.onSelect}
+          disabled={message.disabled}
+        />
+      );
     case 'confirmation':
       return (
         <Confirmation
@@ -32,6 +39,7 @@ export function BotMessageContent({ message }: { message: BotMessageData }) {
           cancelLabel={message.cancelLabel}
           onConfirm={message.onConfirm}
           onCancel={message.onCancel}
+          disabled={message.disabled}
         />
       );
     case 'result':
@@ -110,12 +118,38 @@ export function BotMessage({
   );
 }
 
-// User message row: right-aligned bubble with initials avatar.
-export function UserMessage({ text, initials = 'You' }: { text: string; initials?: string }) {
+// User message row: right-aligned bubble with initials avatar. A message that
+// failed to send shows a "Not sent" note with a Retry button.
+export function UserMessage({
+  text,
+  initials = 'You',
+  failed = false,
+  onRetry,
+}: {
+  text: string;
+  initials?: string;
+  failed?: boolean;
+  onRetry?: () => void;
+}) {
   return (
-    <div className="msg-row user">
-      <div className="avatar-user">{initials}</div>
-      <div className="bubble user">{text}</div>
-    </div>
+    <>
+      <div className="msg-row user">
+        <div className="avatar-user">{initials}</div>
+        <div className="bubble user" style={failed ? { opacity: 0.6 } : undefined}>{text}</div>
+      </div>
+      {failed && (
+        <div
+          className="msg-failed"
+          style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--danger)' }}
+        >
+          Not sent
+          {onRetry && (
+            <button className="btn btn-outline btn-sm" type="button" onClick={onRetry}>
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+    </>
   );
 }

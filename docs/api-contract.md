@@ -159,6 +159,11 @@ Fetch message history for a conversation.
         "intent_name": "check_leave_balance",
         "confidence": 0.95,
         "entities": { "employee_id": "EMP-1042" },
+        "card": {
+          "type": "data_card",
+          "title": "Your leave balance",
+          "rows": [{ "label": "Total", "value": "12 days" }]
+        },
         "created_at": "2026-09-07T10:00:03Z"
       }
     ]
@@ -166,6 +171,8 @@ Fetch message history for a conversation.
   "error": null
 }
 ```
+
+`card` is the UI card stored with that bot message (`null` for user messages and plain-text replies), identical to what `POST /api/chat` returned for the turn — so cards render the same after a reload. See ADR-006.
 
 **Errors:**
 - `403` — Conversation does not belong to this user
@@ -203,11 +210,23 @@ Send a message in an existing conversation. This is the main endpoint — it rou
       "current_form": null,
       "current_step": null,
       "slots": {}
-    }
+    },
+    "card": {
+      "type": "data_card",
+      "title": "Your leave balance",
+      "rows": [{ "label": "Total", "value": "12 days" }]
+    },
+    "degraded": false
   },
   "error": null
 }
 ```
+
+- `card` — the UI card for this turn, or `null` for plain text. Its shape is exactly the frontend `BotMessageData` (`frontend/src/components/chat/types.ts`); `type` is one of `plain_text`, `data_card`, `slot_prompt`, `confirmation`, `result`, `not_found`, `faq_answer`, `error`, `list`. Render cards from this field — never from `session.slots`.
+- `degraded` — `true` when the role pack was unreachable. The reply is still `200 OK`: `response_text` is a friendly "assistant unavailable" message, `card` is an `error` card, the user's message is kept, and the session doesn't advance.
+- `session` — the role pack's current form, step and slots as reported this turn (not accumulated across turns).
+
+See ADR-006 for the full rules and more examples.
 
 **Response (talk mode):** `200 OK`
 ```json
@@ -883,12 +902,3 @@ When rate limited, the response includes:
 ```
 
 Headers included: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
-
-
-## Admin — Retraining (Slice 10)
-
-- `POST /api/admin/retrain`: admin JWT required; role pack is derived from the JWT, returns `202` and `retrain_job_id`. Returns `409` if that pack already has an active job.
-- `GET /api/admin/retrain/:job_id`: returns job state (`pending`, `training`, `complete`, `failed`) and timestamps. Jobs are visible only to admins of the same role pack.
-- Job status and timestamps are persisted in the gateway database (`retraining_jobs`) and are scoped by role pack. Apply the Alembic migration before deployment.
-- IT classifier examples are persisted to the named `rasa-it-data` Compose volume and loaded on runtime startup; configure `RETRAINING_INTERNAL_TOKEN` to the same strong secret for gateway and IT runtime.
-- Execution still uses an in-process background task, not a durable queue. Run one gateway worker for this slice; multi-worker execution requires a shared task queue/worker and race-safe job claiming before enabling multiple workers.

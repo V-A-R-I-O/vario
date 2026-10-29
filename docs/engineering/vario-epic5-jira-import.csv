@@ -1,0 +1,961 @@
+"Issue ID","Parent","Issue Type","Summary","Slice ID","Sprint","Priority","Assignee","Team","Labels","Labels","Labels","Labels","Labels","Story Points","Description"
+"1","","Epic","EPIC-5: Integration Defects & Real Rasa Migration","","Sprint 4","Highest","Mohammed Tahir Siddique","VARIO Program","epic","epic-5","audit-sprint3","","","","WHY:
+The end-of-Sprint-3 integration audit (docs/testing/sprint-3-integration-audit.md) ran all 8 services together and drove real conversations through the gateway. All unit suites pass, but core flows break at the service seams, and the three role packs are hand-written keyword matchers rather than Rasa. The team decided to (1) migrate the role packs to real Rasa Open Source 3.6 and (2) demo locally on laptop C instead of deploying to OCI/Vercel/Neon.
+
+SCOPE:
+- slice-32..40 (Tasks) close the audit defects (Bugs) listed under this epic.
+- Every Bug carries a label naming the slice that fixes it.
+
+DONE WHEN:
+- All Bugs under this epic are verified fixed on laptop C.
+- The demo script runs end-to-end on the local stack."
+"10","1","Task","slice-32-rasa-contract-v2","slice-32","Sprint 4","Highest","Mohammed Tahir Siddique","Platform — Tahir","slice-32-rasa-contract-v2","epic-5","module-gateway","owner-d","needs-human-review","5","WHAT TO BUILD:
+- ADR-006 — Rasa converse contract v2 (freeze on day 1). It must pin down:
+  - - Request: POST RASA_<PACK>\_URL/webhooks/vario/converse with sender = conversation_id (one Rasa tracker per conversation), message, and metadata.auth_context = employee_id, full_name, role from the authenticated user — never from chat text.
+  - - Response: the ADR-002 fields plus card (this turn's card payload or null) and sensitive_next_input (true when the next user message must be redacted, e.g. a security answer). slots carries only this turn's template values.
+  - - How the custom Rasa input channel builds the response: intent/confidence from latest_message, active_loop → current_form, requested_slot → current_step, collected text and JSON messages → response_text / template_key / card / audit_event.
+  - - Where dialogue state lives: Rasa SQL tracker store in the stack's Postgres (survives restarts); the gateway sessions row becomes a mirror.
+  - - Examples for a form turn, a card turn and a degraded turn.
+- Shared Rasa input channel module — one copy used by all three packs (mounted or copied at build; ADR decides), plus a contract test fixture packs and the frontend can test against.
+- Gateway changes:
+  - - Send conversation_id as sender and the identity in metadata.
+  - - Store the session mirror exactly as returned (stop the endless slot merge).
+  - - Persist each bot message's card (Alembic migration: JSON column on messages) and return it from /api/chat and message history.
+  - - Skip the FR-2 clarification override while a form is active.
+  - - Redact the next user message when sensitive_next_input was set (replaces the hard-coded IT form/step check).
+  - - Rasa instance unreachable/erroring → HTTP 200 with a friendly role-pack-specific bot reply and degraded: true; keep the user's message.
+  - - Unhandled 500s carry CORS headers.
+  - - Enforce or remove sessions.expires_at (ADR decides).
+- Update docs/api-contract.md for the new optional fields.
+
+ACCEPTANCE CRITERIA (convert to checklist in Jira):
+- Given ADR-006 is merged, then it specifies the exact request/response JSON with examples for a form turn, a card turn and a degraded turn.
+- Given any chat turn, then the role pack receives sender = conversation_id and metadata.auth_context.employee_id equal to the logged-in user's external_id.
+- Given a turn whose response omits a key used in an earlier turn, then /api/chat session.slots does not contain the earlier value.
+- Given a bot reply with a card, when the conversation history is fetched, then the same card is returned for that message.
+- Given an active form and a low-confidence user reply, then the role pack's reply is returned (no clarification override).
+- Given sensitive_next_input was true on the previous reply, then the user's next message is stored redacted, and the existing IT redaction tests still pass.
+- Given a role pack is down, when a user sends a message, then the API returns 200 with a friendly degraded reply, the user message is persisted, and the response has CORS headers.
+- Given an unhandled exception, then the 500 response includes CORS headers.
+- Given the backend suite, then all tests pass and new tests cover each criterion above.
+
+CLOSES BUGS (labelled slice-32-rasa-contract-v2):
+- B5a: Session slots accumulate forever; every reply returns all past values
+- M6: Role-pack outage returns HTTP 500, loses the user's message and has no CORS header
+- N1: sessions.expires_at is written but never enforced
+
+DEPENDS ON: Nothing — this slice goes first. ADR-006 must be merged on day 1, because slices 33, 35, 37 and 39 build against it.
+DEV ENVIRONMENT: Tahir — laptop A (M1, 8 GB). Backend work runs natively; no Rasa needed (use the contract fixture).
+HUMAN REVIEW: Yes — adds a DB migration and changes how the logged-in identity is passed to role packs.
+SLICE DOC: docs/slices/slice-32-rasa-contract-v2.md"
+"11","1","Task","slice-33-chat-ui-hardening","slice-33","Sprint 4","High","Mohammed Tahir Siddique","Platform — Tahir","slice-33-chat-ui-hardening","epic-5","module-chat-ui","owner-d","","3","WHAT TO BUILD:
+- Render every bot card from that reply's own card field — live and from history. Remove the slot-key sniffing and regex-on-text card detection in toThreadRow.
+- Disable Confirm/Cancel/option buttons while a send is in flight and once answered; guard /home/new against double-create.
+- Refresh the sidebar conversation list after creating a conversation and after each turn.
+- Talk mode: detect insecure origins (window.isSecureContext) and explain; exit the overlay with a message on any speech-recognition error and on a failed send.
+- Distinct error messages for rate limit (429), server error and network failure; mark a failed user message and offer retry.
+- Show an ""Admin console"" link for admin roles.
+
+ACCEPTANCE CRITERIA (convert to checklist in Jira):
+- Given an HR balance check followed by a WFH question and a leave request, then the WFH answer renders as text, the leave prompts show their options, and the confirmation shows Confirm/Cancel.
+- Given an Admissions checklist followed by a status lookup, then the status lookup renders as a status card.
+- Given any conversation, when the page is reloaded, then every card renders the same as it did live.
+- Given a double-click on Confirm, then exactly one message is sent.
+- Given the UI opened on http://<LAN-IP>:3000, when talk mode is started, then the user sees a ""voice needs HTTPS or localhost"" message instead of a stuck overlay.
+- Given a speech-recognition error or a failed send in talk mode, then the overlay closes with a message.
+- Given a 429, then the message tells the user to wait; given the backend is down, then it says the service is unavailable.
+- Given a new conversation, then it appears in the sidebar without a reload.
+- Given an admin login, then a link to /admin is visible.
+- Given the Jest suite, then tests cover each criterion using ADR-006 contract-shaped fixtures.
+
+CLOSES BUGS (labelled slice-33-chat-ui-hardening):
+- B5b: Chat page picks cards from accumulated session slots, so stale cards replace later replies
+- M12: Cards break after a page reload because card data isn't stored with the message
+- M8: Talk mode gets stuck on 'Listening…' and doesn't detect insecure origins
+- M10: Double-clicking Confirm or an option button sends the message twice
+- M11: Sidebar conversation list never refreshes; admins have no link to the console
+- N2: Every chat error shows 'Connection lost'; failed messages have no retry
+
+DEPENDS ON: ADR-006 from slice-32 (start on day 1 against its fixtures).
+DEV ENVIRONMENT: Tahir — laptop A. Frontend runs natively; use the ADR-006 fixtures, no Rasa needed.
+HUMAN REVIEW: No.
+SLICE DOC: docs/slices/slice-33-chat-ui-hardening.md"
+"12","1","Task","slice-34-local-demo-stack","slice-34","Sprint 4","Highest","Mohammed Tahir Siddique","Platform — Tahir","slice-34-local-demo-stack","epic-5","module-docker-compose","owner-d","needs-human-review","5","WHAT TO BUILD:
+- docker-compose.yml brings up the whole stack with correct ports, env, healthchecks and depends_on:
+  - - postgres, gateway and frontend
+  - - all four real mock services: auth, hrms, itsm and admissions
+  - - rasa-hr, rasa-it and rasa-admissions on rasa/rasa:3.6.20-full, each with an action server (Python 3.10 + rasa-sdk 3.6.x)
+  - - the Rasa tracker store on postgres
+- One documented command trains all three models (models persisted). Compose fails clearly if a model is missing.
+- Gateway start runs alembic upgrade head plus an idempotent seed. Stop using create_all on Postgres. The seed must not log DATABASE_URL.
+- Frontend: Next.js rewrite /api/* → gateway; NEXT_PUBLIC_API_BASE_URL=/api. Only port 3000 needs to be reachable from other laptops.
+- mock-auth: one employee login per presenter plus an applicant login. Agree the IDs with slices 36 and 38 so they exist in HRMS and ITSM.
+- Rate limiting keyed by the forwarded client IP behind the trusted proxy (or per user), so four laptops behind one proxy/tunnel don't share the login limit.
+- docs/demo/local-demo.md — runbook for laptop C:
+  - - WSL2 memory (.wslconfig) and a Windows Firewall rule for port 3000
+  - - Hotspot vs college Wi-Fi check
+  - - Cloudflare quick tunnel for HTTPS and the microphone (cloudflared tunnel --url http://localhost:3000, no account)
+  - - Chrome insecure-origin flag as a fallback
+  - - Training the models and resetting data between rehearsals
+  - - Demo accounts table and troubleshooting
+- README rewrite: local run, ports, accounts.
+- ADR-007 records the local-demo decision; mark the OCI/Vercel/Neon/Cloudflare-deploy references superseded.
+- Fix references to the non-existent docs/vario-overview.md (the file is docs/overview.md).
+
+ACCEPTANCE CRITERIA (convert to checklist in Jira):
+- Given a fresh clone on laptop C with .env from .env.example, when the documented train and docker compose up commands run, then every service reports healthy.
+- Given the stack on laptop C, when a client on the same hotspot opens http://<C-IP>:3000, then login and one chat in each role pack work.
+- Given the quick-tunnel URL, when it's opened on another laptop, then login, chat and the talk-mode microphone work.
+- Given a fresh database, then migrations and the seed run automatically, and a second start doesn't duplicate data.
+- Given four laptops logging in through the tunnel within one minute, then none is rate-limited.
+- Given the README and the runbook, then a teammate can boot the demo without asking anyone.
+- Given the compose file, then no secret values are hardcoded.
+
+CLOSES BUGS (labelled slice-34-local-demo-stack):
+- B1: docker compose does not run the real stack
+- B3: Database is never migrated or seeded automatically, and seeding is undocumented
+- B4: Frontend can't reach the API from other laptops (localhost baked into the bundle)
+- N3: Rate limits break a multi-laptop demo (shared IP behind proxy, single demo account)
+- N4: Docs describe the dropped cloud deployment and an unstarted project
+
+DEPENDS ON: slice-32. Final verification needs the Rasa packs from 35/37/39 — start with the current services and swap the images in as each pack lands.
+DEV ENVIRONMENT: Built by Tahir; verified on Mitesh's laptop C (Windows 11, i5-13th-gen HX, 24 GB, Docker Desktop) — the demo host. Pair with Mitesh for the final run.
+HUMAN REVIEW: Yes — Docker Compose, environment variables and infra.
+SLICE DOC: docs/slices/slice-34-local-demo-stack.md"
+"13","1","Task","slice-35-hr-real-rasa","slice-35","Sprint 4","Highest","PAVAN KISHOR M","HR — Kishor","slice-35-hr-real-rasa","epic-5","module-hr-role-pack","owner-a","","8","WHAT TO BUILD:
+- Replace the keyword matcher in rasa-hr/server.py with a Rasa 3.6.20 project:
+  - - config.yml with a DIET pipeline and FallbackClassifier at threshold 0.4
+  - - domain.yml with intents, entities, slots, responses and forms
+  - - data/ with nlu, rules and stories — reuse and extend the existing YAML
+- Action server (rasa-sdk 3.6.x, Python 3.10) in rasa-hr/actions:
+  - - The HRMS adapter lives inside the pack (no ../backend import) and calls mock-hrms via MOCK_HRMS_URL.
+  - - No hardcoded employee data.
+  - - An HRMS outage gives a clear ""HR system unavailable"" reply.
+- Identity: balance and leave submission use metadata.auth_context.employee_id. Employee IDs typed in chat are ignored for these intents.
+- leave_request_form:
+  - - Steps: leave_type (including annual), start_date, end_date, reason → confirm → submit → reference ID, plus an audit event that includes the employee ID.
+  - - Validation: dates, end ≥ start, no past dates.
+  - - Cancel/stop works at any step, and other intents can interrupt.
+  - - Slots reset after submit or cancel.
+- Responses for greet, goodbye and out-of-scope — no debug text.
+- Use the shared channel from slice-32; return template_key/card per ADR-006.
+
+ACCEPTANCE CRITERIA (convert to checklist in Jira):
+- Given EMP-1001 is logged in, when they ask ""what is my leave balance?"", then their balance card shows without asking for an ID.
+- Given EMP-1001 types ""leave balance for EMP-1042"", then EMP-1001's own balance (or a polite refusal) is shown — never EMP-1042's.
+- Given a leave request, then each step asks its question in words, accepts annual, rejects invalid dates with guidance, and confirm files the request for the logged-in employee with a reference ID and an audit entry.
+- Given a completed or cancelled request, when a new one starts, then every question is asked again.
+- Given an off-script reply at the confirmation step, then the bot re-asks; ""cancel"" exits at any step.
+- Given ""what is the travel reimbursement policy?"", then the bot clarifies instead of answering with the leave policy.
+- Given ""hi"" or ""bye"", then a proper greeting or goodbye is returned.
+- Given mock-hrms is stopped, then the reply says the HR system is unavailable — no hardcoded numbers.
+- Given rasa data validate and rasa test nlu, then validation passes, and the existing HR flow tests are ported to the new runtime.
+
+CLOSES BUGS (labelled slice-35-hr-real-rasa):
+- B6: HR ignores the logged-in employee: balance loops and leave submission always fails
+- B7: Every leave-request question shows 'Sorry, I couldn't put together a response'
+- B2a: HR pack imports backend code and silently serves hardcoded data when that fails
+- M1a: A second leave request reuses the previous request's dates and reason
+- M2a: Any user can read another employee's leave balance and file leave as them
+- M3a: Leave form gets stuck after an off-script reply at the confirmation step
+- M4a: Off-topic policy questions get the leave policy at 0.9 confidence
+- M5a: HR replies with 'Intent greet acknowledged' debug text
+- N5: Leave form rejects 'annual' and natural-language dates
+
+DEPENDS ON: ADR-006 from slice-32 (start NLU/domain/forms on day 1; plug in the shared channel when it lands).
+DEV ENVIRONMENT: Pavan — laptop B (M4, 8 GB, Docker). Run rasa/rasa:3.6.20-full (arm64 image exists) or a Python 3.10 venv with pip install rasa==3.6.20. Run only the HR pack locally; full-stack integration on laptop C.
+HUMAN REVIEW: No — but the reviewer confirms the employee ID is never taken from chat text for balance or submission.
+SLICE DOC: docs/slices/slice-35-hr-real-rasa.md"
+"14","1","Task","slice-36-hr-data-fixes","slice-36","Sprint 4","High","PAVAN KISHOR M","HR — Kishor","slice-36-hr-data-fixes","epic-5","module-hr-role-pack","owner-a","","3","WHAT TO BUILD:
+- Topic-specific policy answers (maternity, paternity, sick, bereavement, carry-forward, WFH), each with its own seeded, admin-editable template, so the generic answer can't overwrite them.
+- Policy facts from one source of truth (mock-hrms /policies or the same seed data). Fix the current contradictions.
+- mock-hrms: /reset fully restores balances and reference counters. Reject past dates, end-before-start and requests exceeding the balance.
+- FR-6 leave-request status: show the logged-in employee's latest (or referenced) request status from HRMS, as a card.
+- HRMS seed covers every mock-auth login added in slice-34.
+
+ACCEPTANCE CRITERIA (convert to checklist in Jira):
+- Given ""what is the maternity policy?"", then the maternity answer (matching mock-hrms data) is returned; the same holds for each topic.
+- Given an admin edits the maternity template, then the next maternity answer uses the edit.
+- Given leave was submitted, when POST /reset is called, then balances and the reference counter return to seed values.
+- Given an invalid leave request to mock-hrms, then it's rejected with a clear error.
+- Given ""has my leave been approved?"", then the status of the employee's latest request is shown.
+
+CLOSES BUGS (labelled slice-36-hr-data-fixes):
+- M4b: Topic-specific HR FAQ answers are replaced by the generic policy template
+- N8: Leave request status (FR-6) is a stub
+- M7a: HR FAQ answers contradict the mock HRMS policy data
+- N6: mock-hrms /reset does not restore leave balances
+- N7: mock-hrms accepts invalid leave requests
+
+DEPENDS ON: slice-35 for the intent and form wiring (same owner — sequence it after the NLU skeleton).
+DEV ENVIRONMENT: Pavan — laptop B.
+HUMAN REVIEW: No.
+SLICE DOC: docs/slices/slice-36-hr-data-fixes.md"
+"15","1","Task","slice-37-it-real-rasa","slice-37","Sprint 4","Highest","Rohith G.S","IT — Rohith","slice-37-it-real-rasa","epic-5","module-it-role-pack","owner-b","","8","WHAT TO BUILD:
+- Replace rasa-it/server.py with a Rasa 3.6.20 project (DIET + FallbackClassifier 0.4; use the existing nlu, domain, rules and stories as the base).
+- Forms, with cancel and interruptions at any step:
+  - - ticket_status_form (ticket_id)
+  - - raise_ticket_form (category, description → confirm)
+  - - reset_password_form (employee_id, security answer)
+- Action server (Python 3.10, rasa-sdk pinned to 3.6.x) using rasa-it/actions/itsm_adapter.py. Remove the unused backend copy of the ITSM adapter.
+- Keep what works:
+  - - FR-13 duplicate suppression
+  - - The reporter comes from metadata.auth_context
+  - - The security answer is never stored: set sensitive_next_input when asking for it (ADR-006)
+- Limit reset attempts per employee across restarts (e.g. lock out in mock-itsm after 3 failures).
+- Put the ticket ID in the ""ticket created"" text. ""check my ticket status"" without an ID asks for one.
+- Each lookup returns only its own result — never the previous ticket's status.
+
+ACCEPTANCE CRITERIA (convert to checklist in Jira):
+- Given the ticket-ID prompt, when the user says ""cancel"" or asks something else, then the prompt ends or the new intent is handled.
+- Given ""Is my ticket still open?"" or ""status of the ticket I submitted"", then it's classified as check_ticket_status.
+- Given a lookup of one ticket then another (and with mock-itsm down), then each card shows only its own ticket or a clear error.
+- Given 3 wrong security answers, then restarting the flow does not allow more guesses.
+- Given a created ticket, then the reply text contains the ticket ID.
+- Given an identical repeated request, then FR-13 still returns the existing ticket, and the security answer never appears in messages, sessions, responses or logs.
+- Given rasa data validate, then it passes, and the existing IT tests are ported to the new runtime.
+
+CLOSES BUGS (labelled slice-37-it-real-rasa):
+- M3b: Ticket-ID prompt traps the user; even 'cancel' is rejected
+- M4c: Ticket status questions start a new ticket instead
+- B5c: IT replies carry the previous ticket's status, so cards show the wrong ticket
+- M2b: Password-reset retry limit resets when the flow restarts (unlimited guesses)
+- N9: 'Ticket created' reply has no ticket ID; 'check my ticket status' reuses the last ID
+- N10: IT pack runs on the wrong Python for Rasa, with unpinned deps and a duplicate adapter
+
+DEPENDS ON: ADR-006 from slice-32 (start NLU/domain/forms on day 1).
+DEV ENVIRONMENT: Rohith — laptop D (Windows 10, 8 GB, 20 GB free, no Docker). Work natively: Python 3.10 venv, pip install rasa==3.6.20 rasa-sdk==3.6.2 (~3 GB), then run rasa run and rasa run actions locally. Integrate on laptop C over the LAN. Don't install Docker Desktop on this machine.
+HUMAN REVIEW: No — but the reviewer confirms no real credential handling was introduced.
+SLICE DOC: docs/slices/slice-37-it-real-rasa.md"
+"16","1","Task","slice-38-it-data-and-ci","slice-38","Sprint 4","High","Rohith G.S","IT — Rohith","slice-38-it-data-and-ci","epic-5","module-cicd","owner-b","needs-human-review","3","WHAT TO BUILD:
+- Use one ticket ID format across mock-itsm, the prompts and examples, the NLU regex and examples, the seed templates and the specs. The bot's own example must be a valid format.
+- mock-itsm seed covers every mock-auth login (including the slice-34 demo accounts) with security questions; list the answers in the demo runbook.
+- When ticket creation is rejected, show the reason and stop the Confirm card from looping.
+- CI:
+  - - Run the mock-hrms, mock-itsm and mock-admissions tests.
+  - - Add the async test plugin so no IT tests are skipped.
+  - - Run rasa data validate for each pack.
+  - - Remove the stale ""when present"" IT job.
+
+ACCEPTANCE CRITERIA (convert to checklist in Jira):
+- Given the bot's example ticket ID format, then a real ticket can be looked up using that format.
+- Given a login as it@ or admissions@, when they raise a ticket, then the ticket is created.
+- Given ticket creation is rejected, then the user sees why and can retry or cancel.
+- Given a PR, then CI runs every service's tests with 0 skipped and validates each pack's Rasa data.
+
+CLOSES BUGS (labelled slice-38-it-data-and-ci):
+- M7b: Bot asks for TKT-1234 but every ticket ID is IT-10xx
+- M7c: IT and Admissions admin logins don't exist in mock-ITSM, so ticket creation loops
+- N11: CI gaps: mock-service tests never run, 9 IT tests silently skipped, no Rasa validation
+
+DEPENDS ON: slice-34 for the final list of demo accounts.
+DEV ENVIRONMENT: Rohith — laptop D. CI runs on GitHub, so no Docker is needed locally.
+HUMAN REVIEW: Yes — CI configuration.
+SLICE DOC: docs/slices/slice-38-it-data-and-ci.md"
+"17","1","Task","slice-39-adm-real-rasa","slice-39","Sprint 4","Highest","Mitesh","Admissions — Mitesh","slice-39-adm-real-rasa","epic-5","module-admissions-role-pack","owner-c","","8","WHAT TO BUILD:
+- Replace rasa-admissions/server.py with a Rasa 3.6.20 project (DIET + FallbackClassifier 0.4).
+- Forms: application_status_form (application_id) and checklist_form (program). Other intents can interrupt; slots reset per lookup.
+- Action server (Python 3.10, rasa-sdk 3.6.x):
+  - - The Admissions adapter lives inside the pack.
+  - - Remove the OFFLINE_* hardcoded data; every answer comes from mock-admissions (FR-14..17).
+  - - ""Service down"" and ""not found"" get different messages.
+- Fee and deadline answers come from the single mock-admissions calendar (FR-16); calendar edits show up without a restart.
+- Greet, goodbye and out-of-scope responses.
+- Render admissions cards through AdmissionsStatusCard and friends (coordinate with slice-33), or delete the dead components.
+
+ACCEPTANCE CRITERIA (convert to checklist in Jira):
+- Given status, checklist and fee questions, then mock-admissions receives the requests and the answers match its data.
+- Given PUT /calendar changes the MBA fee, when the fee is asked again, then the new fee is answered.
+- Given the application-ID prompt, when the user asks about the MBA fee, then the fee is answered.
+- Given a completed lookup, when ""check application status"" is asked again, then it asks for an ID.
+- Given mock-admissions is stopped, then the reply says the service is unavailable (not ""not found"").
+- Given ""and for btech?"" after a fee question, then the B.Tech fee is answered; ""hi"" gets a greeting.
+- Given rasa data validate, then it passes; the ported tests use the mock, not hardcoded data.
+
+CLOSES BUGS (labelled slice-39-adm-real-rasa):
+- B2b: Admissions pack never calls mock-admissions; answers are hardcoded (FR-16 broken)
+- M3c: A pending Admissions prompt swallows the next message
+- M1b: Admissions reuses stale application IDs and programs
+- M5b: Admissions replies with 'Intent greet acknowledged' debug text
+- M6b: Admissions reports 'not found' when the service is actually down
+- N13: Admissions misclassifies common follow-up questions
+- N14: Admissions card components are dead code duplicated in the chat page
+
+DEPENDS ON: ADR-006 from slice-32 (start NLU/domain/forms on day 1).
+DEV ENVIRONMENT: Mitesh — laptop C (Windows 11, 24 GB, Docker Desktop; also the demo host). Run all three Rasa packs here for integration.
+HUMAN REVIEW: No.
+SLICE DOC: docs/slices/slice-39-adm-real-rasa.md"
+"18","1","Task","slice-40-admin-console-fixes","slice-40","Sprint 4","High","Mitesh","Admissions — Mitesh","slice-40-admin-console-fixes","epic-5","module-admin-console","owner-c","","3","WHAT TO BUILD:
+- Conversation logs: the frontend types and page match the backend schema (id, sender, user_name, …); tests use contract-shaped fixtures.
+- Filters apply on Apply (or debounced); the ""to"" date is inclusive; actor search by name/email (add a backend filter if needed).
+- IntentEditor sends a template update only when it changed; the backend regenerates variants only when base_text changes.
+- The seed sets variant positions: the original is 0, the others 1..n.
+- Admin CRUD writes audit entries with role_pack: intent_created/updated/deleted, template_edited, variant_edited/deleted. The audit filter dropdown lists exactly the recorded types, including password_reset_initiated.
+- Hide the ""Retraining"" nav item until slice-10 ships.
+
+ACCEPTANCE CRITERIA (convert to checklist in Jira):
+- Given an admin opens Conversation Logs and clicks a row, then only that row expands with its transcript, and user and bot messages are distinguished.
+- Given typing in a filter, then no request is sent until Apply (or the debounce delay).
+- Given ""to"" = today, then today's conversations are included.
+- Given an admin adds a phrase and saves, then the template's variants are unchanged.
+- Given a seeded non-original variant, then it can be deleted.
+- Given any admin config change, then an audit entry appears in the audit log, filterable by its type.
+- Given the admin nav, then no link leads to a 404.
+
+CLOSES BUGS (labelled slice-40-admin-console-fixes):
+- B8: Admin conversation-logs page expects field names the backend doesn't send
+- M9a: Saving an intent wipes its stored reply variants
+- M9b: Seeded reply variants can't be deleted
+- M9c: Admin configuration changes are not audit-logged
+- N15: Conversation-log filters fire on every keystroke; the 'to' date excludes that day
+- N16: 'Retraining' nav item links to a page that doesn't exist
+
+DEPENDS ON: None (can start on day 1).
+DEV ENVIRONMENT: Mitesh — laptop C.
+HUMAN REVIEW: No.
+SLICE DOC: docs/slices/slice-40-admin-console-fixes.md"
+"100","1","Bug","[B5a] Session slots accumulate forever; every reply returns all past values","slice-32","Sprint 4","Highest","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-32-rasa-contract-v2","pack-platform","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B5a)
+SEVERITY: Blocker    VERIFIED: reproduced by running the stack
+FIXED BY: slice-32-rasa-contract-v2
+
+STEPS TO REPRODUCE:
+# Log in as emp1@org.example.com and open an HR conversation.
+# Send ""what is my leave balance for EMP-1042"".
+# Send ""can I work from home?"".
+
+ACTUAL: session.slots on the WFH reply still contains total/casual/sick/earned and employee_id from the previous turn. The role packs also re-merge stored slots, so values from any earlier workflow leak into every later turn (this drives the stale-card bugs B5b/B5c and M1a/M1b).
+
+EXPECTED: Each response carries only the current turn's values; workflow values are cleared when a workflow completes or is cancelled (Rasa tracker owns dialogue state per ADR-006).
+
+WHERE: backend/app/services/session_manager.py:54-56 (merge, never delete)"
+"101","1","Bug","[M6] Role-pack outage returns HTTP 500, loses the user's message and has no CORS header","slice-32","Sprint 4","High","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-32-rasa-contract-v2","pack-platform","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M6)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-32-rasa-contract-v2
+
+STEPS TO REPRODUCE:
+# Stop the rasa-hr service.
+# Send any message in an HR conversation.
+
+ACTUAL: 500 'Internal server error'. The user's message is not persisted (transaction rolled back). The response has no Access-Control-Allow-Origin header, so the browser reports a network error and the UI shows 'Connection lost'.
+
+EXPECTED: Friendly bot reply (e.g. 'The HR assistant is unavailable right now, please try again shortly'), user message kept, CORS headers present, degraded flag set (NFR reliability).
+
+WHERE: backend/app/services/dialogue_router.py (\_post_to_rasa raises); backend/app/main.py (Exception handler runs outside CORS middleware)"
+"102","1","Bug","[N1] sessions.expires_at is written but never enforced","slice-32","Sprint 4","Low","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-32-rasa-contract-v2","pack-platform","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N1)
+SEVERITY: Trivial    VERIFIED: code reading
+FIXED BY: slice-32-rasa-contract-v2
+
+STEPS TO REPRODUCE:
+# Read session_manager.load_or_create.
+
+ACTUAL: expires_at is refreshed every turn but never checked, so sessions never expire.
+
+EXPECTED: Expired sessions reset dialogue state, or the field is removed in favour of Rasa session_config (ADR-006 decides).
+
+WHERE: backend/app/services/session_manager.py:21-38"
+"103","1","Bug","[B5b] Chat page picks cards from accumulated session slots, so stale cards replace later replies","slice-33","Sprint 4","Highest","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-33-chat-ui-hardening","pack-platform","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B5b)
+SEVERITY: Blocker    VERIFIED: reproduced by running the stack
+FIXED BY: slice-33-chat-ui-hardening
+
+STEPS TO REPRODUCE:
+# HR: send ""leave balance for EMP-1042"", then ""can I work from home?"", then ""I want to apply for leave"".
+# Admissions: ask for the MBA document checklist, then ""status of APP-1001"".
+# IT: look up IT-1001, then send ""check my ticket status"".
+
+ACTUAL: Later replies render as the earlier card: the balance card replaces the WFH answer and every leave prompt (so Confirm/Cancel never appears), the document list replaces the status card, and the ticket card shows 'TKT-1234: In Progress' parsed from the prompt text.
+
+EXPECTED: Each reply renders from that turn's own card data (ADR-006 card field), dispatched by card type — no slot-key sniffing and no regex on reply text.
+
+WHERE: frontend/src/app/home/chat/(id)/page.tsx lines 118, 229, 286, 317-325, 422-429"
+"104","1","Bug","[M12] Cards break after a page reload because card data isn't stored with the message","slice-33","Sprint 4","High","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-33-chat-ui-hardening","pack-platform","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M12)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-33-chat-ui-hardening
+
+STEPS TO REPRODUCE:
+# Admissions: ask ""what documents do I need for MBA?"".
+# Reload the page.
+
+ACTUAL: The checklist reopens as a 'pick a program' prompt with B.Tech/M.Tech/MBA buttons. Some not-found replies render as a status card with an invented 'Under Review' status. Leave cards degrade to plain text.
+
+EXPECTED: Cards reload exactly as they rendered live (card persisted per message by slice-32).
+
+WHERE: frontend/src/app/home/chat/(id)/page.tsx:75-82, 258-260, 395-396"
+"105","1","Bug","[M8] Talk mode gets stuck on 'Listening…' and doesn't detect insecure origins","slice-33","Sprint 4","High","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-33-chat-ui-hardening","pack-platform","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M8)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-33-chat-ui-hardening
+
+STEPS TO REPRODUCE:
+# Open http://<LAN-IP>:3000 from another laptop (or deny mic permission).
+# Start talk mode.
+
+ACTUAL: The speech-recognition 'not-allowed' error only clears the listening flag, so the overlay shows 'Listening…' forever with no message. The mic button is enabled on insecure origins. A failed send also leaves talk mode active.
+
+EXPECTED: isSecureContext check with a clear 'voice needs HTTPS or localhost' message; any recognition error or failed send closes the overlay with a message and a retry option.
+
+WHERE: frontend/src/lib/useSpeechRecognition.ts:81; frontend/src/app/home/chat/(id)/page.tsx:174-177"
+"106","1","Bug","[M10] Double-clicking Confirm or an option button sends the message twice","slice-33","Sprint 4","High","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-33-chat-ui-hardening","pack-platform","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M10)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-33-chat-ui-hardening
+
+STEPS TO REPRODUCE:
+# IT: raise a ticket and reach the Confirm card.
+# Double-click Confirm.
+
+ACTUAL: 'confirm' is sent twice; old cards remain clickable. On /home/new a double-click creates two conversations.
+
+EXPECTED: Buttons are disabled while a send is in flight and once answered; new-conversation creation is guarded.
+
+WHERE: frontend/src/components/chat/messages.tsx:76; page.tsx:481, 500, 536, 600; frontend/src/app/home/new/page.tsx"
+"107","1","Bug","[M11] Sidebar conversation list never refreshes; admins have no link to the console","slice-33","Sprint 4","Medium","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-33-chat-ui-hardening","pack-platform","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M11)
+SEVERITY: Minor    VERIFIED: code reading
+FIXED BY: slice-33-chat-ui-hardening
+
+STEPS TO REPRODUCE:
+# Create a new conversation and send messages.
+# Log in as hr@org.example.com.
+
+ACTUAL: The new conversation doesn't appear in the sidebar until a full reload, and previews stay stale. Admins land on /home with no way to reach /admin except typing the URL.
+
+EXPECTED: Sidebar refreshes after create/send; admin roles see an 'Admin console' link.
+
+WHERE: frontend/src/app/home/layout.tsx:15-38; frontend/src/components/LoginForm.tsx:25"
+"108","1","Bug","[N2] Every chat error shows 'Connection lost'; failed messages have no retry","slice-33","Sprint 4","Medium","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-33-chat-ui-hardening","pack-platform","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N2)
+SEVERITY: Minor    VERIFIED: code reading
+FIXED BY: slice-33-chat-ui-hardening
+
+STEPS TO REPRODUCE:
+# Trigger a 429 (send 31 messages in a minute) or stop the gateway, then send a message.
+
+ACTUAL: 429, 403, 422 and 500 all show 'Connection lost'. The optimistic user message stays with no failed marker.
+
+EXPECTED: Distinct messages (wait N seconds / service unavailable / network), failed marker and retry.
+
+WHERE: frontend/src/app/home/chat/(id)/page.tsx:127"
+"109","1","Bug","[B1] docker compose does not run the real stack","slice-34","Sprint 4","Highest","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-34-local-demo-stack","pack-infra","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B1)
+SEVERITY: Blocker    VERIFIED: code reading
+FIXED BY: slice-34-local-demo-stack
+
+STEPS TO REPRODUCE:
+# cp .env.example .env
+# docker compose --profile full up
+
+ACTUAL: mock-hrms and mock-admissions are busybox stubs although the real services exist. rasa-hr and rasa-admissions run the rasa/rasa image with no trained model instead of their services. rasa-admissions listens on 5007 while compose maps 5007:5005 and the gateway calls :5005. MOCK_HRMS_URL / MOCK_ADMISSIONS_URL are not passed to the packs, and HR/Admissions packs have no depends_on.
+
+EXPECTED: One command brings up postgres, gateway, frontend, the 4 mocks, 3 Rasa servers and 3 action servers, all healthy (slice-27 AC1).
+
+WHERE: docker-compose.yml; rasa-admissions/Dockerfile"
+"110","1","Bug","[B3] Database is never migrated or seeded automatically, and seeding is undocumented","slice-34","Sprint 4","Highest","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-34-local-demo-stack","pack-infra","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B3)
+SEVERITY: Blocker    VERIFIED: reproduced by running the stack
+FIXED BY: slice-34-local-demo-stack
+
+STEPS TO REPRODUCE:
+# Start the stack on an empty database.
+# Ask ""check my application status"" then give an ID.
+
+ACTUAL: The seed must be run by hand (python -m scripts.seed from backend/); nothing documents it (backend/README.md is empty). The gateway uses create_all at startup while Alembic migrations also exist. Without the seed, many replies say 'Sorry, I couldn't put together a response'. seed.py also logs the full DATABASE_URL including the password.
+
+EXPECTED: Startup runs alembic upgrade head plus an idempotent seed; documented; no secrets logged.
+
+WHERE: backend/app/main.py (lifespan create_all); backend/scripts/seed.py:918"
+"111","1","Bug","[B4] Frontend can't reach the API from other laptops (localhost baked into the bundle)","slice-34","Sprint 4","Highest","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-34-local-demo-stack","pack-infra","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B4)
+SEVERITY: Blocker    VERIFIED: reproduced by running the stack
+FIXED BY: slice-34-local-demo-stack
+
+STEPS TO REPRODUCE:
+# Run the stack on laptop C.
+# From another laptop open http://<C-IP>:3000 and log in.
+
+ACTUAL: The bundle calls http://localhost:8000/api, which is the client's own machine, so login fails with 'Failed to fetch'. There is no /api proxy.
+
+EXPECTED: Frontend proxies /api to the gateway (Next.js rewrites), base URL /api, only port 3000 exposed; works over LAN and over an HTTPS tunnel without mixed-content errors.
+
+WHERE: frontend/next.config.mjs; frontend/Dockerfile (ARG); docker-compose.yml; frontend/.env.local"
+"112","1","Bug","[N3] Rate limits break a multi-laptop demo (shared IP behind proxy, single demo account)","slice-34","Sprint 4","High","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-34-local-demo-stack","pack-infra","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N3)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-34-local-demo-stack
+
+STEPS TO REPRODUCE:
+# Log in from 4 laptops through one proxy/tunnel within a minute.
+# Have two presenters chat as emp1 at the same time.
+
+ACTUAL: The login limit (10/min) is keyed by client IP, and behind a proxy/tunnel every laptop shares one IP. mock-auth has only one employee account, so all presenters share its 30 chats/min budget (429 hit during the audit).
+
+EXPECTED: One demo login per presenter plus an applicant account (aligned with HRMS/ITSM seeds); limits keyed by the forwarded client IP behind the trusted proxy, or per user.
+
+WHERE: backend/app/middleware.py:37-50; mock-auth-service/app/seed_data.py"
+"113","1","Bug","[N4] Docs describe the dropped cloud deployment and an unstarted project","slice-34","Sprint 4","Medium","Mohammed Tahir Siddique","Platform — Tahir","audit-sprint3","slice-34-local-demo-stack","pack-infra","owner-d","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N4)
+SEVERITY: Minor    VERIFIED: code reading
+FIXED BY: slice-34-local-demo-stack
+
+STEPS TO REPRODUCE:
+# Read README.md, docs/overview.md, docs/ADD.md, the sprint docs, slices 29/30 and .env.example.
+
+ACTUAL: README says 'Implementation has not started' and lists services as stubs; backend/README.md is empty; several docs describe OCI/Cloudflare/Vercel/Neon deployment; AGENTS.md and the slice docs reference docs/vario-overview.md, which doesn't exist (the file is docs/overview.md).
+
+EXPECTED: README documents the local run, ports and accounts; cloud references are marked superseded by the local-demo ADR; broken references fixed.
+
+WHERE: README.md; backend/README.md; AGENTS.md; docs/"
+"114","1","Bug","[B6] HR ignores the logged-in employee: balance loops and leave submission always fails","slice-35","Sprint 4","Highest","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-35-hr-real-rasa","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B6)
+SEVERITY: Blocker    VERIFIED: reproduced by running the stack
+FIXED BY: slice-35-hr-real-rasa
+
+STEPS TO REPRODUCE:
+# Log in as emp1@org.example.com (EMP-1001), open an HR conversation.
+# Send ""what is my leave balance?"" and reply ""EMP-1001"".
+# Start a leave request, answer every step, confirm.
+
+ACTUAL: The bot asks for an employee ID; replying 'EMP-1001' classifies as nlu_fallback 0.25, giving a clarification loop. Leave submission ends with 'Unable to submit leave request: employee ID not found'. The gateway's auth_context is dropped (ConverseRequest has no such field) and the sender is a UUID.
+
+EXPECTED: Balance and submission use the logged-in employee from trusted message metadata (ADR-006) without asking.
+
+WHERE: rasa-hr/server.py:180, 240, 314"
+"115","1","Bug","[B7] Every leave-request question shows 'Sorry, I couldn't put together a response'","slice-35","Sprint 4","Highest","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-35-hr-real-rasa","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B7)
+SEVERITY: Blocker    VERIFIED: reproduced by running the stack
+FIXED BY: slice-35-hr-real-rasa
+
+STEPS TO REPRODUCE:
+# HR: send ""I want to apply for leave"" and answer each prompt.
+
+ACTUAL: The prompts for leave type, start date, end date and reason display the fallback text. Template submit_leave_slot_prompt has no variants and the pack returns no text; talk mode would speak the fallback.
+
+EXPECTED: Each step asks its question (Rasa form utter_ask responses or a seeded template per slot).
+
+WHERE: backend/scripts/seed.py:268-284; rasa-hr/actions/actions.py:200, 214, 243, 288"
+"116","1","Bug","[B2a] HR pack imports backend code and silently serves hardcoded data when that fails","slice-35","Sprint 4","Highest","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-35-hr-real-rasa","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B2a)
+SEVERITY: Blocker    VERIFIED: reproduced by running the stack
+FIXED BY: slice-35-hr-real-rasa
+
+STEPS TO REPRODUCE:
+# Run rasa-hr from its own Docker image (no backend/ folder), or stop mock-hrms.
+# Ask for a leave balance or submit leave.
+
+ACTUAL: rasa-hr imports HRMSAdapter from ../../backend via sys.path. In a container the import fails, so balance answers come from hardcoded OFFLINE_EMPLOYEES and submission always says 'service unavailable'. HRMS outages are also hidden by serving the offline data as live (EMP-2001 shows 20 days; HRMS has 27).
+
+EXPECTED: The adapter lives in the HR action server and calls mock-hrms via MOCK_HRMS_URL; an outage gives a clear 'HR system unavailable' reply; no hardcoded employee data.
+
+WHERE: rasa-hr/actions/actions.py:7-38, 569"
+"117","1","Bug","[M1a] A second leave request reuses the previous request's dates and reason","slice-35","Sprint 4","High","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-35-hr-real-rasa","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M1a)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-35-hr-real-rasa
+
+STEPS TO REPRODUCE:
+# Complete one leave request.
+# Send ""I want to apply for sick leave"".
+
+ACTUAL: It jumps straight to 'Ready to submit? sick leave, <old dates>. Reason: <old reason>'; confirming files an overlapping duplicate and deducts the balance twice. A balance check also presets leave_type=annual, so a later request never asks for the type.
+
+EXPECTED: Form slots reset after submit or cancel; a balance check doesn't set leave_type.
+
+WHERE: rasa-hr/actions/actions.py:366-377, 534"
+"118","1","Bug","[M2a] Any user can read another employee's leave balance and file leave as them","slice-35","Sprint 4","High","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-35-hr-real-rasa","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M2a)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-35-hr-real-rasa
+
+STEPS TO REPRODUCE:
+# As EMP-1001 send ""leave balance for EMP-1042"".
+# Then ""apply for leave"", fill the form, confirm.
+
+ACTUAL: Returns Jane Smith's (EMP-1042) balance. EMP-1042 stays in the session, so the request is filed for EMP-1042 (LEAVE-2032). The audit details don't record the target employee.
+
+EXPECTED: HR data and submissions only for the logged-in employee; IDs typed in chat are ignored for these intents; audit records the employee.
+
+WHERE: rasa-hr/server.py:300-320; rasa-hr/actions/actions.py:381-390"
+"119","1","Bug","[M3a] Leave form gets stuck after an off-script reply at the confirmation step","slice-35","Sprint 4","High","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-35-hr-real-rasa","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M3a)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-35-hr-real-rasa
+
+STEPS TO REPRODUCE:
+# Reach the leave confirmation step.
+# Reply ""hmm wait"".
+# Then send ""apply for leave"" or ""cancel leave request"".
+
+ACTUAL: 'Something went wrong… start over', with confirmation_pending left True; every later message gives the same error and only a new conversation escapes. Mid-form, any text (e.g. ""what's my balance?"") is captured as the slot value.
+
+EXPECTED: Unrecognised replies re-ask; cancel/stop exit at any step; other intents can interrupt the form.
+
+WHERE: rasa-hr/actions/actions.py:404-411; rasa-hr/server.py:236-240, 344"
+"120","1","Bug","[M4a] Off-topic policy questions get the leave policy at 0.9 confidence","slice-35","Sprint 4","High","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-35-hr-real-rasa","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M4a)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-35-hr-real-rasa
+
+STEPS TO REPRODUCE:
+# Send ""what is the travel reimbursement policy?"", ""dress code policy"" or ""rules"".
+
+ACTUAL: ask_policy_faq with the generic leave-policy answer at 0.9 confidence; no clarification (slice-16 AC3).
+
+EXPECTED: Out-of-scope or low-confidence questions get a clarification ('I can help with leave and WFH policies').
+
+WHERE: rasa-hr/server.py:153-156"
+"121","1","Bug","[M5a] HR replies with 'Intent greet acknowledged' debug text","slice-35","Sprint 4","High","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-35-hr-real-rasa","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M5a)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-35-hr-real-rasa
+
+STEPS TO REPRODUCE:
+# HR: send ""hi"" or ""bye"".
+
+ACTUAL: 'Intent 'greet' acknowledged.' / 'Intent 'goodbye' acknowledged.'
+
+EXPECTED: Proper greeting and goodbye responses.
+
+WHERE: rasa-hr/server.py:425-435"
+"122","1","Bug","[N5] Leave form rejects 'annual' and natural-language dates","slice-35","Sprint 4","Medium","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-35-hr-real-rasa","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N5)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-35-hr-real-rasa
+
+STEPS TO REPRODUCE:
+# At the leave-type prompt reply ""annual"".
+# At the start-date prompt reply ""next monday"".
+
+ACTUAL: 'annual' is silently re-prompted although the classifier and HRMS accept it (audit records 'annual', HRMS stores 'earned'). Only YYYY-MM-DD dates are accepted.
+
+EXPECTED: Leave types consistent across NLU, form validation and HRMS; common date formats accepted, or the prompt states the format.
+
+WHERE: rasa-hr/server.py:338"
+"123","1","Bug","[M4b] Topic-specific HR FAQ answers are replaced by the generic policy template","slice-36","Sprint 4","High","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-36-hr-data-fixes","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M4b)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-36-hr-data-fixes
+
+STEPS TO REPRODUCE:
+# Ask ""what is the maternity policy?"", ""paternity leave policy"", ""bereavement leave"".
+
+ACTUAL: All get 'Standard leave allotment is 20 annual, 10 sick, and 5 casual days…' because the ask_policy_faq_response variants override the pack's topic-specific text.
+
+EXPECTED: Each topic gets its own answer and stays admin-editable (e.g. one template per topic).
+
+WHERE: rasa-hr/server.py:401-410; backend/app/routers/chat.py:114"
+"124","1","Bug","[N8] Leave request status (FR-6) is a stub","slice-36","Sprint 4","High","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-36-hr-data-fixes","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N8)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-36-hr-data-fixes
+
+STEPS TO REPRODUCE:
+# HR: send ""has my leave been approved?"".
+
+ACTUAL: 'Intent 'ask_leave_status' acknowledged.'
+
+EXPECTED: Status of the employee's latest (or referenced) leave request from HRMS (FR-6).
+
+WHERE: rasa-hr/server.py:425-435"
+"125","1","Bug","[M7a] HR FAQ answers contradict the mock HRMS policy data","slice-36","Sprint 4","Medium","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-36-hr-data-fixes","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M7a)
+SEVERITY: Minor    VERIFIED: code reading
+FIXED BY: slice-36-hr-data-fixes
+
+STEPS TO REPRODUCE:
+# Compare FAQ texts in rasa-hr/server.py and seed.py with mock-hrms /policies.
+
+ACTUAL: WFH 3 vs 2 days/week, maternity 12 vs 26 weeks, bereavement 3 vs 5 days, quotas 20/10/5 vs 8/10/15. FAQ answers never use HRMS get_policy.
+
+EXPECTED: One source of truth for policy facts.
+
+WHERE: rasa-hr/server.py; backend/scripts/seed.py; mock-hrms-service/app/seed_data.py"
+"126","1","Bug","[N6] mock-hrms /reset does not restore leave balances","slice-36","Sprint 4","Medium","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-36-hr-data-fixes","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N6)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-36-hr-data-fixes
+
+STEPS TO REPRODUCE:
+# Submit a leave (balance drops).
+# POST /reset.
+# Check the balance and submit again.
+
+ACTUAL: The balance stays reduced but the reference counter resets, so duplicate reference IDs are issued (LEAVE-2032 twice).
+
+EXPECTED: /reset restores all seed data (needed between demo rehearsals).
+
+WHERE: mock-hrms-service/app/main.py:11-16; mock-hrms-service/app/seed_data.py:140"
+"127","1","Bug","[N7] mock-hrms accepts invalid leave requests","slice-36","Sprint 4","Medium","PAVAN KISHOR M","HR — Kishor","audit-sprint3","slice-36-hr-data-fixes","pack-hr","owner-a","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N7)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-36-hr-data-fixes
+
+STEPS TO REPRODUCE:
+# POST a 90-day leave in 2020 for an employee with 6 days left.
+
+ACTUAL: Accepted; the balance clamps to 0.
+
+EXPECTED: Reject past dates, end-before-start and requests exceeding the balance, with a clear error.
+
+WHERE: mock-hrms-service/app/main.py:242-270"
+"128","1","Bug","[M3b] Ticket-ID prompt traps the user; even 'cancel' is rejected","slice-37","Sprint 4","High","Rohith G.S","IT — Rohith","audit-sprint3","slice-37-it-real-rasa","pack-it","owner-b","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M3b)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-37-it-real-rasa
+
+STEPS TO REPRODUCE:
+# IT: send ""check my ticket status"".
+# Reply ""cancel"" or ""I want to reset my password"".
+
+ACTUAL: 'Please provide a valid ticket ID such as TKT-1234.' for every message that isn't a well-formed ID.
+
+EXPECTED: Cancel and other intents leave the prompt.
+
+WHERE: rasa-it/server.py:191-199"
+"129","1","Bug","[M4c] Ticket status questions start a new ticket instead","slice-37","Sprint 4","High","Rohith G.S","IT — Rohith","audit-sprint3","slice-37-it-real-rasa","pack-it","owner-b","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M4c)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-37-it-real-rasa
+
+STEPS TO REPRODUCE:
+# Send ""Is my ticket still open?"", ""What is the status of the ticket I submitted?"" or ""is ticket TKT-1234 still open?"".
+
+ACTUAL: raise_ticket_form starts: the 'raise' keyword substring check runs before the ID check (2 of the 85 NLU examples misclassify).
+
+EXPECTED: Classified as check_ticket_status.
+
+WHERE: rasa-it/server.py:32, 130, 149-152"
+"130","1","Bug","[B5c] IT replies carry the previous ticket's status, so cards show the wrong ticket","slice-37","Sprint 4","High","Rohith G.S","IT — Rohith","audit-sprint3","slice-37-it-real-rasa","pack-it","owner-b","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B5c)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-37-it-real-rasa
+
+STEPS TO REPRODUCE:
+# Look up IT-1001; raise a ticket and cancel; send ""can you check ticket status for me"".
+# With mock-itsm stopped: look up IT-1002, then IT-1003.
+
+ACTUAL: session.slots has ticket_id=None, status='In Progress', found=True from the earlier lookup. With ITSM down, IT-1003 shows IT-1002's description and the 'can't reach the ticket system' text is hidden behind the card.
+
+EXPECTED: Each lookup returns only its own result; errors render as errors.
+
+WHERE: rasa-it/server.py:430-438"
+"131","1","Bug","[M2b] Password-reset retry limit resets when the flow restarts (unlimited guesses)","slice-37","Sprint 4","Medium","Rohith G.S","IT — Rohith","audit-sprint3","slice-37-it-real-rasa","pack-it","owner-b","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M2b)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-37-it-real-rasa
+
+STEPS TO REPRODUCE:
+# Give 3 wrong security answers.
+# Send ""I forgot my password"" again and answer correctly.
+
+ACTUAL: The attempt counter resets on restart or cancel, so guessing is unlimited. The reset can also target any employee ID regardless of who is logged in.
+
+EXPECTED: Attempts tracked per employee across restarts (e.g. lockout in mock-itsm); document whether reset is limited to the logged-in employee.
+
+WHERE: rasa-it/server.py:328, 480-487"
+"132","1","Bug","[N9] 'Ticket created' reply has no ticket ID; 'check my ticket status' reuses the last ID","slice-37","Sprint 4","Medium","Rohith G.S","IT — Rohith","audit-sprint3","slice-37-it-real-rasa","pack-it","owner-b","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N9)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-37-it-real-rasa
+
+STEPS TO REPRODUCE:
+# Raise a ticket and confirm.
+# Then send ""check my ticket status"".
+
+ACTUAL: 'Ticket created successfully. Reference ID:' — the ID is only in the card, so the stored message and TTS lack it. 'check my ticket status' with no ID re-queries the previous ticket.
+
+EXPECTED: The ID is in the reply text; with no ID given, the bot asks for one.
+
+WHERE: rasa-it/server.py:314, 428"
+"133","1","Bug","[N10] IT pack runs on the wrong Python for Rasa, with unpinned deps and a duplicate adapter","slice-37","Sprint 4","Medium","Rohith G.S","IT — Rohith","audit-sprint3","slice-37-it-real-rasa","pack-it","owner-b","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N10)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-37-it-real-rasa
+
+STEPS TO REPRODUCE:
+# pip install -r rasa-it/requirements.txt in a fresh venv; inspect versions.
+
+ACTUAL: rasa-sdk>=3.6.0 resolves to 3.21.x (pulls grpcio/sanic/opentelemetry and forces pydantic 2.13.4). The Dockerfile uses Python 3.11, but Rasa 3.6 needs <=3.10. backend/app/services/itsm_adapter.py is unused at runtime and lacks get_security_question.
+
+EXPECTED: rasa 3.6.20 / rasa-sdk 3.6.x on Python 3.10; a single ITSM adapter.
+
+WHERE: rasa-it/requirements.txt; rasa-it/Dockerfile; backend/app/services/itsm_adapter.py"
+"134","1","Bug","[M7b] Bot asks for TKT-1234 but every ticket ID is IT-10xx","slice-38","Sprint 4","High","Rohith G.S","IT — Rohith","audit-sprint3","slice-38-it-data-and-ci","pack-it","owner-b","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M7b)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-38-it-data-and-ci
+
+STEPS TO REPRODUCE:
+# Follow the bot's example: ""status of ticket TKT-1001"".
+
+ACTUAL: Not found. Seeded and created tickets are IT-1001…IT-1004.
+
+EXPECTED: One ticket ID format across mock-itsm, prompts, NLU examples and regex, seed and specs.
+
+WHERE: rasa-it/server.py prompts; mock-itsm-service/app/seed_data.py:6-8"
+"135","1","Bug","[M7c] IT and Admissions admin logins don't exist in mock-ITSM, so ticket creation loops","slice-38","Sprint 4","High","Rohith G.S","IT — Rohith","audit-sprint3","slice-38-it-data-and-ci","pack-it","owner-b","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M7c)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-38-it-data-and-ci
+
+STEPS TO REPRODUCE:
+# Log in as it@org.example.com, raise a ticket, press Confirm.
+
+ACTUAL: 'Employee 'EMP-3001' was not found..' and the flow stays at confirm. The UI re-draws the same Confirm card with no error, so the user loops. EMP-4001 behaves the same.
+
+EXPECTED: Every mock-auth login (including the new demo accounts from slice-34) exists in mock-ITSM with documented security Q/A; rejection reasons are shown.
+
+WHERE: mock-itsm-service/app/seed_data.py:11-15"
+"136","1","Bug","[N11] CI gaps: mock-service tests never run, 9 IT tests silently skipped, no Rasa validation","slice-38","Sprint 4","Medium","Rohith G.S","IT — Rohith","audit-sprint3","slice-38-it-data-and-ci","pack-infra","owner-b","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N11)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-38-it-data-and-ci
+
+STEPS TO REPRODUCE:
+# Read .github/workflows/ci.yml; run rasa-it tests with its requirements.
+
+ACTUAL: mock-hrms, mock-itsm and mock-admissions tests are never run. The rasa-it async tests are skipped because there's no pytest-asyncio ('21 passed, 9 skipped'). There's no rasa data validate step, and the 'when present' IT job is stale.
+
+EXPECTED: All service tests run with 0 skipped; each pack validates its Rasa data.
+
+WHERE: .github/workflows/ci.yml:96-202"
+"137","1","Bug","[B2b] Admissions pack never calls mock-admissions; answers are hardcoded (FR-16 broken)","slice-39","Sprint 4","Highest","Mitesh","Admissions — Mitesh","audit-sprint3","slice-39-adm-real-rasa","pack-admissions","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B2b)
+SEVERITY: Blocker    VERIFIED: reproduced by running the stack
+FIXED BY: slice-39-adm-real-rasa
+
+STEPS TO REPRODUCE:
+# Run rasa-admissions with its own requirements.txt.
+# Ask any status/checklist/fee question.
+# PUT /calendar on mock-admissions to change a fee and ask again.
+
+ACTUAL: The adapter import from ../backend fails (pydantic_settings missing; backend/ not in the image), so HAS_ADAPTER=False and answers come from OFFLINE_* dicts. mock-admissions received 0 requests in the audit. The offline data differs from the mock (APP-1002/1003), calendar edits never show, and OFFLINE_CALENDAR violates slice-26. The AC-3 test edits OFFLINE_CALENDAR, so it can't fail.
+
+EXPECTED: The adapter lives in the Admissions action server; every answer comes from mock-admissions; calendar edits are reflected.
+
+WHERE: rasa-admissions/actions/actions.py:31-44, 439; rasa-admissions/tests/test_admissions_rasa.py:407"
+"138","1","Bug","[M3c] A pending Admissions prompt swallows the next message","slice-39","Sprint 4","High","Mitesh","Admissions — Mitesh","audit-sprint3","slice-39-adm-real-rasa","pack-admissions","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M3c)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-39-adm-real-rasa
+
+STEPS TO REPRODUCE:
+# Send ""check my application status"", then ""actually what is the MBA tuition fee?"".
+# Or after 'Which program…?' send ""what is the status of APP-1001"".
+
+ACTUAL: 'Application ACTUALLY WHAT IS THE MBA TUITION FEE? was not found'; the status question is stored as the program.
+
+EXPECTED: Other intents interrupt the prompt.
+
+WHERE: rasa-admissions/server.py:221-232"
+"139","1","Bug","[M1b] Admissions reuses stale application IDs and programs","slice-39","Sprint 4","High","Mitesh","Admissions — Mitesh","audit-sprint3","slice-39-adm-real-rasa","pack-admissions","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M1b)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-39-adm-real-rasa
+
+STEPS TO REPRODUCE:
+# Ask the status of APP-9999, then ""check application status"".
+# Or ask about APP-1003, then ""what's the status of my application app 1001?"".
+
+ACTUAL: Re-reports the previous ID without asking / answers for APP-1003. Checklist reuses the previous program without asking.
+
+EXPECTED: Ask for an ID or program unless it's given in this request.
+
+WHERE: rasa-admissions/server.py:248, 283"
+"140","1","Bug","[M5b] Admissions replies with 'Intent greet acknowledged' debug text","slice-39","Sprint 4","High","Mitesh","Admissions — Mitesh","audit-sprint3","slice-39-adm-real-rasa","pack-admissions","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M5b)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-39-adm-real-rasa
+
+STEPS TO REPRODUCE:
+# Admissions: send ""hi"" or ""bye"".
+
+ACTUAL: 'Intent 'greet' acknowledged.' (utter_greet exists but is unused).
+
+EXPECTED: Proper greeting and goodbye responses.
+
+WHERE: rasa-admissions/server.py:363-372"
+"141","1","Bug","[M6b] Admissions reports 'not found' when the service is actually down","slice-39","Sprint 4","Medium","Mitesh","Admissions — Mitesh","audit-sprint3","slice-39-adm-real-rasa","pack-admissions","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M6b)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-39-adm-real-rasa
+
+STEPS TO REPRODUCE:
+# Stop mock-admissions; ask the status of APP-1005.
+
+ACTUAL: 'Application APP-1005 was not found.'
+
+EXPECTED: 'The admissions system is unavailable, please try again later.'
+
+WHERE: rasa-admissions/actions/actions.py"
+"142","1","Bug","[N13] Admissions misclassifies common follow-up questions","slice-39","Sprint 4","Medium","Mitesh","Admissions — Mitesh","audit-sprint3","slice-39-adm-real-rasa","pack-admissions","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N13)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-39-adm-real-rasa
+
+STEPS TO REPRODUCE:
+# After a fee answer send ""and for btech?"".
+# Send ""any update on fees?"" and ""what are the dates?"".
+
+ACTUAL: 'and for btech?' → checklist; 'any update on fees?' → asks for an application ID; 'what are the dates?' → nlu_fallback 0.42.
+
+EXPECTED: Fee/deadline follow-ups classified correctly.
+
+WHERE: rasa-admissions/server.py"
+"143","1","Bug","[N14] Admissions card components are dead code duplicated in the chat page","slice-39","Sprint 4","Low","Mitesh","Admissions — Mitesh","audit-sprint3","slice-39-adm-real-rasa","pack-admissions","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N14)
+SEVERITY: Trivial    VERIFIED: code reading
+FIXED BY: slice-39-adm-real-rasa
+
+STEPS TO REPRODUCE:
+# Search for AdmissionsStatusCard / AdmissionsNotFoundCard usages.
+
+ACTUAL: AdmissionsStatusCard, AdmissionsNotFoundCard and createAdmissions*Message are unused; page.tsx re-implements the same rendering.
+
+EXPECTED: The chat page renders admissions cards through these components (coordinate with slice-33), or they are removed.
+
+WHERE: frontend/src/components/chat/AdmissionsStatusCard.tsx; frontend/src/app/home/chat/(id)/page.tsx"
+"144","1","Bug","[B8] Admin conversation-logs page expects field names the backend doesn't send","slice-40","Sprint 4","Highest","Mitesh","Admissions — Mitesh","audit-sprint3","slice-40-admin-console-fixes","pack-admin","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect B8)
+SEVERITY: Blocker    VERIFIED: reproduced by running the stack
+FIXED BY: slice-40-admin-console-fixes
+
+STEPS TO REPRODUCE:
+# Log in as an admin, open Conversation Logs, click a row.
+
+ACTUAL: The frontend uses conversation_id/message_id/sender_type/user_id; the backend and api-contract use id/sender. Every row expands, the transcript fetch hits /admin/conversations/undefined/messages (404), and all messages render as bot. The tests use the frontend's invented shape, so they pass.
+
+EXPECTED: Types match the backend schemas; tests use contract-shaped fixtures.
+
+WHERE: frontend/src/lib/api.ts:156-185; frontend/src/app/admin/conversation-logs/page.tsx; frontend/\__tests__/admin-conversation-logs.test.tsx:29, 66"
+"145","1","Bug","[M9a] Saving an intent wipes its stored reply variants","slice-40","Sprint 4","High","Mitesh","Admissions — Mitesh","audit-sprint3","slice-40-admin-console-fixes","pack-admin","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M9a)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-40-admin-console-fixes
+
+STEPS TO REPRODUCE:
+# As hr@ open ask_wfh_policy, add one training phrase, save.
+
+ACTUAL: The editor always sends the template update; the backend regenerates variants via the passthrough rephraser, so the 5 seeded variants become 1. Inline variant edits then 404 (stale IDs).
+
+EXPECTED: Template only updated when changed; variants regenerate only when base_text changes.
+
+WHERE: frontend/src/components/admin/IntentEditor.tsx:190-204; backend/app/routers/admin_crud.py:355-359"
+"146","1","Bug","[M9b] Seeded reply variants can't be deleted","slice-40","Sprint 4","Medium","Mitesh","Admissions — Mitesh","audit-sprint3","slice-40-admin-console-fixes","pack-admin","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M9b)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-40-admin-console-fixes
+
+STEPS TO REPRODUCE:
+# As hr@ try to delete any seeded variant of ask_wfh_policy_response.
+
+ACTUAL: 400 'Cannot delete the original base_text variant' — seed inserts every variant with the default position 0.
+
+EXPECTED: Seed sets position 0 only for the original and 1..n for the rest.
+
+WHERE: backend/scripts/seed.py (all variant inserts); backend/app/routers/admin_crud.py delete_variant"
+"147","1","Bug","[M9c] Admin configuration changes are not audit-logged","slice-40","Sprint 4","Medium","Mitesh","Admissions — Mitesh","audit-sprint3","slice-40-admin-console-fixes","pack-admin","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect M9c)
+SEVERITY: Minor    VERIFIED: reproduced by running the stack
+FIXED BY: slice-40-admin-console-fixes
+
+STEPS TO REPRODUCE:
+# As hr@ create an FAQ and edit a template; open the audit log.
+
+ACTUAL: 0 entries: admin_crud writes no audit events. The audit filter options intent_created/intent_updated/template_edited can never match, and password_reset_initiated is missing from the dropdown.
+
+EXPECTED: Intent create/update/delete and template/variant edits are recorded with role_pack; the dropdown matches the recorded types.
+
+WHERE: backend/app/routers/admin_crud.py; frontend/src/app/admin/audit-log/page.tsx"
+"148","1","Bug","[N15] Conversation-log filters fire on every keystroke; the 'to' date excludes that day","slice-40","Sprint 4","Medium","Mitesh","Admissions — Mitesh","audit-sprint3","slice-40-admin-console-fixes","pack-admin","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N15)
+SEVERITY: Minor    VERIFIED: code reading
+FIXED BY: slice-40-admin-console-fixes
+
+STEPS TO REPRODUCE:
+# Type an email into the user filter; set 'to' = today.
+
+ACTUAL: Each keystroke sends a request (can hit the 30/min admin limit, giving 429); the Apply button is redundant; 'to'=YYYY-MM-DD is parsed as midnight, so that day is excluded; the actor filter needs a raw UUID despite saying 'Search by user'.
+
+EXPECTED: Apply/debounced filtering, inclusive 'to' date, search by name or email.
+
+WHERE: frontend/src/app/admin/conversation-logs/page.tsx:68-97; backend/app/routers/admin.py:62"
+"149","1","Bug","[N16] 'Retraining' nav item links to a page that doesn't exist","slice-40","Sprint 4","Low","Mitesh","Admissions — Mitesh","audit-sprint3","slice-40-admin-console-fixes","pack-admin","owner-c","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N16)
+SEVERITY: Trivial    VERIFIED: reproduced by running the stack
+FIXED BY: slice-40-admin-console-fixes
+
+STEPS TO REPRODUCE:
+# Log in as an admin and click Retraining.
+
+ACTUAL: /admin/retraining returns 404.
+
+EXPECTED: Hidden until slice-10 ships, then linked to the retraining page.
+
+WHERE: frontend/src/app/admin/layout.tsx:16"
+"150","1","Bug","[N12] Admin-created FAQ intents are never answered (no retrain path)","slice-10","Sprint 4","High","Rohith G.S","IT — Rohith","audit-sprint3","slice-10-retraining","pack-admin","owner-b","","","FOUND IN: End-of-Sprint-3 integration audit (2026-10-29), docs/testing/sprint-3-integration-audit.md (defect N12)
+SEVERITY: Major    VERIFIED: reproduced by running the stack
+FIXED BY: slice-10-retraining
+
+STEPS TO REPRODUCE:
+# As hr@ create FAQ intent ask_dress_code with phrases ""what is the dress code?"" and a response.
+# As an employee ask ""what is the dress code?"".
+
+ACTUAL: nlu_fallback. Nothing reads intents from the DB and there is no retrain path, so FR-18 'change is live' only holds for editing existing reply text.
+
+EXPECTED: After retraining (slice-10, now on real Rasa) the new FAQ is classified and answered from its template.
+
+WHERE: backend/app/routers/admin_crud.py; role packs"
