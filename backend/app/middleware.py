@@ -1,8 +1,11 @@
 import json
+import logging
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from app.utils.rate_limit import limiter
 from app.services.jwt_service import verify_token
+
+logger = logging.getLogger("vario.gateway")
 
 PUBLIC_PATHS = {"/api/auth/login", "/health", "/docs", "/openapi.json"}
 
@@ -65,7 +68,16 @@ async def gateway_middleware(request: Request, call_next):
             )
 
     # --- 3. Process Request ---
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception:
+        # Answer here rather than in the app-level handler: this middleware sits
+        # inside CORS, so the browser can read the 500 instead of a network error.
+        logger.exception("unhandled error on %s %s", request.method, path)
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "data": None, "error": "Internal server error"},
+        )
     
     # --- 4. Envelope Wrapper ---
     if response.headers.get("content-type") == "application/json":

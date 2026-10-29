@@ -1,0 +1,4 @@
+tracker_store:
+  type: vario_rasa.tracker_store.RedactingSQLTrackerStore
+  dialect: sqlite
+  db: ${VARIO_TEST_TRACKER_DB}

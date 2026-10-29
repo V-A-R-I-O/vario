@@ -1,0 +1,15 @@
+# Minimal bot used only by rasa-shared/tests to exercise the VARIO channel
+# and tracker store inside a real `rasa run`. Not a role pack.
+recipe: default.v1
+assistant_id: vario-contract-fixture
+language: en
+pipeline:
+  - name: WhitespaceTokenizer
+  - name: CountVectorsFeaturizer
+  - name: DIETClassifier
+    epochs: 60
+    entity_recognition: false
+  - name: FallbackClassifier
+    threshold: 0.4
+policies:
+  - name: RulePolicy

@@ -1,0 +1,51 @@
+version: "3.1"
+
+intents:
+  - greet
+  - check_balance
+  - request_leave
+
+slots:
+  leave_reason:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: from_text
+        conditions:
+          - active_loop: leave_form
+            requested_slot: leave_reason
+
+forms:
+  leave_form:
+    required_slots:
+      - leave_reason
+
+responses:
+  utter_greet:
+    - text: "Hello from the fixture bot."
+  utter_balance:
+    - text: "You have 22 days of leave remaining."
+      custom:
+        vario:
+          template_key: check_leave_balance_response
+          slots:
+            total: 22
+          card:
+            type: data_card
+            title: Your leave balance
+            rows:
+              - label: Total
+                value: 22 days
+  utter_ask_leave_reason:
+    - text: "Tell me the secret reason."
+      custom:
+        vario:
+          sensitive_next_input: true
+  utter_leave_done:
+    - text: "Leave recorded."
+  utter_default:
+    - text: "Sorry, I didn't get that."
+
+session_config:
+  session_expiration_time: 60
+  carry_over_slots_to_new_session: false

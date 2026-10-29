@@ -22,6 +22,10 @@ class ChatResponse(BaseModel):
     confidence: Optional[float] = None
     entities: Dict[str, Any] = Field(default_factory=dict)
     session: SessionState
+    # The UI card for this turn (ADR-006): a frontend BotMessageData object, or null.
+    card: Optional[Dict[str, Any]] = None
+    # True when the role pack was unreachable and a fallback reply was returned.
+    degraded: bool = False
     # Talk-mode fields (slice-06). Populated only for mode="talk"; null in chat
     # mode so the chat-mode contract (slice-05) is unchanged. When TTS is
     # unavailable, `tts_available` is False and `audio_base64` is null.

@@ -130,6 +130,7 @@ async def get_messages(
             intent_name=m.intent_name,
             confidence=m.confidence,
             entities=m.entities,
+            card=m.card,
             created_at=m.created_at
         ) for m in messages
     ]
