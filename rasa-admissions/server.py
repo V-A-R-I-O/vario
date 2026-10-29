@@ -175,7 +175,7 @@ def classify_message(text: str) -> tuple[str, float, Dict[str, Any]]:
             s = 0.3 * jaccard + 0.7 * overlap
             if ex == clean or clean.startswith(ex):
                 s = 0.98
-            elif ex in clean or clean in ex:
+            elif len(ex.split()) >= 3 and (ex in clean or clean in ex):
                 s = max(s, 0.92)
             if s > max_s:
                 max_s = s

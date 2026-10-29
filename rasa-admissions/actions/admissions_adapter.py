@@ -58,10 +58,19 @@ class AdmissionsAdapter:
     """
 
     DEFAULT_TIMEOUT: float = 5.0
+    _transport: Optional[Any] = None
 
     @classmethod
     def _base_url(cls) -> str:
+        if cls._transport is not None:
+            return "http://mock-admissions"
         return os.getenv("MOCK_ADMISSIONS_URL", "http://localhost:9004").rstrip("/")
+
+    @classmethod
+    def get_client(cls) -> httpx.AsyncClient:
+        if cls._transport is not None:
+            return httpx.AsyncClient(transport=cls._transport, timeout=cls.DEFAULT_TIMEOUT)
+        return httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT)
 
     @classmethod
     async def get_application_status(
@@ -90,7 +99,7 @@ class AdmissionsAdapter:
 
         url = f"{cls._base_url()}/applications/{quote(clean_id, safe='')}"
         try:
-            async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
+            async with cls.get_client() as client:
                 res = await client.get(url)
 
                 if res.status_code == 200:
@@ -180,7 +189,7 @@ class AdmissionsAdapter:
 
         url = f"{cls._base_url()}/checklists/{quote(clean_prog, safe='')}"
         try:
-            async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
+            async with cls.get_client() as client:
                 res = await client.get(url)
 
                 if res.status_code == 200:
@@ -240,7 +249,7 @@ class AdmissionsAdapter:
         """
         url = f"{cls._base_url()}/calendar"
         try:
-            async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
+            async with cls.get_client() as client:
                 res = await client.get(url)
                 if res.status_code == 200:
                     try:

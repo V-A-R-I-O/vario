@@ -262,7 +262,7 @@ class ActionGetDocumentChecklist(Action):
                 "slots": {},
                 "missing_slot": "program",
                 "current_form": "checklist_form",
-                "current_step": "program",
+                "current_step": "await_program",
                 "response_text": "Which program would you like the document checklist for? (e.g. B.Tech, M.Tech, MBA)",
                 "card": {
                     "type": "slot_prompt",
