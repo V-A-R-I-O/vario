@@ -135,12 +135,12 @@ One **reusable core engine** (NLU, routing, session management) shared across al
 | Frontend | Next.js (React), Web Speech API for browser-side STT |
 | Backend | FastAPI (Python) |
 | NLU | Rasa Open Source — 3 isolated instances (HR / IT / Admissions) |
-| Database | PostgreSQL via Neon (serverless, free tier) |
+| Database | PostgreSQL via local Docker Compose service |
 | TTS | Google Cloud Text-to-Speech (Neural2 voices) |
 | Variant generation | Provider-agnostic rephraser (default: Gemini) — paraphrases responses and phrases |
-| Compute hosting | Oracle Cloud Infrastructure Always Free (ARM Ampere A1, 4 OCPUs, 24GB RAM) |
-| Frontend hosting | Vercel |
-| Networking/HTTPS | Cloudflare Tunnel |
+| Compute hosting | Local development machine running Docker Compose |
+| Frontend hosting | local Next.js runtime |
+| Networking/HTTPS | local network / localhost (temporary tunnel only if needed) |
 | Auth | Delegated to org identity provider via Auth Adapter. VARIO issues JWT with role claim after org validates. |
 | Local dev | Docker Compose (full stack) |
 
@@ -162,7 +162,7 @@ Core Engine           → Session Manager + Conversation Store + Dialogue Router
 Role Packs            → 3x Rasa instances (HR, IT, Admissions)
 Integration Adapters  → AuthAdapter, HRMSAdapter, ITSMAdapter, AdmissionsAdapter
 Mock Internal Systems → 4x FastAPI mock services standing in for real backends
-PostgreSQL (Neon)     → single source of truth for everything, no in-memory cache
+PostgreSQL (local PostgreSQL)     → single source of truth for everything, no in-memory cache
 ```
 
 The whole point of this layering: **swap mocks for real backends later without touching Role Pack or Core Engine code.**
@@ -242,7 +242,7 @@ Admin adds an intent + phrases + response template → Admin CRUD persists it an
 - Team of 4, one semester, alongside other coursework — scope is deliberately tight.
 - No access to real HRMS/ITSM/Admissions — everything is mocked but behind a documented adapter interface so the swap is theoretically painless later.
 - English only, web only, no push notifications — don't scope-creep into these.
-- Expected load is **20 concurrent sessions for a demo**, not production traffic — infra choices (OCI free tier, Neon free tier, Gemini free tier) reflect that.
+- Expected load is **20 concurrent sessions for a demo**, not production traffic — infra choices (cloud hosting (retired) free tier, Neon free tier, Gemini free tier) reflect that.
 - Assumes a few hundred hand-labelled training examples per intent will be "good enough" for Rasa accuracy within scope.
 - User provisioning and password management are the org's responsibility, not VARIO's.
 
