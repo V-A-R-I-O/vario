@@ -1,7 +1,11 @@
-# Endpoints configuration for Rasa HR
+# Endpoints configuration for Rasa HR (ADR-006)
 action_endpoint:
-  url: "http://localhost:5055/webhook"
+  url: ${RASA_ACTION_ENDPOINT_URL:-http://localhost:5055/webhook}
 
-models:
-  url: ""
-  wait_time_between_pulls: 10
+tracker_store:
+  type: vario_rasa.tracker_store.RedactingSQLTrackerStore
+  dialect: postgresql
+  url: ${POSTGRES_HOST:-postgres}
+  db: ${RASA_HR_DB:-rasa_hr}
+  username: ${POSTGRES_USER:-postgres}
+  password: ${POSTGRES_PASSWORD:-postgres}
