@@ -26,7 +26,22 @@ except ImportError:
     def ActiveLoop(name: Optional[str]) -> Dict[str, Any]:  # type: ignore
         return {"event": "active_loop", "name": name}
 
-from vario_rasa.contract import vario_payload
+import sys
+from pathlib import Path
+
+# Ensure rasa-shared is resolvable even when not explicitly on PYTHONPATH
+_shared_dir = Path(__file__).resolve().parent.parent.parent / "rasa-shared"
+if _shared_dir.exists() and str(_shared_dir) not in sys.path:
+    sys.path.insert(0, str(_shared_dir))
+
+try:
+    from vario_rasa.contract import vario_payload
+except ImportError:
+    def vario_payload(template_key: str, card: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        payload = {"template_key": template_key}
+        if card is not None:
+            payload["card"] = card
+        return payload
 
 try:
     from actions.hrms_adapter import (
