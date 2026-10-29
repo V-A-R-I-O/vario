@@ -4,7 +4,7 @@ set -eu
 # The role-pack service runs from its persistent volume so models produced by
 # POST /model/train survive container recreation. Seed the volume from the
 # image's trained model only on first startup; never overwrite a trained model.
-if [ "\${1:-}" = "run" ] && [ "\${2:-}" != "actions" ]; then
+if [ "${1:-}" = "run" ] && [ "${2:-}" != "actions" ]; then
     model_dir="/var/lib/vario/models"
     mkdir -p "$model_dir"
     if ! ls "$model_dir"/*.tar.gz >/dev/null 2>&1; then
