@@ -233,7 +233,7 @@ async def test_it_training_uses_real_rasa_model_api(monkeypatch):
 
     assert len(calls) == 2
     assert calls[0][0] == "POST"
-    assert calls[0][1].endswith("/model/train")
+    assert calls[0][1].endswith("/model/train?save_to_default_model_directory=true")
     assert calls[0][2]["headers"]["Content-Type"] == "application/x-yaml"
     assert "intents:" in calls[0][2]["content"]
     assert calls[1][0] == "PUT"
