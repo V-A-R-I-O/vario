@@ -23,16 +23,16 @@ Local-first, continuous integration. Sprint 1 delivers a real but minimal walkin
 
 | Sprint | Weeks | Theme | Exit state |
 |---|---|---|---|
-| [1](sprint-01.md) | 1 | Deployed walking skeleton & CD pipeline | Public landing page and login work locally; local PostgreSQL migrations and Compose stack work; CI passes |
-| [2](sprint-02.md) | 2–3 | Role packs & read flows | Each role pack stands up; all three status-lookup flows live and auto-deploying through the gateway |
-| [3](sprint-03.md) | 4–5 | Write workflows + admin + voice | Every FR functionally complete, continuously deployed |
+| [1](sprint-01.md) | 1 | Local walking skeleton & CI pipeline | Public landing page and login work locally; local PostgreSQL migrations and Compose stack work; CI passes |
+| [2](sprint-02.md) | 2–3 | Role packs & read flows | Each role pack stands up; all three status-lookup flows work through the local gateway |
+| [3](sprint-03.md) | 4–5 | Write workflows + admin + voice | Every FR functionally complete and integrated in the local stack |
 | [4](sprint-04.md) | 6–7 | Cross-cutting services + harden + demo | Hardened, 20-session demo rehearsed |
 
 ## Cadence & rules
 
 - **All four members have a live lane every week.** Each sprint doc has a "Per-member lanes" table proving it.
 - **One slice ≈ one agent session / roughly one member-week.** See the slice template in \`docs/slices/\`.
-- **Infra-first / continuous delivery.** The full pipeline (CI/CD → OCI + Cloudflare + Vercel + Neon) goes live in Sprint 1 against a minimal skeleton. Every slice after that auto-deploys on merge — "any update is reflected in the deployed app itself." No separate staging-vs-prod ceremony; the demo environment is always current.
+- **Local-first / continuous integration.** CI runs on pull requests and pushes to main. Developers run the application with Docker Compose; cloud deployment is not required.
 - The **public landing page (\`slice-00\`) is a frontend-only foundation slice** and does not renumber or replace any existing slice 01–31.
 - **The API contract (\`docs/api-contract.md\`) is frozen.** A/B/C build their role packs against it in isolation (Storybook + curl) in early Sprint 2, so they don't block on D's chat shell; integration happens within the same sprint.
 - **Human review required** (per \`AGENTS.md\`) on: auth, DB schema/destructive migrations, and all infra/CI/secrets slices. These are marked ⚠️ in each sprint.
