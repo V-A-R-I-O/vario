@@ -13,137 +13,140 @@ stories:
       - intent: check_leave_balance
       - action: action_check_leave_balance
 
-  - story: Leave balance with specific leave type
-    steps:
-      - intent: check_leave_balance
-        entities:
-          - leave_type: "annual"
-      - action: action_check_leave_balance
-
   - story: Goodbye flow
     steps:
       - intent: goodbye
       - action: utter_goodbye
 
-  - story: Submit leave request - casual leave
+  - story: Direct WFH policy inquiry
     steps:
-      - intent: submit_leave_request
-      - action: action_submit_leave_request
-      - intent: inform
-        entities:
-          - leave_type: "casual"
-          - start_date: "2026-10-20"
-          - end_date: "2026-10-22"
-          - reason: "family function"
-      - action: action_submit_leave_request
-      - intent: affirm
-      - action: action_submit_leave_request
+      - intent: ask_wfh_policy
+      - action: utter_ask_wfh_policy
 
-  - story: Submit leave request - sick leave
+  - story: Direct policy FAQ inquiry
     steps:
-      - intent: submit_leave_request
-      - action: action_submit_leave_request
-      - intent: inform
-        entities:
-          - leave_type: "sick"
-          - start_date: "2026-10-25"
-          - end_date: "2026-10-25"
-          - reason: "medical appointment"
-      - action: action_submit_leave_request
-      - intent: affirm
-      - action: action_submit_leave_request
+      - intent: ask_policy_faq
+      - action: utter_ask_policy_faq
 
-  - story: Submit leave request - annual leave
+  - story: Complete leave request flow
     steps:
       - intent: submit_leave_request
-      - action: action_submit_leave_request
+      - action: leave_request_form
+      - active_loop: leave_request_form
+      - slot_was_set:
+          - requested_slot: leave_type
       - intent: inform
         entities:
-          - leave_type: "annual"
+          - leave_type: casual
+      - slot_was_set:
+          - leave_type: casual
+          - requested_slot: start_date
+      - intent: inform
+        entities:
           - start_date: "2026-11-10"
-          - end_date: "2026-11-24"
-          - reason: "vacation"
-      - action: action_submit_leave_request
-      - intent: affirm
-      - action: action_submit_leave_request
-
-  - story: Submit leave request - cancel workflow
-    steps:
-      - intent: submit_leave_request
-      - action: action_submit_leave_request
+      - slot_was_set:
+          - start_date: "2026-11-10"
+          - requested_slot: end_date
       - intent: inform
         entities:
-          - leave_type: "casual"
-          - start_date: "2026-10-20"
-          - end_date: "2026-10-22"
-          - reason: "family function"
-      - action: action_submit_leave_request
+          - end_date: "2026-11-12"
+      - slot_was_set:
+          - end_date: "2026-11-12"
+          - requested_slot: reason
+      - intent: inform
+      - slot_was_set:
+          - reason: "Family event"
+          - requested_slot: leave_confirm
+      - intent: affirm
+      - slot_was_set:
+          - leave_confirm: true
+          - requested_slot: null
+      - active_loop: null
+      - action: action_submit_leave
+
+  - story: Cancel leave request at confirmation
+    steps:
+      - intent: submit_leave_request
+      - action: leave_request_form
+      - active_loop: leave_request_form
+      - slot_was_set:
+          - requested_slot: leave_type
+      - intent: inform
+        entities:
+          - leave_type: annual
+      - slot_was_set:
+          - leave_type: annual
+          - requested_slot: start_date
+      - intent: inform
+        entities:
+          - start_date: "2026-11-15"
+      - slot_was_set:
+          - start_date: "2026-11-15"
+          - requested_slot: end_date
+      - intent: inform
+        entities:
+          - end_date: "2026-11-20"
+      - slot_was_set:
+          - end_date: "2026-11-20"
+          - requested_slot: reason
+      - intent: inform
+      - slot_was_set:
+          - reason: "Vacation trip"
+          - requested_slot: leave_confirm
+      - intent: cancel
+      - action: action_cancel_leave_request
+      - active_loop: null
+
+  - story: Cancel leave request mid-form
+    steps:
+      - intent: submit_leave_request
+      - action: leave_request_form
+      - active_loop: leave_request_form
+      - slot_was_set:
+          - requested_slot: leave_type
+      - intent: cancel
+      - action: action_cancel_leave_request
+      - active_loop: null
+
+  - story: Deny leave request at confirmation
+    steps:
+      - intent: submit_leave_request
+      - action: leave_request_form
+      - active_loop: leave_request_form
+      - slot_was_set:
+          - requested_slot: leave_type
+      - intent: inform
+        entities:
+          - leave_type: casual
+      - slot_was_set:
+          - leave_type: casual
+          - requested_slot: start_date
+      - intent: inform
+        entities:
+          - start_date: "2026-11-10"
+      - slot_was_set:
+          - start_date: "2026-11-10"
+          - requested_slot: end_date
+      - intent: inform
+        entities:
+          - end_date: "2026-11-12"
+      - slot_was_set:
+          - end_date: "2026-11-12"
+          - requested_slot: reason
+      - intent: inform
+      - slot_was_set:
+          - reason: "Personal matters"
+          - requested_slot: leave_confirm
       - intent: deny
-      - action: action_submit_leave_request
+      - action: action_cancel_leave_request
+      - active_loop: null
 
-  - story: Submit leave request - invalid date then correct
+  - story: Interrupted leave form with balance check
     steps:
       - intent: submit_leave_request
-      - action: action_submit_leave_request
-      - intent: inform
-        entities:
-          - leave_type: "casual"
-          - start_date: "2026-09-20"  # past date
-          - end_date: "2026-10-22"
-          - reason: "family function"
-      - action: action_submit_leave_request
-      - intent: inform
-        entities:
-          - start_date: "2026-10-20"  # corrected date
-      - action: action_submit_leave_request
-      - intent: affirm
-      - action: action_submit_leave_request
-
-  - story: Submit leave request - end date before start date then correct
-    steps:
-      - intent: submit_leave_request
-      - action: action_submit_leave_request
-      - intent: inform
-        entities:
-          - leave_type: "casual"
-          - start_date: "2026-10-25"
-          - end_date: "2026-10-20"  # end before start
-          - reason: "family function"
-      - action: action_submit_leave_request
-      - intent: inform
-        entities:
-          - end_date: "2026-10-27"  # corrected end date
-      - action: action_submit_leave_request
-      - intent: affirm
-      - action: action_submit_leave_request
-
-  - story: Direct policy question
-    steps:
-      - intent: ask_policy_faq
-      - action: utter_ask_policy_faq
-
-  - story: Greet then ask policy
-    steps:
-      - intent: greet
-      - action: utter_greet
-      - intent: ask_policy_faq
-      - action: utter_ask_policy_faq
-
-  - story: Policy question about maternity leave
-    steps:
-      - intent: ask_policy_faq
-        entities:
-          - policy_topic: "maternity"
-      - action: utter_ask_policy_faq
-
-  - story: Direct WFH policy question
-    steps:
-      - intent: ask_wfh_policy
-      - action: utter_ask_wfh_policy
-
-  - story: Greet then ask WFH policy
-    steps:
-      - intent: greet
-      - action: utter_greet
-      - intent: ask_wfh_policy
-      - action: utter_ask_wfh_policy
+      - action: leave_request_form
+      - active_loop: leave_request_form
+      - intent: check_leave_balance
+      - action: action_check_leave_balance
+      - action: leave_request_form
+      - active_loop: leave_request_form
