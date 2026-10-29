@@ -47,52 +47,93 @@ nlu:
       - what is the leave balance for [EMP-1042](employee_id)?
       - check leave balance for employee [EMP-1042](employee_id)
       - how many [annual](leave_type) leaves for [EMP-1042](employee_id)?
-
-  - intent: ask_leave_status
-    examples: |
-      - what is the status of my leave request?
-      - check my leave application status
-      - has my leave been approved?
-      - did my manager approve my vacation request?
-      - check status of my time off request
-      - is my sick leave approved?
-      - status of leave request [REQ-501](request_id)
-      - track my leave request [REQ-502](request_id)
+      - check leave balance for [EMP-1001](employee_id)
+      - leave balance for [EMP-1042](employee_id)
 
   - intent: submit_leave_request
     examples: |
       - I want to apply for leave
       - submit a leave request
-      - request time off for next week
-      - apply for 2 days of [sick](leave_type) leave
-      - I need to take vacation from Monday to Wednesday
-      - can I request [casual](leave_type) leave tomorrow?
+      - apply for leave
+      - request time off
+      - I need to take leave
+      - book leave
+      - submit leave application
+      - apply for vacation
+      - apply for [sick](leave_type) leave
+      - I need to take vacation
+      - request [casual](leave_type) leave
       - apply for [annual](leave_type) leave
-      - I'd like to request [casual](leave_type) leave on [2026-10-20](start_date)
-      - please apply for [earned](leave_type) leave from [2026-10-25](start_date) to [2026-10-27](end_date)
+      - apply for [earned](leave_type) leave
+      - I'd like to request [casual](leave_type) leave on [2026-11-20](start_date)
+      - please apply for [earned](leave_type) leave from [2026-11-25](start_date) to [2026-11-27](end_date)
       - I need to take [sick](leave_type) leave because I'm unwell
       - can I submit a leave request for [2026-11-01](start_date) to [2026-11-03](end_date)?
       - I want to take [casual](leave_type) leave for personal reasons
-      - apply for leave starting [2026-10-30](start_date)
-      - I need time off from [2026-10-15](start_date) to [2026-10-20](end_date) for medical appointment
-      - request [earned](leave_type) leave on [2026-10-28](start_date)
-      - I'd like to apply for [sick](leave_type) leave tomorrow
-      - can I take [casual](leave_type) leave on [2026-10-22](start_date)?
-      - please submit leave request for [2026-10-25](start_date) to [2026-10-26](end_date) with reason: family function
+      - apply for leave starting [2026-11-30](start_date)
+      - I need time off from [2026-11-15](start_date) to [2026-11-20](end_date) for medical appointment
+      - request [annual](leave_type) leave on [2026-11-28](start_date)
       - I need to apply for [annual](leave_type) leave from [2026-11-10](start_date) to [2026-11-24](end_date) for vacation
+      - apply for 3 days of [annual](leave_type) leave
+      - apply for [casual](leave_type) leave tomorrow
 
-  - intent: ask_policy_faq
+  - intent: inform
     examples: |
-      - what is the company leave policy?
-      - how many annual leaves are granted per year?
-      - what is the policy for maternity leave?
-      - can I carry forward unused leaves to next year?
-      - what are the rules for taking sick leave?
-      - how many days of paternity leave do I get?
-      - tell me about the bereavement leave guidelines
-      - what is the leave carry forward policy?
-      - how does maternity leave work?
-      - company leave policy and rules
+      - [casual](leave_type)
+      - [sick](leave_type)
+      - [annual](leave_type)
+      - [earned](leave_type)
+      - [2026-11-10](start_date)
+      - [2026-11-15](start_date)
+      - [2026-11-20](end_date)
+      - [2026-11-25](end_date)
+      - tomorrow
+      - next monday
+      - next friday
+      - today
+      - in 3 days
+      - family function
+      - medical appointment
+      - personal reasons
+      - going on vacation
+      - attending wedding
+      - unwell with fever
+      - doctor consultation
+
+  - intent: affirm
+    examples: |
+      - confirm
+      - yes
+      - y
+      - sure
+      - ok
+      - confirm request
+      - yes please
+      - yes submit it
+      - looks good
+      - affirmative
+      - please confirm
+
+  - intent: deny
+    examples: |
+      - no
+      - deny
+      - don't submit
+      - no don't
+      - not now
+      - negative
+
+  - intent: cancel
+    examples: |
+      - cancel
+      - cancel leave request
+      - cancel request
+      - stop
+      - abort
+      - exit
+      - nevermind
+      - cancel this
+      - please cancel
 
   - intent: ask_wfh_policy
     examples: |
@@ -108,10 +149,53 @@ nlu:
       - guidelines for working from home
       - do we have a work from home policy?
       - how does work from home work here?
+      - working remotely rules
 
+  - intent: ask_policy_faq
+    examples: |
+      - what is the company leave policy?
+      - how many annual leaves are granted per year?
+      - what is the policy for maternity leave?
+      - can I carry forward unused leaves to next year?
+      - what are the rules for taking sick leave?
+      - how many days of paternity leave do I get?
+      - tell me about the bereavement leave guidelines
+      - what is the leave carry forward policy?
+      - how does maternity leave work?
+      - company leave policy and rules
+      - employee leave policy guidelines
+
+  - intent: greet
+    examples: |
+      - hello
+      - hi
+      - hey there
+      - good morning
+      - good afternoon
+      - greetings
+      - hey
+
+  - intent: goodbye
+    examples: |
+      - bye
+      - goodbye
+      - see you later
+      - thanks, bye
+      - have a nice day
+      - farewell
 
   - intent: nlu_fallback
     examples: |
+      - what is the travel reimbursement policy?
+      - what is the travel policy?
+      - travel expense reimbursement
+      - dress code policy
+      - what is the dress code?
+      - employee travel expense rules
+      - food reimbursement policy
+      - how to claim travel expenses
+      - rules
+      - help with general rules
       - how is the weather outside?
       - what is the capital of France?
       - order a pepperoni pizza for me
@@ -122,20 +206,3 @@ nlu:
       - write a python script for sorting
       - what is the stock price of Apple?
       - how far is the moon from earth?
-
-  - intent: greet
-    examples: |
-      - hello
-      - hi
-      - hey there
-      - good morning
-      - good afternoon
-      - greetings
-
-  - intent: goodbye
-    examples: |
-      - bye
-      - goodbye
-      - see you later
-      - thanks, bye
-      - have a nice day
