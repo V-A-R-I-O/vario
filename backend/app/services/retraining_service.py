@@ -54,12 +54,13 @@ async def load_rows(pack):
 
 
 def _prepare_assets(pack, rows):
+    """Build one combined YAML payload accepted by Rasa 3.6's /model/train API."""
     root = Path(settings.ROLE_PACKS_DIR) / pack
     config_path, domain_path = root / "config.yml", root / "domain.yml"
     if not config_path.is_file() or not domain_path.is_file():
         raise RuntimeError(f"Training assets unavailable for {pack}; check role-pack mounts.")
 
-    config = config_path.read_text(encoding="utf-8")
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     domain = yaml.safe_load(domain_path.read_text(encoding="utf-8")) or {}
     intents = domain.setdefault("intents", [])
     names = {item if isinstance(item, str) else next(iter(item), "") for item in intents}
@@ -74,7 +75,7 @@ def _prepare_assets(pack, rows):
             if path.is_file() and path.suffix in (".yml", ".yaml"):
                 files[path.relative_to(root).as_posix()] = path.read_text(encoding="utf-8")
 
-    nlu = yaml.safe_load(files.get("data/nlu.yml", 'version: "3.1"\nnlu: []')) or {}
+    nlu = yaml.safe_load(files.get("data/nlu.yml", 'version: "3.1"\\nnlu: []')) or {}
     nlu.setdefault("version", "3.1")
     replace_names = {row["name"] for row in rows}
     items = [item for item in nlu.setdefault("nlu", []) if item.get("intent") not in replace_names]
@@ -82,44 +83,44 @@ def _prepare_assets(pack, rows):
         if row["examples"]:
             items.append({
                 "intent": row["name"],
-                "examples": "\n".join("- " + phrase for phrase in row["examples"]),
+                "examples": "\\n".join("- " + phrase for phrase in row["examples"]),
             })
     nlu["nlu"] = items
     files["data/nlu.yml"] = yaml.safe_dump(nlu, sort_keys=False, allow_unicode=True)
 
-    archive = io.BytesIO()
-    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as archive_file:
-        for name, value in files.items():
-            archive_file.writestr(name, value)
-    return config, yaml.safe_dump(domain, sort_keys=False, allow_unicode=True), archive.getvalue()
-
+    # The Rasa 3.6 HTTP training endpoint consumes a single YAML document
+    # combining config, domain, and training data. Preserve multiple list-based
+    # sections when the role pack has more than one file for a section.
+    payload = {}
+    sources = [config, domain]
+    sources.extend(yaml.safe_load(value) or {} for value in files.values())
+    for source in sources:
+        for key, value in source.items():
+            if isinstance(payload.get(key), list) and isinstance(value, list):
+                payload[key].extend(value)
+            else:
+                payload[key] = value
+    return yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
 
 async def train(pack, rows):
-    """Train and activate a role pack through the Rasa HTTP API.
-
-    All three role packs use the same Rasa lifecycle. In particular, IT must not
-    call the legacy FastAPI server's /internal/retrain endpoint because Compose
-    now runs the real Rasa server on RASA_IT_URL.
-    """
-    config, domain, archive = _prepare_assets(pack, rows)
+    """Train a role pack and activate the returned artifact through Rasa's HTTP API."""
+    training_yaml = _prepare_assets(pack, rows)
     base_url = URLS[pack].rstrip()
     async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=5)) as client:
         response = await client.post(
-            base_url + "/model/train",
-            data={"config": config, "domain": domain, "save_to_default_model_directory": "true"},
-            files={"training_files": ("training-data.zip", archive, "application/zip")},
+            base_url + "/model/train?save_to_default_model_directory=true",
+            content=training_yaml,
+            headers={"Content-Type": "application/x-yaml"},
         )
         response.raise_for_status()
 
-        # Rasa 3.6 returns the trained archive's filename and saves it in its
-        # default models directory. Activate that exact artifact through the
-        # documented PUT /model endpoint; /model/reload is not a Rasa endpoint.
+        # Rasa 3.6 saves the archive in its default models directory and returns
+        # its filename. Activate that exact artifact through PUT /model.
         filename = response.headers.get("filename", "")
         if not filename or Path(filename).name != filename:
             raise RuntimeError("Rasa training response did not include a valid model filename.")
         response = await client.put(base_url + "/model", json={"model_file": f"models/{filename}"})
         response.raise_for_status()
-
 
 async def _update_job(job_id, **values):
     async with AsyncSessionLocal() as db:

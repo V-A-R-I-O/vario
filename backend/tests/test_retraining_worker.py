@@ -120,26 +120,29 @@ async def test_rasa_training_activates_model_after_training(monkeypatch, pack):
             return False
 
         async def post(self, url, **kwargs):
-            calls.append((url, kwargs))
+            calls.append(("POST", url, kwargs))
             return Response()
 
         async def put(self, url, **kwargs):
-            calls.append((url, kwargs))
+            calls.append(("PUT", url, kwargs))
             return Response()
 
     monkeypatch.setattr(service.httpx, "AsyncClient", Client)
     monkeypatch.setattr(
         service,
         "_prepare_assets",
-        lambda _pack, _rows: ("recipe: default.v1", "intents: []", b"training archive"),
+        lambda _pack, _rows: "version: \"3.1\"\\nintents: []\\n",
     )
 
     await service.train(pack, [{"name": "new_intent", "examples": ["example"]}])
 
     assert len(calls) == 2
-    assert calls[0][0].endswith("/model/train")
-    assert calls[1][0].endswith("/model")
-    assert calls[0][1]["data"]["save_to_default_model_directory"] == "true"
+    assert calls[0][0] == "POST"
+    assert calls[0][1].endswith("/model/train?save_to_default_model_directory=true")
+    assert calls[1][0] == "PUT"
+    assert calls[1][1].endswith("/model")
+    assert calls[0][2]["headers"]["Content-Type"] == "application/x-yaml"
+    assert "intents:" in calls[0][2]["content"]
 
 
 @pytest.mark.asyncio
@@ -179,14 +182,14 @@ async def test_rasa_training_fails_if_model_reload_fails(monkeypatch, pack):
     monkeypatch.setattr(
         service,
         "_prepare_assets",
-        lambda _pack, _rows: ("recipe: default.v1", "intents: []", b"training archive"),
+        lambda _pack, _rows: "version: \"3.1\"\\nintents: []\\n",
     )
 
     with pytest.raises(RuntimeError, match="HTTP 500"):
         await service.train(pack, [{"name": "new_intent", "examples": ["example"]}])
 
     assert len(calls) == 2
-    assert calls[0][1].endswith("/model/train")
+    assert calls[0][1].endswith("/model/train?save_to_default_model_directory=true")
     assert calls[1][1].endswith("/model")
 
 
@@ -222,7 +225,7 @@ async def test_it_training_uses_real_rasa_model_api(monkeypatch):
     monkeypatch.setattr(
         service,
         "_prepare_assets",
-        lambda _pack, _rows: ("recipe: default.v1", "intents: []", b"training archive"),
+        lambda _pack, _rows: "version: \"3.1\"\\nintents: []\\n",
     )
     await service.train(
         "it", [{"name": "ask_vpn_renewal", "examples": ["renew my vpn certificate"]}]
@@ -231,8 +234,8 @@ async def test_it_training_uses_real_rasa_model_api(monkeypatch):
     assert len(calls) == 2
     assert calls[0][0] == "POST"
     assert calls[0][1].endswith("/model/train")
-    assert calls[0][2]["data"]["save_to_default_model_directory"] == "true"
-    assert calls[0][2]["files"]["training_files"][1] == b"training archive"
+    assert calls[0][2]["headers"]["Content-Type"] == "application/x-yaml"
+    assert "intents:" in calls[0][2]["content"]
     assert calls[1][0] == "PUT"
     assert calls[1][1].endswith("/model")
     assert calls[1][2]["json"] == {"model_file": "models/it-model.tar.gz"}

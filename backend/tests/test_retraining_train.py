@@ -12,7 +12,7 @@ async def test_it_retraining_trains_and_reloads_the_real_rasa_server(monkeypatch
     monkeypatch.setattr(
         retraining_service,
         "_prepare_assets",
-        lambda pack, rows: ("config: test", "intents: []", b"training archive"),
+        lambda pack, rows: "version: \"3.1\"\\nintents: []\\n",
     )
 
     train_response = MagicMock()
@@ -37,10 +37,9 @@ async def test_it_retraining_trains_and_reloads_the_real_rasa_server(monkeypatch
     assert client.put.await_count == 1
     first_call = client.post.await_args
     second_call = client.put.await_args
-    assert first_call.args[0] == "http://rasa-it:5006/model/train"
-    assert first_call.kwargs["data"]["save_to_default_model_directory"] == "true"
-    assert first_call.kwargs["files"]["training_files"][0] == "training-data.zip"
-    assert first_call.kwargs["files"]["training_files"][1] == b"training archive"
+    assert first_call.args[0] == "http://rasa-it:5006/model/train?save_to_default_model_directory=true"
+    assert first_call.kwargs["headers"]["Content-Type"] == "application/x-yaml"
+    assert "intents:" in first_call.kwargs["content"]
     assert second_call.args[0] == "http://rasa-it:5006/model"
     assert second_call.kwargs["json"] == {"model_file": "models/it-model.tar.gz"}
     assert not first_call.kwargs.get("headers")
