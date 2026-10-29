@@ -104,6 +104,8 @@ async def test_rasa_training_activates_model_after_training(monkeypatch, pack):
     calls = []
 
     class Response:
+        headers = {"filename": "it-model.tar.gz"}
+
         def raise_for_status(self):
             return None
 
@@ -131,9 +133,9 @@ async def test_rasa_training_activates_model_after_training(monkeypatch, pack):
     await service.train(pack, [{"name": "new_intent", "examples": ["example"]}])
 
     assert len(calls) == 2
-    assert calls[0][0].endswith("/model/train")
-    assert calls[1][0].endswith("/model/reload")
-    assert calls[0][1]["data"]["save_to_default_model_directory"] == "true"
+    assert calls[0][1].endswith("/model/train")
+    assert calls[1][1].endswith("/model")
+    assert calls[0][2]["data"]["save_to_default_model_directory"] == "true"
 
 
 @pytest.mark.asyncio
@@ -142,6 +144,8 @@ async def test_rasa_training_fails_if_model_reload_fails(monkeypatch, pack):
     calls = []
 
     class Response:
+        headers = {"filename": "it-model.tar.gz"}
+
         def __init__(self, status=200):
             self.status = status
 
@@ -160,8 +164,12 @@ async def test_rasa_training_fails_if_model_reload_fails(monkeypatch, pack):
             return False
 
         async def post(self, url, **kwargs):
-            calls.append((url, kwargs))
-            return Response(500 if url.endswith("/model/reload") else 200)
+            calls.append(("POST", url, kwargs))
+            return Response(200)
+
+        async def put(self, url, **kwargs):
+            calls.append(("PUT", url, kwargs))
+            return Response(500 if url.endswith("/model") else 200)
 
     monkeypatch.setattr(service.httpx, "AsyncClient", Client)
     monkeypatch.setattr(
@@ -174,8 +182,8 @@ async def test_rasa_training_fails_if_model_reload_fails(monkeypatch, pack):
         await service.train(pack, [{"name": "new_intent", "examples": ["example"]}])
 
     assert len(calls) == 2
-    assert calls[0][0].endswith("/model/train")
-    assert calls[1][0].endswith("/model/reload")
+    assert calls[0][1].endswith("/model/train")
+    assert calls[1][1].endswith("/model")
 
 
 @pytest.mark.asyncio
@@ -183,6 +191,8 @@ async def test_it_training_uses_real_rasa_model_api(monkeypatch):
     calls = []
 
     class Response:
+        headers = {"filename": "it-model.tar.gz"}
+
         def raise_for_status(self):
             return None
 
@@ -197,7 +207,11 @@ async def test_it_training_uses_real_rasa_model_api(monkeypatch):
             return False
 
         async def post(self, url, **kwargs):
-            calls.append((url, kwargs))
+            calls.append(("POST", url, kwargs))
+            return Response()
+
+        async def put(self, url, **kwargs):
+            calls.append(("PUT", url, kwargs))
             return Response()
 
     monkeypatch.setattr(service.httpx, "AsyncClient", Client)
@@ -211,8 +225,10 @@ async def test_it_training_uses_real_rasa_model_api(monkeypatch):
     )
 
     assert len(calls) == 2
-    assert calls[0][0].endswith("/model/train")
-    assert calls[1][0].endswith("/model/reload")
-    assert calls[0][1]["data"]["save_to_default_model_directory"] == "true"
-    assert calls[0][1]["files"]["training_files"][1] == b"training archive"
-    assert "headers" not in calls[0][1]
+    assert calls[0][0] == "POST"
+    assert calls[0][1].endswith("/model/train")
+    assert calls[0][2]["data"]["save_to_default_model_directory"] == "true"
+    assert calls[0][2]["files"]["training_files"][1] == b"training archive"
+    assert calls[1][0] == "PUT"
+    assert calls[1][1].endswith("/model")
+    assert calls[1][2]["json"] == {"model_file": "models/it-model.tar.gz"}

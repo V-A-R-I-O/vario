@@ -110,7 +110,14 @@ async def train(pack, rows):
             files={"training_files": ("training-data.zip", archive, "application/zip")},
         )
         response.raise_for_status()
-        response = await client.post(base_url + "/model/reload")
+
+        # Rasa 3.6 returns the trained archive's filename and saves it in its
+        # default models directory. Activate that exact artifact through the
+        # documented PUT /model endpoint; /model/reload is not a Rasa endpoint.
+        filename = response.headers.get("filename", "")
+        if not filename or Path(filename).name != filename:
+            raise RuntimeError("Rasa training response did not include a valid model filename.")
+        response = await client.put(base_url + "/model", json={"model_file": f"models/{filename}"})
         response.raise_for_status()
 
 
