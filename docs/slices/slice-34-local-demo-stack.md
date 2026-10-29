@@ -36,7 +36,7 @@ Built by Tahir; **verified on Mitesh's laptop C** (Windows 11, i5-13th-gen HX, 2
 - **docs/demo/local-demo.md** — runbook for laptop C:
   - WSL2 memory (`.wslconfig`) and a Windows Firewall rule for port 3000
   - Hotspot vs college Wi-Fi check
-  - Cloudflare quick tunnel for HTTPS and the microphone (`cloudflared tunnel --url http://localhost:3000`, no account)
+  - Optional Cloudflare Quick Tunnel only if testing on another device requires HTTPS/microphone access (`cloudflared tunnel --url http://localhost:3000`, no account); not required for normal local demo
   - Chrome insecure-origin flag as a fallback
   - Training the models and resetting data between rehearsals
   - Demo accounts table and troubleshooting
@@ -59,9 +59,9 @@ Each defect's repro steps double as a regression test: re-run them on laptop C b
 ## Acceptance criteria
 - [ ] Given a fresh clone on laptop C with `.env` from `.env.example`, when the documented train and `docker compose up` commands run, then every service reports healthy.
 - [ ] Given the stack on laptop C, when a client on the same hotspot opens `http://<C-IP>:3000`, then login and one chat in each role pack work.
-- [ ] Given the quick-tunnel URL, when it's opened on another laptop, then login, chat and the talk-mode microphone work.
+- [ ] Optional: if a quick tunnel is used for a remote-device demo, login, chat and the talk-mode microphone work through that URL.
 - [ ] Given a fresh database, then migrations and the seed run automatically, and a second start doesn't duplicate data.
-- [ ] Given four laptops logging in through the tunnel within one minute, then none is rate-limited.
+- [ ] If multiple demo clients share a temporary tunnel, rate limiting behaves correctly for forwarded client IPs or authenticated users.
 - [ ] Given the README and the runbook, then a teammate can boot the demo without asking anyone.
 - [ ] Given the compose file, then no secret values are hardcoded.
 - [ ] Every defect in the table above is re-tested with its repro steps and closed in Jira.

@@ -1,9 +1,9 @@
 Issue Key,Summary,Issue Type,Parent (Epic),Slice ID,Sprint,Priority,Assignee,Team,Labels,Story Points,Description
-SCRUM-5,EPIC-1: Deployed Walking Skeleton & CD Pipeline,Epic,,,Sprint 1,Medium,Rohith G.S,VARIO Program,epic,,
+SCRUM-5,EPIC-1: Local Walking Skeleton & CI Pipeline,Epic,,,Sprint 1,Medium,Rohith G.S,VARIO Program,epic,,
 SCRUM-6,EPIC-2: Role Packs & Read Flows,Epic,,,Sprint 2,Medium,Rohith G.S,VARIO Program,epic,,
 SCRUM-7,EPIC-3: Write Workflows + Admin + Voice,Epic,,,Sprint 3,Medium,Rohith G.S,VARIO Program,epic,,
 SCRUM-8,EPIC-4: Cross-cutting Services + Harden + Demo,Epic,,,Sprint 4,Medium,Rohith G.S,VARIO Program,epic,,
-SCRUM-9,slice-01-auth-login,Task,EPIC-1: Deployed Walking Skeleton & CD Pipeline,slice-01,Sprint 1,Medium,Mohammed Tahir Siddique,Platform — Tahir,module-auth;needs-human-review;secrets;ui-facing;owner-d,5,"WHAT TO BUILD:
+SCRUM-9,slice-01-auth-login,Task,EPIC-1: Local Walking Skeleton & CI Pipeline,slice-01,Sprint 1,Medium,Mohammed Tahir Siddique,Platform — Tahir,module-auth;needs-human-review;secrets;ui-facing;owner-d,5,"WHAT TO BUILD:
 - Mock Auth Service (FastAPI) pre-seeded with test users incl. one admin per role pack
 - AuthAdapter.authenticate(email, password) — only code that knows it's a mock
 - POST /api/auth/login — validates via adapter, upserts users table, issues signed JWT
@@ -29,7 +29,7 @@ OUT OF SCOPE:
 MOCKUP / REFERENCE: docs/design/login.html
 
 HUMAN REVIEW REQUIRED: Yes"
-SCRUM-10,slice-02-db-schema,Task,EPIC-1: Deployed Walking Skeleton & CD Pipeline,slice-02,Sprint 1,Medium,Mohammed Tahir Siddique,Platform — Tahir,module-db-schema;needs-human-review;secrets;owner-d,5,"WHAT TO BUILD:
+SCRUM-10,slice-02-db-schema,Task,EPIC-1: Local Walking Skeleton & CI Pipeline,slice-02,Sprint 1,Medium,Mohammed Tahir Siddique,Platform — Tahir,module-db-schema;needs-human-review;secrets;owner-d,5,"WHAT TO BUILD:
 - SQLAlchemy models for all 9 entities
 - Alembic migration (up/down)
 - DB session/engine wiring reading DATABASE_URL
@@ -37,7 +37,7 @@ SCRUM-10,slice-02-db-schema,Task,EPIC-1: Deployed Walking Skeleton & CD Pipeline
 
 ACCEPTANCE CRITERIA (convert to checklist in Jira):
 [] Migration up creates all 9 tables with correct columns/types; down drops cleanly
-[] Migration succeeds against a Neon database via DATABASE_URL
+[] Migration succeeds against local PostgreSQL via DATABASE_URL
 [] FKs enforced: conversations->users, messages->conversations, sessions->conversations (1:1), training_phrases->intents, response_variants->response_templates, audit_log->users
 [] JSONB columns exist for messages.entities, sessions.slots, audit_log.details; response_templates.available_variables is a string array
 [] Enum/check constraints: messages.sender in {user,bot}; intents.intent_type in {dynamic_workflow,static_faq}; role_pack in {hr,it,admissions}
@@ -47,12 +47,12 @@ ACCEPTANCE CRITERIA (convert to checklist in Jira):
 OUT OF SCOPE:
 - Seeding role-pack intents/phrases/templates (each role owner's own slice)
 - Business logic, CRUD endpoints beyond the migration
-- Provisioning the Neon instance itself (slice-30)
+- Provisioning local PostgreSQL through Docker Compose (slice-27)
 
 MOCKUP / REFERENCE: No UI surface
 
 HUMAN REVIEW REQUIRED: Yes"
-SCRUM-11,slice-27-docker-compose,Task,EPIC-1: Deployed Walking Skeleton & CD Pipeline,slice-27,Sprint 1,Highest,Mohammed Tahir Siddique,Platform — Tahir,module-infra-docker;light-review;infra;owner-d,5,"WHAT TO BUILD:
+SCRUM-11,slice-27-docker-compose,Task,EPIC-1: Local Walking Skeleton & CI Pipeline,slice-27,Sprint 1,Highest,Mohammed Tahir Siddique,Platform — Tahir,module-infra-docker;light-review;infra;owner-d,5,"WHAT TO BUILD:
 - docker-compose.yml: frontend, gateway, rasa-hr/it/admissions, mock-auth/hrms/itsm/admissions, postgres
 - Dockerfile for frontend and backend at minimum; stub images ok for Rasa/mocks
 - Env wiring via .env matching .env.example
@@ -66,38 +66,38 @@ ACCEPTANCE CRITERIA (convert to checklist in Jira):
 [] README documents boot steps and ports
 
 OUT OF SCOPE:
-- Production orchestration on OCI (slice-29)
+- Cloud hosting is retired; local Compose remains in scope
 - CI/CD (slice-28)
 - Kubernetes / non-Compose orchestrator
 
 MOCKUP / REFERENCE: No UI surface
 
 HUMAN REVIEW REQUIRED: Light"
-SCRUM-12,slice-28-cicd,Task,EPIC-1: Deployed Walking Skeleton & CD Pipeline,slice-28,Sprint 1,High,Rohith G.S,IT — Rohith,module-infra-cicd;needs-human-review;secrets;infra;owner-b,5,"WHAT TO BUILD:
+SCRUM-12,slice-28-cicd,Task,EPIC-1: Local Walking Skeleton & CI Pipeline,slice-28,Sprint 1,High,Rohith G.S,IT — Rohith,module-infra-cicd;needs-human-review;secrets;infra;owner-b,5,"WHAT TO BUILD:
 - ci.yml (on PR): install, lint, pytest, Jest/RTL, build both
-- deploy.yml (on push to main): deploy backend to OCI target, frontend to Vercel
+- No cloud deployment workflow; CI validates tests, lint and builds
 - Branch protection on main: require CI pass + PR review
 - All credentials from GitHub Actions secrets, nothing committed
 
 ACCEPTANCE CRITERIA (convert to checklist in Jira):
 [] PR opened/updated -> CI runs pytest+Jest+lint+build; failing check blocks merge
 [] main branch protection requires passing CI + >=1 review
-[] Merge to main triggers deploy workflow -> frontend to Vercel, backend to OCI
-[] A trivial visible change merged to main appears on the live production URL
+[] Merge to main runs CI; local Compose is the runtime
+[] A trivial visible change is verified in the local application
 [] Every credential/token read from GitHub Actions secrets; none in repo
 
 OUT OF SCOPE:
-- Provisioning the deploy targets themselves (slice-29, slice-30)
+- Cloud deployment targets are retired (Slices 29 and 30)
 - SonarQube/static-analysis gate (note as follow-up only)
 - Coverage thresholds, blue/green or canary deploys
 
 MOCKUP / REFERENCE: No UI surface
 
 HUMAN REVIEW REQUIRED: Yes"
-SCRUM-13,slice-29-oci-cloudflare,Task,EPIC-1: Deployed Walking Skeleton & CD Pipeline,slice-29,Sprint 1,Highest,PAVAN KISHOR M,HR — Kishor,module-infra-hosting;needs-human-review;secrets;infra;owner-a,5,"WHAT TO BUILD:
-- Provisioned OCI Ampere A1 VM (Always-Free) with Docker installed
-- Backend stack running on it via compose prod profile
-- Cloudflare Tunnel mapping a stable public hostname -> backend, HTTPS termination
+SCRUM-13,slice-29-oci-cloudflare,Task,EPIC-1: Local Walking Skeleton & CI Pipeline,slice-29,Sprint 1,Highest,PAVAN KISHOR M,HR — Kishor,module-infra-hosting;needs-human-review;secrets;infra;owner-a,5,"WHAT TO BUILD:
+- RETIRED: no OCI VM; use local Docker Compose
+- RETIRED: run the backend stack locally via Docker Compose
+- RETIRED: no permanent Cloudflare Tunnel or public backend hostname -> backend, HTTPS termination
 - Persistence across reboot via systemd units / restart policies
 - docs/deploy-backend.md documenting host, tunnel hostname, and how CI deploys
 
@@ -116,9 +116,9 @@ OUT OF SCOPE:
 MOCKUP / REFERENCE: No UI surface
 
 HUMAN REVIEW REQUIRED: Yes"
-SCRUM-14,slice-30-vercel-neon,Task,EPIC-1: Deployed Walking Skeleton & CD Pipeline,slice-30,Sprint 1,High,Mitesh,Admissions — Mitesh,module-infra-hosting;needs-human-review;secrets;infra;owner-c,5,"WHAT TO BUILD:
+SCRUM-14,slice-30-vercel-neon,Task,EPIC-1: Local Walking Skeleton & CI Pipeline,slice-30,Sprint 1,High,Mitesh,Admissions — Mitesh,module-infra-hosting;needs-human-review;secrets;infra;owner-c,5,"WHAT TO BUILD:
 - Vercel project linked to repo, NEXT_PUBLIC_API_BASE_URL pointing at Cloudflare-tunneled backend
-- Neon project with separate dev and prod databases/branches + connection strings
+- RETIRED: use local PostgreSQL/branches + connection strings
 - Env wiring: DATABASE_URL to backend/migrations; Vercel env vars for frontend
 - Confirm .env.example lists every variable introduced
 

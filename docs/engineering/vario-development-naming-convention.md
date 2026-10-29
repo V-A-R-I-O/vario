@@ -73,8 +73,8 @@ Examples:
 
 ```text
 feature/scrum-12-slice-28-cicd
-feature/scrum-13-slice-29-oci-cloudflare
-feature/scrum-14-slice-30-vercel-neon
+docs/scrum-13-slice-29-retired
+docs/scrum-14-slice-30-retired
 ```
 
 For bug fixes:
@@ -147,7 +147,7 @@ Additional examples:
 SCRUM-12 slice-28-cicd: add backend test job
 SCRUM-12 slice-28-cicd: add frontend test job
 SCRUM-12 slice-28-cicd: fix pytest discovery
-SCRUM-13 slice-29-oci-cloudflare: configure OCI deployment
+SCRUM-13 slice-29-oci-cloudflare: retire cloud deployment scope
 ```
 
 ### Commit rules
@@ -200,8 +200,8 @@ Example:
 Other examples:
 
 ```text
-[SCRUM-13] slice-29-oci-cloudflare: configure OCI deployment
-[SCRUM-14] slice-30-vercel-neon: configure frontend deployment
+[SCRUM-13] slice-29-oci-cloudflare: retire cloud deployment scope
+[SCRUM-14] slice-30-vercel-neon: retire cloud deployment scope
 ```
 
 The Jira key in the PR title is the **primary integration mechanism**.
@@ -431,8 +431,8 @@ Examples:
 
 ```text
 slice-28-cicd
-slice-29-oci-cloudflare
-slice-30-vercel-neon
+slice-29-oci-cloudflare (retired)
+slice-30-vercel-neon (retired)
 ```
 
 Do not invent alternate names for an existing slice.
@@ -485,8 +485,7 @@ Example:
 ```markdown
 ## Dependencies
 
-- Depends on SCRUM-13 / Slice 29 for OCI deployment target.
-- Depends on SCRUM-14 / Slice 30 for Vercel deployment target.
+- Slice 29 (OCI/Cloudflare) and Slice 30 (Vercel/Neon) are retired deployment scopes; do not add dependencies on them.
 ```
 
 Do not implement another slice's work inside the current slice merely to remove the dependency.

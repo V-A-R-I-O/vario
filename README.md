@@ -1,6 +1,6 @@
 # V.A.R.I.O. (Voice Adaptive Role & Intent Orchestrator)
 
-> **Status:** Planning complete. Development is about to begin with Sprint 1.
+> **Status:** Local-first implementation and demo. Docker Compose is the runtime; GitHub Actions is used for CI.
 
 ---
 
@@ -10,14 +10,14 @@ V.A.R.I.O. is a role-specific, context-aware conversational framework designed t
 
 ## Current Status
 
-Planning and documentation are complete. The product requirements, architecture, API contract, and UI reference are finalized, and the work has been broken down into sprints and vertical slices. Implementation has not started yet.
+The product is developed and demonstrated locally. Use the setup steps below and the Slice 34 local-demo runbook for the complete demo.
 
 * **Version:** `0.1.0-dev`
 * **Development Phase:** Sprint 1 — Foundations & Infrastructure
 
 ## Upcoming Milestones
 
-* Standing up the deployment pipeline and walking skeleton (Sprint 1)
+* Verifying the local walking skeleton and CI pipeline (Sprint 1)
 * Building the three role packs and their read flows (Sprint 2)
 * Implementing write workflows, the admin console, and voice (Sprint 3)
 * Cross-cutting services, hardening, and demo (Sprint 4)
@@ -45,7 +45,7 @@ cp .env.example .env
 docker compose up
 ```
 
-This brings up the **core services** — Postgres, the FastAPI backend (gateway), the Next.js frontend, and the mock-auth service. All data is persisted in a Docker volume (`pgdata`).
+This brings up the local core services — PostgreSQL, the FastAPI gateway, Next.js frontend and mock-auth. Data is persisted in the `pgdata` Docker volume.
 
 ### Starting the Full Stack (including stubs)
 
@@ -55,7 +55,7 @@ To also start the stub services (Rasa instances and remaining mock services):
 docker compose --profile full up
 ```
 
-> **Note:** Rasa images are large (~2 GB). The first pull will take a few minutes. Stub services will be replaced with real implementations as their slices land.
+> **Note:** Rasa images are large (~2 GB). The first pull will take a few minutes. Services are brought to their intended local implementations through the planned slices.
 
 ### Stopping the Stack
 
@@ -85,4 +85,4 @@ All configuration is read from `.env` — see [`.env.example`](.env.example) for
 
 ---
 
-*Planning docs live in `docs/`. Starting Sprint 1*
+Project decisions and slice documentation live in `docs/`; see `docs/slices/slice-34-local-demo-stack.md` for the full local demo runbook.
