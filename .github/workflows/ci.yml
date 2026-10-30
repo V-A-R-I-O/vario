@@ -111,8 +111,7 @@ jobs:
         service:
           - rasa-hr
           - rasa-admissions
-    # IT role-pack CI is being introduced with Slice 17 PR #40; keep this
-    # matrix limited to services present on main to avoid a broken checkout.
+    # IT uses a separate Python 3.10 job because Rasa 3.6 is not supported on Python 3.11.
 
     steps:
       - name: Check out repository
