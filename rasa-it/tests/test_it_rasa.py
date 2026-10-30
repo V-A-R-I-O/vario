@@ -156,3 +156,18 @@ def test_rasa_runtime_versions_are_pinned_to_supported_python_contract():
     assert "rasa==3.6.20" in requirements
     assert "rasa-sdk==3.6.2" in requirements
     assert 'python-version: "3.10"' in workflow
+
+
+@pytest.mark.asyncio
+async def test_status_action_clears_previous_ticket_slots_after_lookup():
+    tracker = FakeTracker({"ticket_id": "IT-1002", "status": "In Progress"})
+    dispatcher = FakeDispatcher()
+    with patch(
+        "actions.actions.ITSMAdapter.get_ticket_status",
+        new_callable=AsyncMock,
+        return_value={"found": True, "ticket_id": "IT-1002", "status": "Open"},
+    ):
+        events = await ActionCheckTicketStatus().run(dispatcher, tracker, {})
+    cleared = {event.get("name") for event in events if event.get("value") is None}
+    assert {"ticket_id", "status"} <= cleared
+    assert "IT-1002" in dispatcher.messages[0]["text"]
