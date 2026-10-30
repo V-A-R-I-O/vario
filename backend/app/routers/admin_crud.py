@@ -14,6 +14,7 @@ admins own their static FAQs:
 Variant generation / "Generate Similar" go through the rephraser seam
 (`services.rephraser.client`), which is a passthrough until slice-09.
 """
+import logging
 import re
 from typing import List, Optional
 
@@ -47,8 +48,11 @@ from app.schemas.admin import (
     VariantResponse,
     VariantUpdate,
 )
-from app.services import rephraser, audit_log_service
+from app.services import logging
+import rephraser, audit_log_service
 from app.services.admin_guard import AdminContext, require_admin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -142,9 +146,13 @@ async def _intent_out(db: AsyncSession, intent: Intent) -> IntentOut:
 
 async def _create_variants(db: AsyncSession, template: ResponseTemplate) -> None:
     """(Re)create variants for a template via the rephraser seam, position-ordered."""
-    texts = await rephraser.client.generate_variants(
-        template.base_text, list(template.available_variables or [])
-    )
+    if not template.allow_rephrasing:
+        texts = [template.base_text]
+    else:
+        texts = await rephraser.client.generate_variants(
+            template.base_text, list(template.available_variables or [])
+        )
+
     for i, text in enumerate(texts):
         db.add(ResponseVariant(template_id=template.template_id, variant_text=text, position=i))
 
