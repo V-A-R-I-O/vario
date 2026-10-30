@@ -109,3 +109,13 @@ async def test_reset_adapter_rejects_unverified_identity():
         mock_post.return_value = httpx.Response(403, json={"detail": "Identity verification is required."})
         with pytest.raises(IdentityVerificationError):
             await ITSMAdapter.reset_password("EMP-1042")
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_rejects_null_inputs_without_http_call():
+    from actions.itsm_adapter import TicketCreationRejectedError
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        with pytest.raises(TicketCreationRejectedError, match="required"):
+            await ITSMAdapter.create_ticket(None, "description", "EMP-1042")
+    mock_post.assert_not_awaited()
