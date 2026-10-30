@@ -12,6 +12,12 @@ INITIAL_EMPLOYEES: Dict[str, Dict[str, str]] = {
     "EMP-1001": {"employee_id": "EMP-1001", "security_question": "What was the name of your first school?", "security_answer": "sunrise"},
     "EMP-1042": {"employee_id": "EMP-1042", "security_question": "What city were you born in?", "security_answer": "mysuru"},
     "EMP-2001": {"employee_id": "EMP-2001", "security_question": "What is your favorite book?", "security_answer": "the hobbit"},
+    "EMP-3001": {"employee_id": "EMP-3001", "security_question": "What was your first work location?", "security_answer": "north campus"},
+    "EMP-4001": {"employee_id": "EMP-4001", "security_question": "What was your first work location?", "security_answer": "south campus"},
+    "EMP-1010": {"employee_id": "EMP-1010", "security_question": "What was your first work location?", "security_answer": "north campus"},
+    "EMP-1011": {"employee_id": "EMP-1011", "security_question": "What was your first work location?", "security_answer": "north campus"},
+    "EMP-1012": {"employee_id": "EMP-1012", "security_question": "What was your first work location?", "security_answer": "north campus"},
+    "EMP-1013": {"employee_id": "EMP-1013", "security_question": "What was your first work location?", "security_answer": "north campus"},
 }
 
 TICKETS = copy.deepcopy(INITIAL_TICKETS)
