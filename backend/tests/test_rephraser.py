@@ -103,3 +103,22 @@ async def test_passthrough_rephraser():
     assert variants == ["Hello {name}"]
 
     phrases = await p.generate_phrases(["Seed phrase"], count=8)
+    assert phrases == []
+
+
+# --- Unit Tests: GeminiRephraser --------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_gemini_missing_api_key_graceful(monkeypatch):
+    """AC: If GEMINI_API_KEY is unset, degrades gracefully to base text and empty list."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    client = GeminiRephraser(api_key="")
+    assert client.api_key == ""
+
+    variants = await client.generate_variants("Your balance is {balance}.", ["balance"])
+    assert variants == ["Your balance is {balance}."]
+
+    phrases = await client.generate_phrases(["Seed 1"], count=8)
+    assert phrases == []
+
