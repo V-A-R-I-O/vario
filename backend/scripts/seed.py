@@ -440,6 +440,97 @@ async def seed_hr_data(session: AsyncSession):
         if not existing_variant.scalar_one_or_none():
             session.add(ResponseVariant(template_id=wfh_tmpl.template_id, variant_text=variant_text))
 
+    # 13. Topic-Specific Policy Templates (slice-36)
+    topic_templates = [
+        (
+            "ask_maternity_policy_response",
+            "Primary caregivers receive 26 weeks of paid maternity and adoption leave.",
+            [
+                "Primary caregivers receive 26 weeks of paid maternity and adoption leave.",
+                "Our parental policy provides 26 weeks of fully paid maternity leave for primary caregivers.",
+                "Eligible employees are entitled to 26 weeks of paid maternity and adoption leave.",
+                "Under company policy, primary caregivers get 26 weeks of paid maternity leave.",
+                "The maternity benefit includes 26 weeks of paid leave for primary caregivers and adoptive parents.",
+            ],
+            ["is_faq"],
+        ),
+        (
+            "ask_paternity_policy_response",
+            "Secondary caregivers receive 2 weeks of paid paternity leave within the child's first 6 months.",
+            [
+                "Secondary caregivers receive 2 weeks of paid paternity leave within the child's first 6 months.",
+                "Our parental policy provides 2 weeks of paid paternity leave for secondary caregivers.",
+                "Secondary caregivers are entitled to 2 weeks of paid leave within the first 6 months.",
+                "Eligible employees receive 2 weeks of paid paternity leave upon birth or adoption.",
+                "Under company policy, secondary caregivers get 2 weeks of paid leave during the child's first 6 months.",
+            ],
+            ["is_faq"],
+        ),
+        (
+            "ask_sick_policy_response",
+            "Employees are entitled to 10 paid sick days per year. Sick leave exceeding 3 consecutive days requires a medical certificate.",
+            [
+                "Employees are entitled to 10 paid sick days per year. Sick leave exceeding 3 consecutive days requires a medical certificate.",
+                "Under our policy, you get 10 paid sick days annually. A doctor's note is required for absences over 3 consecutive days.",
+                "Employees receive 10 days of paid sick leave per year, with a medical certificate required after 3 consecutive days.",
+                "Our sick leave allotment is 10 paid days per year. Please provide a medical note if taking more than 3 consecutive days.",
+                "The policy grants 10 sick leave days annually. Any leave longer than 3 consecutive days must be supported by a medical certificate.",
+            ],
+            ["is_faq"],
+        ),
+        (
+            "ask_bereavement_policy_response",
+            "Employees are entitled to 5 consecutive business days of paid compassionate leave upon the loss of an immediate family member.",
+            [
+                "Employees are entitled to 5 consecutive business days of paid compassionate leave upon the loss of an immediate family member.",
+                "Our bereavement policy grants 5 consecutive business days of paid leave for immediate family losses.",
+                "You are eligible for 5 consecutive business days of paid compassionate leave in the event of a family bereavement.",
+                "The company provides 5 consecutive business days of paid leave for bereavement following the loss of an immediate family member.",
+                "Under the compassionate leave policy, employees receive 5 consecutive business days of paid leave.",
+            ],
+            ["is_faq"],
+        ),
+        (
+            "ask_carry_forward_policy_response",
+            "Employees may carry forward up to 5 days of unused earned leave into the following calendar year.",
+            [
+                "Employees may carry forward up to 5 days of unused earned leave into the following calendar year.",
+                "Our rollover policy allows up to 5 days of unused earned leave to be carried forward into the next year.",
+                "You can carry over up to 5 days of unused earned leave to the subsequent calendar year.",
+                "Under company rules, a maximum of 5 days of unused earned leave roll over into the new year.",
+                "Unused earned leave may be carried forward up to a cap of 5 days into the following year.",
+            ],
+            ["is_faq"],
+        ),
+    ]
+
+    for tmpl_key, base_text, variants, vars_list in topic_templates:
+        stmt_t = select(ResponseTemplate).where(ResponseTemplate.template_key == tmpl_key)
+        res_t = await session.execute(stmt_t)
+        t_obj = res_t.scalar_one_or_none()
+        if not t_obj:
+            t_obj = ResponseTemplate(
+                role_pack="hr",
+                template_key=tmpl_key,
+                base_text=base_text,
+                allow_rephrasing=True,
+                available_variables=vars_list,
+            )
+            session.add(t_obj)
+            await session.flush()
+            logger.info("Created response template: %s", tmpl_key)
+        else:
+            t_obj.base_text = base_text
+
+        for v_text in variants:
+            v_stmt = select(ResponseVariant).where(
+                ResponseVariant.template_id == t_obj.template_id,
+                ResponseVariant.variant_text == v_text,
+            )
+            existing_v = await session.execute(v_stmt)
+            if not existing_v.scalar_one_or_none():
+                session.add(ResponseVariant(template_id=t_obj.template_id, variant_text=v_text))
+
 
 IT_TICKET_STATUS_PHRASES = [
     "what is the status of my ticket TKT-1234?",
