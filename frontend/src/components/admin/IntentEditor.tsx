@@ -71,6 +71,8 @@ export function IntentEditor({ intentId }: { intentId?: string }) {
   const [variants, setVariants] = useState<Variant[]>([]);
   const [newPhrase, setNewPhrase] = useState('');
   const [suggestions, setSuggestions] = useState<string[] | null>(null);
+  const [editingSuggestionIndex, setEditingSuggestionIndex] = useState<number | null>(null);
+  const [editingSuggestionText, setEditingSuggestionText] = useState('');
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,14 +136,32 @@ export function IntentEditor({ intentId }: { intentId?: string }) {
   const acceptSuggestion = (text: string) => {
     setPhrases((p) => [...p, { phrase_text: text }]);
     setSuggestions((s) => (s ? s.filter((x) => x !== text) : s));
+    if (editingSuggestionIndex !== null) cancelEditSuggestion();
   };
   const rejectSuggestion = (text: string) => {
     setSuggestions((s) => (s ? s.filter((x) => x !== text) : s));
+    if (editingSuggestionIndex !== null) cancelEditSuggestion();
+  };
+  const startEditSuggestion = (idx: number, text: string) => {
+    setEditingSuggestionIndex(idx);
+    setEditingSuggestionText(text);
+  };
+  const cancelEditSuggestion = () => {
+    setEditingSuggestionIndex(null);
+    setEditingSuggestionText('');
+  };
+  const saveEditedSuggestion = (idx: number) => {
+    const text = editingSuggestionText.trim();
+    if (!text) return;
+    setPhrases((p) => [...p, { phrase_text: text }]);
+    setSuggestions((s) => (s ? s.filter((_, i) => i !== idx) : s));
+    cancelEditSuggestion();
   };
   const acceptAll = () => {
     if (!suggestions) return;
     setPhrases((p) => [...p, ...suggestions.map((phrase_text) => ({ phrase_text }))]);
     setSuggestions([]);
+    cancelEditSuggestion();
   };
 
   const editVariantText = (id: string, text: string) => {
