@@ -200,3 +200,163 @@ def test_artificial_delay():
     elapsed = time.perf_counter() - start
     assert res.status_code == 200
     assert elapsed >= 0.08
+
+
+def test_n6_reset_restores_balances_and_reference_counter():
+    """
+    Defect N6:
+    1. Submit a leave (balance drops, counter increments).
+    2. POST /reset.
+    3. Check balance and submit again.
+    Expected: Balance returns to pristine seed values and counter resets cleanly.
+    """
+    # 0. Ensure clean state
+    reset_res = client.post("/reset")
+    assert reset_res.status_code == 200
+
+    bal_before = client.get("/employees/EMP-1001/leave-balance").json()
+    assert bal_before["breakdown"]["casual"] == 6
+    assert bal_before["total"] == 28
+
+    # 1. Submit leave
+    payload = {
+        "employee_id": "EMP-1001",
+        "leave_type": "casual",
+        "start_date": "2026-11-10",
+        "end_date": "2026-11-11",
+        "reason": "Doctor appointment",
+    }
+    submit1 = client.post("/leave/submit", json=payload)
+    assert submit1.status_code == 201
+    assert submit1.json()["reference_id"] == "LEAVE-2032"
+    assert submit1.json()["remaining_balance"]["breakdown"]["casual"] == 4
+
+    bal_reduced = client.get("/employees/EMP-1001/leave-balance").json()
+    assert bal_reduced["breakdown"]["casual"] == 4
+
+    # 2. POST /reset
+    res = client.post("/reset")
+    assert res.status_code == 200
+
+    # 3. Check balance is restored
+    bal_after = client.get("/employees/EMP-1001/leave-balance").json()
+    assert bal_after["breakdown"]["casual"] == 6
+    assert bal_after["total"] == 28
+
+    # Submit again and verify reference counter and balance
+    submit2 = client.post("/leave/submit", json=payload)
+    assert submit2.status_code == 201
+    assert submit2.json()["reference_id"] == "LEAVE-2032"
+    assert submit2.json()["remaining_balance"]["breakdown"]["casual"] == 4
+
+
+def test_n7_reject_invalid_leave_requests():
+    """
+    Defect N7:
+    Reject past dates, end-before-start, and requests exceeding the balance with a clear error.
+    Repro step: POST a 90-day leave in 2020 for an employee with 6 days left.
+    """
+    client.post("/reset")
+
+    # Repro step 1: 90-day leave in 2020 for EMP-1001 (who has 6 days casual)
+    repro_payload = {
+        "employee_id": "EMP-1001",
+        "leave_type": "casual",
+        "start_date": "2020-01-01",
+        "end_date": "2020-03-31",
+        "reason": "Invalid past 90-day leave",
+    }
+    res = client.post("/leave/submit", json=repro_payload)
+    assert res.status_code == 400
+    assert "past" in res.json()["detail"].lower()
+
+    # Exceeding balance in future
+    exceed_payload = {
+        "employee_id": "EMP-1001",
+        "leave_type": "casual",
+        "start_date": "2026-11-01",
+        "end_date": "2026-11-10",  # 10 days, but only 6 casual days available
+        "reason": "Exceeding casual quota",
+    }
+    res_exceed = client.post("/leave/submit", json=exceed_payload)
+    assert res_exceed.status_code == 400
+    assert "insufficient casual leave balance" in res_exceed.json()["detail"].lower()
+
+    # End before start
+    end_before_start = {
+        "employee_id": "EMP-1001",
+        "leave_type": "sick",
+        "start_date": "2026-11-20",
+        "end_date": "2026-11-15",
+        "reason": "Backward dates",
+    }
+    res_range = client.post("/leave/submit", json=end_before_start)
+    assert res_range.status_code == 400
+    assert "cannot be after" in res_range.json()["detail"].lower()
+
+
+def test_m7a_topic_specific_policies_lookup():
+    """
+    Defect M7a: Single source of truth for all policy topics.
+    Maternity: 26 weeks
+    Paternity: 2 weeks
+    Bereavement: 5 days
+    Sick: 10 days
+    Carry-forward: 5 days
+    WFH: 2 days/week
+    Leave: 8 casual, 10 sick, 15 earned
+    """
+    client.post("/reset")
+
+    # Maternity
+    mat = client.get("/policies/maternity-policy").json()
+    assert mat["weeks"] == 26
+    assert "26 weeks" in mat["details"]
+
+    mat_alias = client.get("/policies/maternity").json()
+    assert mat_alias["weeks"] == 26
+
+    # Paternity
+    pat = client.get("/policies/paternity-policy").json()
+    assert pat["weeks"] == 2
+    assert "2 weeks" in pat["details"]
+
+    # Sick
+    sick = client.get("/policies/sick-leave-policy").json()
+    assert sick["days"] == 10
+    assert "10 paid sick days" in sick["details"]
+
+    # Bereavement
+    ber = client.get("/policies/bereavement-leave").json()
+    assert ber["days"] == 5
+    assert "5 consecutive business days" in ber["details"]
+
+    # Carry forward
+    cf = client.get("/policies/carry-forward-policy").json()
+    assert cf["days"] == 5
+    assert "5 days" in cf["details"]
+
+    # WFH
+    wfh = client.get("/policies/wfh-policy").json()
+    assert wfh["max_wfh_days_per_week"] == 2
+    assert "up to 2 days per week" in wfh["details"]
+
+    # Leave policy
+    lp = client.get("/policies/leave-policy").json()
+    assert lp["quota"] == {"casual": 8, "sick": 10, "earned": 15}
+    assert lp["carry_forward_days"] == 5
+
+
+def test_mock_auth_presenter_accounts_covered_in_hrms():
+    """
+    Slice-36 requirement: HRMS seed covers every mock-auth login.
+    """
+    client.post("/reset")
+    presenters = ["EMP-1001", "EMP-2001", "EMP-3001", "EMP-4001", "EMP-1010", "EMP-1011", "EMP-1012", "EMP-1013"]
+    for emp_id in presenters:
+        res = client.get(f"/employees/{emp_id}/leave-balance")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["employee_id"] == emp_id
+        assert data["total"] > 0
+

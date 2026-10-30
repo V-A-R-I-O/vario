@@ -6,6 +6,11 @@ stories:
       - intent: check_leave_balance
       - action: action_check_leave_balance
 
+  - story: Direct leave status inquiry
+    steps:
+      - intent: ask_leave_status
+      - action: action_ask_leave_status
+
   - story: Greet then ask leave balance
     steps:
       - intent: greet

@@ -130,7 +130,7 @@ async def get_leave_balance(
             detail={"message": "Employee ID cannot be empty.", "employee_id": employee_id},
         )
 
-    emp = EMPLOYEES.get(norm_id)
+    emp = sd.EMPLOYEES.get(norm_id)
     if not emp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -170,7 +170,7 @@ async def get_leave_status(
             detail={"message": "Employee ID cannot be empty.", "employee_id": employee_id},
         )
 
-    emp = EMPLOYEES.get(norm_id)
+    emp = sd.EMPLOYEES.get(norm_id)
     if not emp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -205,7 +205,7 @@ async def submit_leave(
             detail={"message": "Employee ID cannot be empty.", "employee_id": target_emp_id},
         )
 
-    emp = EMPLOYEES.get(norm_id)
+    emp = sd.EMPLOYEES.get(norm_id)
     if not emp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -239,6 +239,14 @@ async def submit_leave(
             detail=f"Invalid end_date '{req.end_date}'. Must be in YYYY-MM-DD format.",
         )
 
+    # Reject past start dates (N7)
+    if s_date < date.today():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"start_date ({req.start_date}) cannot be in the past.",
+        )
+
+    # Reject end before start (N7)
     if s_date > e_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -246,6 +254,14 @@ async def submit_leave(
         )
 
     duration_days = (e_date - s_date).days + 1
+
+    # Reject requests exceeding available balance (N7)
+    current_val = emp["leave_balances"].get(norm_type, 0)
+    if duration_days > current_val:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Insufficient {norm_type} leave balance. Requested {duration_days} days, but only {current_val} days available.",
+        )
 
     # Generate reference ID
     sd.LEAVE_COUNTER += 1
@@ -266,8 +282,7 @@ async def submit_leave(
     emp["leave_history"].append(record)
 
     # Deduct balance
-    current_val = emp["leave_balances"].get(norm_type, 0)
-    emp["leave_balances"][norm_type] = max(0, current_val - duration_days)
+    emp["leave_balances"][norm_type] = current_val - duration_days
     emp["total"] = sum(emp["leave_balances"].values())
 
     return {
@@ -287,15 +302,39 @@ async def submit_leave(
     }
 
 
+POLICY_KEY_ALIASES = {
+    "maternity": "maternity-policy",
+    "maternity-policy": "maternity-policy",
+    "paternity": "paternity-policy",
+    "paternity-policy": "paternity-policy",
+    "parental": "parental-leave",
+    "parental-leave": "parental-leave",
+    "sick": "sick-leave-policy",
+    "sick-leave": "sick-leave-policy",
+    "sick-leave-policy": "sick-leave-policy",
+    "bereavement": "bereavement-leave",
+    "bereavement-leave": "bereavement-leave",
+    "carry-forward": "carry-forward-policy",
+    "carry-forward-policy": "carry-forward-policy",
+    "carryover": "carry-forward-policy",
+    "wfh": "wfh-policy",
+    "wfh-policy": "wfh-policy",
+    "leave": "leave-policy",
+    "leave-policy": "leave-policy",
+    "annual": "leave-policy",
+}
+
+
 @app.get("/policies")
 async def list_policies() -> Dict[str, Any]:
-    return {"policies": list(POLICIES.values())}
+    return {"policies": list(sd.POLICIES.values())}
 
 
 @app.get("/policies/{policy_id}")
 async def get_policy(policy_id: str) -> Dict[str, Any]:
     norm_key = (policy_id or "").strip().lower()
-    policy = POLICIES.get(norm_key)
+    target_key = POLICY_KEY_ALIASES.get(norm_key, norm_key)
+    policy = sd.POLICIES.get(target_key)
     if not policy:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

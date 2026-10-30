@@ -110,7 +110,7 @@ def classify_message_local(
         entities["start_date"] = m_date.group(1)
 
     # Specific topic extraction for policy questions
-    for topic in ["maternity", "paternity", "bereavement", "carryover", "carry forward", "sick", "annual", "casual"]:
+    for topic in ["maternity", "paternity", "bereavement", "carryover", "carry forward", "carry-forward", "sick", "annual", "casual"]:
         if topic in clean:
             entities["policy_topic"] = "carryover" if "carry" in topic else topic
             break
@@ -158,6 +158,20 @@ def classify_message_local(
 
     if ("how many" in clean or "how much" in clean or "check" in clean or "show" in clean) and any(k in clean for k in ["leave", "leaves", "pto", "vacation", "time off"]):
         return "check_leave_balance", 0.95, entities
+
+    # Leave status (FR-6 / N8)
+    status_triggers = [
+        "has my leave been approved", "is my leave approved", "status of my leave",
+        "leave request status", "check status of my leave", "check my leave application status",
+        "did my manager approve my leave", "where does my leave request stand",
+        "has my leave request been accepted", "track my leave", "leave application status"
+    ]
+    if any(k in clean for k in status_triggers) or ("status" in clean and any(k in clean for k in ["leave", "application", "request"])):
+        # Extract reference_id if present (e.g. LEAVE-2031)
+        m_ref = re.search(r"\b(leave-\d+)\b", clean)
+        if m_ref:
+            entities["reference_id"] = m_ref.group(1).upper()
+        return "ask_leave_status", 0.95, entities
 
     # Submit leave request
     request_triggers = ["apply for leave", "submit a leave request", "submit leave", "request time off", "need to take leave", "book leave", "apply for vacation", "apply for casual", "apply for sick", "apply for annual"]
@@ -275,9 +289,9 @@ async def converse(request: Request):
             card=None,
         )
 
-    # 4. Handle WFH policy
+    # 4. Handle WFH policy (M7a)
     if intent == "ask_wfh_policy":
-        text = "Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location."
+        text = "Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM."
         return ConverseResponse(
             intent="ask_wfh_policy",
             confidence=confidence,
@@ -294,34 +308,52 @@ async def converse(request: Request):
             },
         )
 
-    # 5. Handle Policy FAQ
+    # 5. Handle Policy FAQ (M4b, M7a)
     if intent == "ask_policy_faq":
         topic = entities.get("policy_topic") or slots.get("policy_topic")
         if topic == "maternity":
-            text = "Eligible employees are entitled to 12 weeks of paid maternity leave."
+            text = "Primary caregivers receive 26 weeks of paid maternity and adoption leave."
+            tmpl_key = "ask_maternity_policy_response"
+            card_title = "Maternity Leave Policy"
             resp_slots = {"policy_topic": "maternity", "is_faq": True}
         elif topic == "paternity":
-            text = "Eligible employees receive 2 weeks of paid paternity leave upon the birth or adoption of a child."
+            text = "Secondary caregivers receive 2 weeks of paid paternity leave within the child's first 6 months."
+            tmpl_key = "ask_paternity_policy_response"
+            card_title = "Paternity Leave Policy"
             resp_slots = {"policy_topic": "paternity", "is_faq": True}
+        elif topic == "sick":
+            text = "Employees are entitled to 10 paid sick days per year. Sick leave exceeding 3 consecutive days requires a medical certificate."
+            tmpl_key = "ask_sick_policy_response"
+            card_title = "Sick Leave Policy"
+            resp_slots = {"policy_topic": "sick", "is_faq": True}
         elif topic == "bereavement":
-            text = "Employees are granted up to 3 days of paid bereavement leave in the event of an immediate family loss."
+            text = "Employees are entitled to 5 consecutive business days of paid compassionate leave upon the loss of an immediate family member."
+            tmpl_key = "ask_bereavement_policy_response"
+            card_title = "Bereavement Leave Policy"
             resp_slots = {"policy_topic": "bereavement", "is_faq": True}
+        elif topic in ("carryover", "carry-forward", "carry forward"):
+            text = "Employees may carry forward up to 5 days of unused earned leave into the following calendar year."
+            tmpl_key = "ask_carry_forward_policy_response"
+            card_title = "Leave Carry-Forward Policy"
+            resp_slots = {"policy_topic": "carryover", "is_faq": True}
         else:
-            text = "Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days."
+            text = "Employees are entitled to 8 casual days, 10 sick days, and 15 earned days annually. Unused earned leaves can be carried forward up to 5 days."
+            tmpl_key = "ask_policy_faq_response"
+            card_title = "Company Leave Policy"
             resp_slots = {"is_faq": True}
 
         return ConverseResponse(
             intent="ask_policy_faq",
             confidence=confidence,
             entities=entities,
-            template_key="ask_policy_faq_response",
+            template_key=tmpl_key,
             slots=resp_slots,
             current_form=None,
             current_step=None,
             response_text=text,
             card={
                 "type": "faq_answer",
-                "title": "Company Leave Policy",
+                "title": card_title,
                 "text": text,
             },
         )
@@ -422,6 +454,99 @@ async def converse(request: Request):
             current_form=None,
             current_step=None,
             response_text=text,
+            card=card,
+        )
+
+    # 7.5. Handle Ask Leave Status (FR-6 / Defect N8)
+    if intent == "ask_leave_status" and not current_form:
+        if not trusted_emp_id:
+            msg = "Please log in to your employee account to check your leave request status."
+            return ConverseResponse(
+                intent="ask_leave_status",
+                confidence=confidence,
+                entities={},
+                template_key=None,
+                slots={},
+                current_form=None,
+                current_step=None,
+                response_text=msg,
+                card={"type": "error", "text": msg},
+            )
+
+        ref_filter = entities.get("reference_id")
+        try:
+            status_data = await HRMSAdapter.get_leave_status(trusted_emp_id, reference_id=ref_filter)
+        except BackendUnavailableError:
+            msg = "The HR system is currently unavailable. Please try again in a moment."
+            return ConverseResponse(
+                intent="ask_leave_status",
+                confidence=confidence,
+                entities={},
+                template_key=None,
+                slots={},
+                current_form=None,
+                current_step=None,
+                response_text=msg,
+                card={"type": "error", "text": msg},
+            )
+
+        applications = status_data.get("applications", [])
+        if not applications:
+            no_req_text = "You do not have any submitted leave applications on record."
+            if ref_filter:
+                no_req_text = f"Leave request '{ref_filter}' was not found for your account."
+            return ConverseResponse(
+                intent="ask_leave_status",
+                confidence=confidence,
+                entities=entities,
+                template_key="ask_leave_status_not_found_response",
+                slots={"reference_id": ref_filter, "employee_id": trusted_emp_id},
+                current_form=None,
+                current_step=None,
+                response_text=no_req_text,
+                card={"type": "not_found", "text": no_req_text},
+            )
+
+        # Show latest application (or referenced application)
+        latest_app = applications[-1]
+        ref_id = latest_app.get("reference_id", "N/A")
+        l_type = latest_app.get("leave_type", "leave").capitalize()
+        app_status = latest_app.get("status", "unknown").capitalize()
+        s_date = latest_app.get("start_date", "")
+        e_date = latest_app.get("end_date", "")
+        days = latest_app.get("days", 1)
+        reason = latest_app.get("reason", "")
+
+        status_text = f"Your {l_type.lower()} leave request ({ref_id}) from {s_date} to {e_date} is currently {app_status.lower()}."
+        card = {
+            "type": "data_card",
+            "title": f"Leave Request Status: {ref_id}",
+            "rows": [
+                {"label": "Reference ID", "value": ref_id},
+                {"label": "Leave Type", "value": l_type},
+                {"label": "Dates", "value": f"{s_date} to {e_date} ({days} days)"},
+                {"label": "Status", "value": app_status},
+                {"label": "Reason", "value": reason or "N/A"},
+            ],
+        }
+
+        return ConverseResponse(
+            intent="ask_leave_status",
+            confidence=confidence,
+            entities=entities,
+            template_key="ask_leave_status_response",
+            slots={
+                "reference_id": ref_id,
+                "leave_type": l_type.lower(),
+                "status": app_status.lower(),
+                "start_date": s_date,
+                "end_date": e_date,
+                "days": days,
+                "employee_id": trusted_emp_id,
+            },
+            current_form=None,
+            current_step=None,
+            response_text=status_text,
             card=card,
         )
 

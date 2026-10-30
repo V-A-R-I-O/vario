@@ -100,21 +100,46 @@ async def seed_hr_data(session: AsyncSession):
         if not existing.scalar_one_or_none():
             session.add(TrainingPhrase(intent_id=status_intent.intent_id, phrase_text=phrase_text))
 
-    # 2. Stub Intent: ask_leave_status (placeholder for later slice)
+    # 2. Intent: ask_leave_status (FR-6)
     stmt_status = select(Intent).where(Intent.name == "ask_leave_status")
     res_status = await session.execute(stmt_status)
-    if not res_status.scalar_one_or_none():
-        status_stub = Intent(
+    status_intent = res_status.scalar_one_or_none()
+    if not status_intent:
+        status_intent = Intent(
             role_pack="hr",
             name="ask_leave_status",
             intent_type="dynamic_workflow",
             needs_retrain=False,
         )
-        session.add(status_stub)
+        session.add(status_intent)
         await session.flush()
-        session.add(TrainingPhrase(intent_id=status_stub.intent_id, phrase_text="what is the status of my leave request?"))
-        session.add(TrainingPhrase(intent_id=status_stub.intent_id, phrase_text="check my leave application status"))
-        logger.info("Created stub intent: ask_leave_status")
+        logger.info("Created intent: ask_leave_status")
+
+    leave_status_phrases = [
+        "has my leave been approved?",
+        "what is the status of my leave request?",
+        "check my leave application status",
+        "is my leave approved?",
+        "status of my leave",
+        "leave request status",
+        "check status of my leave",
+        "did my manager approve my leave?",
+        "where does my leave request stand?",
+        "has my leave request been accepted?",
+        "check status of LEAVE-2031",
+        "is LEAVE-2015 approved?",
+        "what is the status of LEAVE-2032?",
+        "can you track my leave application?",
+        "tell me if my leave is approved",
+    ]
+    for phrase_text in leave_status_phrases:
+        phrase_stmt = select(TrainingPhrase).where(
+            TrainingPhrase.intent_id == status_intent.intent_id,
+            TrainingPhrase.phrase_text == phrase_text,
+        )
+        existing = await session.execute(phrase_stmt)
+        if not existing.scalar_one_or_none():
+            session.add(TrainingPhrase(intent_id=status_intent.intent_id, phrase_text=phrase_text))
 
     # 3. Intent: submit_leave_request (slice-15)
     stmt_req = select(Intent).where(Intent.name == "submit_leave_request")
@@ -377,7 +402,7 @@ async def seed_hr_data(session: AsyncSession):
         await session.flush()
         logger.info("Created response template: submit_leave_cancelled")
 
-    # 11. Response Template: ask_policy_faq_response (slice-16)
+    # 11. Response Template: ask_policy_faq_response (slice-16 / slice-36)
     stmt_policy_tmpl = select(ResponseTemplate).where(
         ResponseTemplate.template_key == "ask_policy_faq_response"
     )
@@ -387,20 +412,22 @@ async def seed_hr_data(session: AsyncSession):
         policy_tmpl = ResponseTemplate(
             role_pack="hr",
             template_key="ask_policy_faq_response",
-            base_text="Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days.",
+            base_text="Employees are entitled to 8 casual days, 10 sick days, and 15 earned days annually. Unused earned leaves can be carried forward up to 5 days.",
             allow_rephrasing=True,
             available_variables=[],
         )
         session.add(policy_tmpl)
         await session.flush()
         logger.info("Created response template: ask_policy_faq_response")
+    else:
+        policy_tmpl.base_text = "Employees are entitled to 8 casual days, 10 sick days, and 15 earned days annually. Unused earned leaves can be carried forward up to 5 days."
 
     policy_variants = [
-        "Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days.",
-        "Employees receive 20 annual, 10 sick, and 5 casual leave days annually. Up to 5 unused annual leave days roll over.",
-        "The leave policy provides 20 annual, 10 sick, and 5 casual days per calendar year, with a maximum of 5 annual days carried forward.",
-        "Under our leave policy, you get 20 annual, 10 sick, and 5 casual leave days per year. Unused annual leave carries over up to 5 days.",
-        "Standard leave allotment is 20 annual, 10 sick, and 5 casual days per year. Up to 5 unused annual leave days can be carried forward.",
+        "Employees are entitled to 8 casual days, 10 sick days, and 15 earned days annually. Unused earned leaves can be carried forward up to 5 days.",
+        "Our leave policy provides 8 casual, 10 sick, and 15 earned leave days per year, with up to 5 earned days eligible for carryover.",
+        "Under company policy, you receive 8 casual, 10 sick, and 15 earned days annually. Up to 5 unused earned days can roll over.",
+        "Standard annual allotment is 8 casual, 10 sick, and 15 earned days. You may carry forward up to 5 unused earned days.",
+        "The company grants 8 casual days, 10 sick days, and 15 earned days each calendar year. A maximum of 5 earned days roll over.",
     ]
     for idx, variant_text in enumerate(policy_variants):
         variant_stmt = select(ResponseVariant).where(
@@ -414,7 +441,7 @@ async def seed_hr_data(session: AsyncSession):
         else:
             existing_variant.position = idx
 
-    # 12. Response Template: ask_wfh_policy_response (slice-16)
+    # 12. Response Template: ask_wfh_policy_response (slice-16 / slice-36)
     stmt_wfh_tmpl = select(ResponseTemplate).where(
         ResponseTemplate.template_key == "ask_wfh_policy_response"
     )
@@ -424,20 +451,22 @@ async def seed_hr_data(session: AsyncSession):
         wfh_tmpl = ResponseTemplate(
             role_pack="hr",
             template_key="ask_wfh_policy_response",
-            base_text="Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location.",
+            base_text="Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM.",
             allow_rephrasing=True,
             available_variables=[],
         )
         session.add(wfh_tmpl)
         await session.flush()
         logger.info("Created response template: ask_wfh_policy_response")
+    else:
+        wfh_tmpl.base_text = "Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM."
 
     wfh_variants = [
-        "Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location.",
-        "Our WFH policy allows working from home up to 3 days per week with manager approval. Core hours are 10am to 4pm.",
-        "You are eligible to work from home up to 3 days each week, approved by your manager. Core hours remain 10:00 AM – 4:00 PM.",
-        "Remote work is permitted up to 3 days per week with managerial consent, adhering to core hours (10am–4pm).",
-        "Under company policy, you may work remotely up to 3 days per week upon manager approval. Core hours apply.",
+        "Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM.",
+        "Our WFH policy allows working from home up to 2 days per week with manager approval. Core hours are 10:00 AM to 4:00 PM.",
+        "You are eligible to work from home up to 2 days each week, approved by your manager. Core hours remain 10:00 AM – 4:00 PM.",
+        "Remote work is permitted up to 2 days per week with managerial consent, adhering to core hours (10:00 AM–4:00 PM).",
+        "Under company policy, you may work remotely up to 2 days per week upon manager approval. Core collaborative hours apply.",
     ]
     for idx, variant_text in enumerate(wfh_variants):
         variant_stmt = select(ResponseVariant).where(
@@ -450,6 +479,164 @@ async def seed_hr_data(session: AsyncSession):
             session.add(ResponseVariant(template_id=wfh_tmpl.template_id, variant_text=variant_text, position=idx))
         else:
             existing_variant.position = idx
+
+    # 13. Topic-Specific Policy Templates (slice-36)
+    topic_templates = [
+        (
+            "ask_maternity_policy_response",
+            "Primary caregivers receive 26 weeks of paid maternity and adoption leave.",
+            [
+                "Primary caregivers receive 26 weeks of paid maternity and adoption leave.",
+                "Our parental policy provides 26 weeks of fully paid maternity leave for primary caregivers.",
+                "Eligible employees are entitled to 26 weeks of paid maternity and adoption leave.",
+                "Under company policy, primary caregivers get 26 weeks of paid maternity leave.",
+                "The maternity benefit includes 26 weeks of paid leave for primary caregivers and adoptive parents.",
+            ],
+            ["is_faq"],
+        ),
+        (
+            "ask_paternity_policy_response",
+            "Secondary caregivers receive 2 weeks of paid paternity leave within the child's first 6 months.",
+            [
+                "Secondary caregivers receive 2 weeks of paid paternity leave within the child's first 6 months.",
+                "Our parental policy provides 2 weeks of paid paternity leave for secondary caregivers.",
+                "Secondary caregivers are entitled to 2 weeks of paid leave within the first 6 months.",
+                "Eligible employees receive 2 weeks of paid paternity leave upon birth or adoption.",
+                "Under company policy, secondary caregivers get 2 weeks of paid leave during the child's first 6 months.",
+            ],
+            ["is_faq"],
+        ),
+        (
+            "ask_sick_policy_response",
+            "Employees are entitled to 10 paid sick days per year. Sick leave exceeding 3 consecutive days requires a medical certificate.",
+            [
+                "Employees are entitled to 10 paid sick days per year. Sick leave exceeding 3 consecutive days requires a medical certificate.",
+                "Under our policy, you get 10 paid sick days annually. A doctor's note is required for absences over 3 consecutive days.",
+                "Employees receive 10 days of paid sick leave per year, with a medical certificate required after 3 consecutive days.",
+                "Our sick leave allotment is 10 paid days per year. Please provide a medical note if taking more than 3 consecutive days.",
+                "The policy grants 10 sick leave days annually. Any leave longer than 3 consecutive days must be supported by a medical certificate.",
+            ],
+            ["is_faq"],
+        ),
+        (
+            "ask_bereavement_policy_response",
+            "Employees are entitled to 5 consecutive business days of paid compassionate leave upon the loss of an immediate family member.",
+            [
+                "Employees are entitled to 5 consecutive business days of paid compassionate leave upon the loss of an immediate family member.",
+                "Our bereavement policy grants 5 consecutive business days of paid leave for immediate family losses.",
+                "You are eligible for 5 consecutive business days of paid compassionate leave in the event of a family bereavement.",
+                "The company provides 5 consecutive business days of paid leave for bereavement following the loss of an immediate family member.",
+                "Under the compassionate leave policy, employees receive 5 consecutive business days of paid leave.",
+            ],
+            ["is_faq"],
+        ),
+        (
+            "ask_carry_forward_policy_response",
+            "Employees may carry forward up to 5 days of unused earned leave into the following calendar year.",
+            [
+                "Employees may carry forward up to 5 days of unused earned leave into the following calendar year.",
+                "Our rollover policy allows up to 5 days of unused earned leave to be carried forward into the next year.",
+                "You can carry over up to 5 days of unused earned leave to the subsequent calendar year.",
+                "Under company rules, a maximum of 5 days of unused earned leave roll over into the new year.",
+                "Unused earned leave may be carried forward up to a cap of 5 days into the following year.",
+            ],
+            ["is_faq"],
+        ),
+    ]
+
+    for tmpl_key, base_text, variants, vars_list in topic_templates:
+        stmt_t = select(ResponseTemplate).where(ResponseTemplate.template_key == tmpl_key)
+        res_t = await session.execute(stmt_t)
+        t_obj = res_t.scalar_one_or_none()
+        if not t_obj:
+            t_obj = ResponseTemplate(
+                role_pack="hr",
+                template_key=tmpl_key,
+                base_text=base_text,
+                allow_rephrasing=True,
+                available_variables=vars_list,
+            )
+            session.add(t_obj)
+            await session.flush()
+            logger.info("Created response template: %s", tmpl_key)
+        else:
+            t_obj.base_text = base_text
+
+        for v_text in variants:
+            v_stmt = select(ResponseVariant).where(
+                ResponseVariant.template_id == t_obj.template_id,
+                ResponseVariant.variant_text == v_text,
+            )
+            existing_v = await session.execute(v_stmt)
+            if not existing_v.scalar_one_or_none():
+                session.add(ResponseVariant(template_id=t_obj.template_id, variant_text=v_text))
+
+    # 14. Response Templates for Leave Request Status (FR-6 / slice-36)
+    stmt_status_tmpl = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_leave_status_response"
+    )
+    res_status_tmpl = await session.execute(stmt_status_tmpl)
+    status_tmpl = res_status_tmpl.scalar_one_or_none()
+    if not status_tmpl:
+        status_tmpl = ResponseTemplate(
+            role_pack="hr",
+            template_key="ask_leave_status_response",
+            base_text="Your {leave_type} leave request ({reference_id}) is currently {status}.",
+            allow_rephrasing=True,
+            available_variables=["reference_id", "leave_type", "status", "start_date", "end_date", "days", "employee_id"],
+        )
+        session.add(status_tmpl)
+        await session.flush()
+        logger.info("Created response template: ask_leave_status_response")
+
+    status_variants = [
+        "Your {leave_type} leave request ({reference_id}) is currently {status}.",
+        "The status of your {leave_type} leave request {reference_id} is: {status}.",
+        "Your leave application {reference_id} ({leave_type}) is marked as {status}.",
+        "For request {reference_id}: your {leave_type} leave is currently {status}.",
+        "Your {leave_type} request ({reference_id}) status: {status}.",
+    ]
+    for variant_text in status_variants:
+        variant_stmt = select(ResponseVariant).where(
+            ResponseVariant.template_id == status_tmpl.template_id,
+            ResponseVariant.variant_text == variant_text,
+        )
+        existing_variant = await session.execute(variant_stmt)
+        if not existing_variant.scalar_one_or_none():
+            session.add(ResponseVariant(template_id=status_tmpl.template_id, variant_text=variant_text))
+
+    stmt_nf_tmpl = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_leave_status_not_found_response"
+    )
+    res_nf_tmpl = await session.execute(stmt_nf_tmpl)
+    nf_tmpl = res_nf_tmpl.scalar_one_or_none()
+    if not nf_tmpl:
+        nf_tmpl = ResponseTemplate(
+            role_pack="hr",
+            template_key="ask_leave_status_not_found_response",
+            base_text="You do not have any submitted leave applications on record.",
+            allow_rephrasing=True,
+            available_variables=["reference_id", "employee_id"],
+        )
+        session.add(nf_tmpl)
+        await session.flush()
+        logger.info("Created response template: ask_leave_status_not_found_response")
+
+    nf_variants = [
+        "You do not have any submitted leave applications on record.",
+        "No leave requests were found for your account.",
+        "We couldn't find any recent leave applications on file.",
+        "There are no active or past leave requests recorded for your profile.",
+        "No leave applications on file. You can apply for leave whenever you need time off.",
+    ]
+    for variant_text in nf_variants:
+        variant_stmt = select(ResponseVariant).where(
+            ResponseVariant.template_id == nf_tmpl.template_id,
+            ResponseVariant.variant_text == variant_text,
+        )
+        existing_variant = await session.execute(variant_stmt)
+        if not existing_variant.scalar_one_or_none():
+            session.add(ResponseVariant(template_id=nf_tmpl.template_id, variant_text=variant_text))
 
 IT_TICKET_STATUS_PHRASES = [
     "what is the status of my ticket TKT-1234?",

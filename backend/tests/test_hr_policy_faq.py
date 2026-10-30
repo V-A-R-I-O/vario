@@ -64,13 +64,13 @@ async def test_ac4_default_hr_policy_faqs_exist_and_visible_in_admin_list(db_ses
         assert len(wfh["training_phrases"]) >= 5
         assert wfh["response_template"] is not None
         assert wfh["response_template"]["template_key"] == "ask_wfh_policy_response"
-        assert "3 days per week" in wfh["response_template"]["base_text"]
+        assert "2 days per week" in wfh["response_template"]["base_text"]
 
         faq = intents["ask_policy_faq"]
         assert faq["intent_type"] == "static_faq"
         assert len(faq["training_phrases"]) >= 5
         assert faq["response_template"] is not None
-        assert "20 annual leaves" in faq["response_template"]["base_text"]
+        assert "8 casual days" in faq["response_template"]["base_text"]
 
 
 @pytest.mark.asyncio
@@ -94,7 +94,7 @@ async def test_ac1_hr_wfh_policy_question_returns_policy_answer(db_session):
             "slots": {"is_faq": True, "intent_type": "static_faq"},
             "current_form": None,
             "current_step": None,
-            "response_text": "Employees may work from home up to 3 days per week, subject to manager approval.",
+            "response_text": "Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM.",
         }
 
         with patch("app.services.dialogue_router._post_to_rasa", new=AsyncMock(return_value=rasa_return)):
@@ -111,7 +111,7 @@ async def test_ac1_hr_wfh_policy_question_returns_policy_answer(db_session):
         assert data["session"]["slots"].get("is_faq") is True
         assert any(
             phrase in data["response_text"].lower()
-            for phrase in ["work from home", "3 days", "wfh", "remotely"]
+            for phrase in ["work from home", "2 days", "wfh", "remotely"]
         )
 
 
@@ -180,3 +180,182 @@ async def test_ac3_low_confidence_policy_question_clarification(db_session):
         assert data["response_text"] == CLARIFICATION_PROMPT
         # Must NOT render the policy response
         assert "days per week" not in data["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_slice36_topic_specific_policy_answers_match_mock_hrms(db_session):
+    """
+    AC 1 & Defect M4b & M7a:
+    Given queries for specific policy topics (maternity, paternity, bereavement, sick, carry-forward),
+    each topic uses its own topic-specific template key and returns facts matching mock-hrms data.
+    """
+    await seed_hr_data(db_session)
+    await db_session.commit()
+
+    async with _client() as client:
+        conv_res = await client.post("/api/conversations", json={"role_pack": "hr"}, headers=USER)
+        conv_id = conv_res.json()["data"]["id"]
+
+        test_cases = [
+            ("what is the maternity policy?", "ask_maternity_policy_response", "26 weeks"),
+            ("paternity leave policy", "ask_paternity_policy_response", "2 weeks"),
+            ("bereavement leave", "ask_bereavement_policy_response", "5 consecutive business days"),
+            ("rules for sick leave", "ask_sick_policy_response", "10"),
+            ("leave carryover rules", "ask_carry_forward_policy_response", "5 days"),
+        ]
+
+        for user_msg, tmpl_key, expected_fact in test_cases:
+            rasa_reply = {
+                "intent": "ask_policy_faq",
+                "confidence": 0.95,
+                "entities": {},
+                "template_key": tmpl_key,
+                "slots": {"is_faq": True},
+                "current_form": None,
+                "current_step": None,
+                "response_text": None,
+                "card": {
+                    "type": "faq_answer",
+                    "title": "Policy",
+                    "text": "original text",
+                },
+            }
+
+            with patch("app.services.dialogue_router._post_to_rasa", new=AsyncMock(return_value=rasa_reply)):
+                chat_res = await client.post(
+                    "/api/chat",
+                    json={"conversation_id": conv_id, "message": user_msg},
+                    headers=USER,
+                )
+
+            assert chat_res.status_code == 200
+            data = chat_res.json()["data"]
+            # Verify specific topic fact is returned
+            assert expected_fact in data["response_text"], f"Expected '{expected_fact}' in reply to '{user_msg}'"
+            # Verify generic template didn't overwrite it
+            assert "20 annual leaves" not in data["response_text"]
+            assert "8 casual days" not in data["response_text"]
+
+
+@pytest.mark.asyncio
+async def test_slice36_admin_edits_maternity_template_reflects_in_next_turn(db_session):
+    """
+    AC 2: Given an admin edits the maternity template, then the next maternity answer uses the edit.
+    """
+    from sqlalchemy import select
+    from app.models.response_template import ResponseTemplate
+
+    await seed_hr_data(db_session)
+    await db_session.commit()
+
+    async with _client() as client:
+        conv_res = await client.post("/api/conversations", json={"role_pack": "hr"}, headers=USER)
+        conv_id = conv_res.json()["data"]["id"]
+
+        # Admin edits the maternity template via admin API
+        async with TestingSessionLocal() as s:
+            stmt = select(ResponseTemplate).where(
+                ResponseTemplate.template_key == "ask_maternity_policy_response"
+            )
+            tmpl = (await s.execute(stmt)).scalar_one()
+            template_id = tmpl.template_id
+
+        put_res = await client.put(
+            f"/api/admin/templates/{template_id}",
+            headers=HR_ADMIN,
+            json={"base_text": "Updated policy: Primary caregivers now receive 28 weeks of paid maternity leave."},
+        )
+        assert put_res.status_code == 200
+
+        rasa_reply = {
+            "intent": "ask_policy_faq",
+            "confidence": 0.95,
+            "entities": {"policy_topic": "maternity"},
+            "template_key": "ask_maternity_policy_response",
+            "slots": {"is_faq": True},
+            "current_form": None,
+            "current_step": None,
+            "response_text": "Default text",
+            "card": {
+                "type": "faq_answer",
+                "title": "Maternity Leave Policy",
+                "text": "Default card text",
+            },
+        }
+
+        with patch("app.services.dialogue_router._post_to_rasa", new=AsyncMock(return_value=rasa_reply)):
+            chat_res = await client.post(
+                "/api/chat",
+                json={"conversation_id": conv_id, "message": "what is the maternity policy?"},
+                headers=USER,
+            )
+
+        assert chat_res.status_code == 200
+        data = chat_res.json()["data"]
+        # Next turn uses the updated admin text
+        assert "28 weeks of paid maternity leave" in data["response_text"]
+        assert data["card"] is not None
+        assert "28 weeks of paid maternity leave" in data["card"]["text"]
+
+
+@pytest.mark.asyncio
+async def test_slice36_leave_request_status_shown_as_card(db_session):
+    """
+    AC 5 & Defect N8:
+    Given "has my leave been approved?", then the status of the employee's latest request is shown as a card.
+    """
+    await seed_hr_data(db_session)
+    await db_session.commit()
+
+    async with _client() as client:
+        conv_res = await client.post("/api/conversations", json={"role_pack": "hr"}, headers=USER)
+        conv_id = conv_res.json()["data"]["id"]
+
+        card_payload = {
+            "type": "data_card",
+            "title": "Leave Request Status: LEAVE-2031",
+            "rows": [
+                {"label": "Reference ID", "value": "LEAVE-2031"},
+                {"label": "Leave Type", "value": "Casual"},
+                {"label": "Dates", "value": "2026-09-10 to 2026-09-11 (2 days)"},
+                {"label": "Status", "value": "Approved"},
+                {"label": "Reason", "value": "Personal appointment"},
+            ],
+        }
+
+        rasa_status_reply = {
+            "intent": "ask_leave_status",
+            "confidence": 0.95,
+            "entities": {},
+            "template_key": "ask_leave_status_response",
+            "slots": {
+                "reference_id": "LEAVE-2031",
+                "leave_type": "casual",
+                "status": "approved",
+                "start_date": "2026-09-10",
+                "end_date": "2026-09-11",
+                "days": 2,
+            },
+            "current_form": None,
+            "current_step": None,
+            "response_text": "Your casual leave request (LEAVE-2031) from 2026-09-10 to 2026-09-11 is currently approved.",
+            "card": card_payload,
+        }
+
+        with patch("app.services.dialogue_router._post_to_rasa", new=AsyncMock(return_value=rasa_status_reply)):
+            chat_res = await client.post(
+                "/api/chat",
+                json={"conversation_id": conv_id, "message": "has my leave been approved?"},
+                headers=USER,
+            )
+
+        assert chat_res.status_code == 200
+        data = chat_res.json()["data"]
+        assert data["intent"] == "ask_leave_status"
+        assert "LEAVE-2031" in data["response_text"]
+        assert "approved" in data["response_text"]
+        assert data["card"] is not None
+        assert data["card"]["type"] == "data_card"
+        assert data["card"]["title"] == "Leave Request Status: LEAVE-2031"
+        assert len(data["card"]["rows"]) >= 4
+

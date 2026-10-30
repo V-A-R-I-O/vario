@@ -173,6 +173,117 @@ class ActionCheckLeaveBalance(Action):
         return []
 
 
+class ActionAskLeaveStatus(Action):
+    """
+    Checks leave request status for the authenticated employee via HRMSAdapter (FR-6, Defect N8).
+    Extracts employee ID strictly from auth_context metadata (ADR-006).
+    """
+
+    def name(self) -> Text:
+        return "action_ask_leave_status"
+
+    async def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+        employee_id = _extract_employee_id(tracker)
+
+        if not employee_id:
+            msg = "Please log in to your employee account to check your leave request status."
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "error", "text": msg}
+                ),
+            )
+            return []
+
+        ref_filter = tracker.get_slot("reference_id")
+        latest_msg = tracker.latest_message or {}
+        entities = {e.get("entity"): e.get("value") for e in latest_msg.get("entities", []) if "entity" in e}
+        if not ref_filter and entities.get("reference_id"):
+            ref_filter = entities["reference_id"]
+
+        try:
+            status_data = await HRMSAdapter.get_leave_status(employee_id, reference_id=ref_filter)
+        except BackendUnavailableError:
+            msg = "The HR system is currently unavailable. Please try again in a moment."
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "error", "text": msg}
+                ),
+            )
+            return []
+        except Exception as exc:
+            logger.error("Error retrieving leave status for %s: %s", employee_id, exc)
+            msg = "The HR system is currently unavailable. Please try again in a moment."
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "error", "text": msg}
+                ),
+            )
+            return []
+
+        applications = status_data.get("applications", [])
+        if not applications:
+            no_req_text = "You do not have any submitted leave applications on record."
+            if ref_filter:
+                no_req_text = f"Leave request '{ref_filter}' was not found for your account."
+            dispatcher.utter_message(
+                text=no_req_text,
+                json_message=vario_payload(
+                    template_key="ask_leave_status_not_found_response",
+                    slots={"reference_id": ref_filter or "", "employee_id": employee_id},
+                    card={"type": "not_found", "text": no_req_text},
+                ),
+            )
+            return []
+
+        latest_app = applications[-1]
+        ref_id = latest_app.get("reference_id", "N/A")
+        l_type = latest_app.get("leave_type", "leave").capitalize()
+        app_status = latest_app.get("status", "unknown").capitalize()
+        s_date = latest_app.get("start_date", "")
+        e_date = latest_app.get("end_date", "")
+        days = latest_app.get("days", 1)
+        reason = latest_app.get("reason", "")
+
+        status_text = f"Your {l_type.lower()} leave request ({ref_id}) from {s_date} to {e_date} is currently {app_status.lower()}."
+        card = {
+            "type": "data_card",
+            "title": f"Leave Request Status: {ref_id}",
+            "rows": [
+                {"label": "Reference ID", "value": ref_id},
+                {"label": "Leave Type", "value": l_type},
+                {"label": "Dates", "value": f"{s_date} to {e_date} ({days} days)"},
+                {"label": "Status", "value": app_status},
+                {"label": "Reason", "value": reason or "N/A"},
+            ],
+        }
+
+        dispatcher.utter_message(
+            text=status_text,
+            json_message=vario_payload(
+                template_key="ask_leave_status_response",
+                slots={
+                    "reference_id": ref_id,
+                    "leave_type": l_type.lower(),
+                    "status": app_status.lower(),
+                    "start_date": s_date,
+                    "end_date": e_date,
+                    "days": days,
+                    "employee_id": employee_id,
+                },
+                card=card,
+            ),
+        )
+        return []
+
+
 class ActionAskLeaveConfirm(Action):
     """
     Renders the confirmation summary step for leave_request_form.
