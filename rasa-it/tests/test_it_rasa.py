@@ -56,11 +56,11 @@ async def test_ticket_status_without_id_prompts_for_id():
 @pytest.mark.asyncio
 async def test_unknown_ticket_returns_its_own_not_found_card():
     with patch("actions.actions.ITSMAdapter.get_ticket_status", new_callable=AsyncMock,
-               return_value={"found": False, "ticket_id": "TKT-9999", "status": "Not Found"}):
-        result = await ActionCheckTicketStatus.lookup("TKT-9999")
-    assert result["slots"] == {"ticket_id": "TKT-9999", "found": False}
+               return_value={"found": False, "ticket_id": "IT-9999", "status": "Not Found"}):
+        result = await ActionCheckTicketStatus.lookup("IT-9999")
+    assert result["slots"] == {"ticket_id": "IT-9999", "found": False}
     assert result["card"]["type"] == "not_found"
-    assert "TKT-9999" in result["text"]
+    assert "IT-9999" in result["text"]
 
 
 def test_ticket_creation_uses_trusted_reporter_and_returns_ticket_id():
