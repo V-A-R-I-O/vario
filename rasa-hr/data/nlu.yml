@@ -151,6 +151,26 @@ nlu:
       - how does work from home work here?
       - working remotely rules
 
+  - intent: ask_leave_status
+    examples: |
+      - has my leave been approved?
+      - is my leave approved?
+      - what is the status of my leave request?
+      - check my leave application status
+      - status of my leave
+      - leave request status
+      - check status of my leave
+      - did my manager approve my leave?
+      - where does my leave request stand?
+      - has my leave request been accepted?
+      - check status of [LEAVE-2031](reference_id)
+      - is [LEAVE-2015](reference_id) approved?
+      - what is the status of [LEAVE-2032](reference_id)?
+      - can you track my leave application?
+      - tell me if my leave is approved
+      - check status of leave application
+      - status of request [LEAVE-2025](reference_id)
+
   - intent: ask_policy_faq
     examples: |
       - what is the company leave policy?
