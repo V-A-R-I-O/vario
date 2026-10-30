@@ -145,6 +145,7 @@ services:
     restart: unless-stopped
     environment:
       MOCK_ITSM_URL: http://mock-itsm:9003
+      ACTION_ENDPOINT_URL: http://rasa-it-actions:5055/webhook
       RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-}
       RETRAINING_DATA_PATH: /var/lib/vario/training_examples.json
     volumes:
