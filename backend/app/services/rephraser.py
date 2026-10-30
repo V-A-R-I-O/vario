@@ -175,3 +175,40 @@ class GeminiRephraser:
             if line:
                 results.append(line)
         return results
+
+    async def generate_variants(
+        self, base_text: str, available_variables: Sequence[str]
+    ) -> List[str]:
+        """Generate up to 4 paraphrased variants of base_text preserving placeholders."""
+        if not base_text or not base_text.strip():
+            return [base_text]
+
+        required = _placeholders(base_text)
+        if required:
+            var_list = ", ".join(f"{{{v}}}" for v in sorted(required))
+            prompt = (
+                f"You are a conversational assistant response rephraser.\n"
+                f"Generate exactly 4 distinct paraphrased variations of the following text:\n"
+                f'\"{base_text}\"\n\n'
+                f"CRITICAL REQUIREMENT:\n"
+                f"The following placeholder(s) MUST appear in EVERY variation exactly as written with curly braces:\n"
+                f"{var_list}\n"
+                f"Do NOT invent, alter, or remove any placeholders.\n"
+                f"Keep the meaning identical and natural.\n"
+                f'Return ONLY a JSON array of 4 strings, e.g. [\"variant 1\", \"variant 2\", \"variant 3\", \"variant 4\"].'
+            )
+        else:
+            prompt = (
+                f"You are a conversational assistant response rephraser.\n"
+                f"Generate exactly 4 distinct paraphrased variations of the following text:\n"
+                f'\"{base_text}\"\n\n'
+                f"CRITICAL REQUIREMENT:\n"
+                f"Do NOT include any placeholders or curly braces like {{var}} in the output.\n"
+                f"Keep the meaning identical and natural.\n"
+                f'Return ONLY a JSON array of 4 strings, e.g. [\"variant 1\", \"variant 2\", \"variant 3\", \"variant 4\"].'
+            )
+
+        raw = await self._call_gemini(prompt)
+        if not raw:
+            return [base_text]
+        return [base_text]
