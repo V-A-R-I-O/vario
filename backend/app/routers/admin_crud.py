@@ -149,9 +149,15 @@ async def _create_variants(db: AsyncSession, template: ResponseTemplate) -> None
     if not template.allow_rephrasing:
         texts = [template.base_text]
     else:
-        texts = await rephraser.client.generate_variants(
-            template.base_text, list(template.available_variables or [])
-        )
+        try:
+            texts = await rephraser.client.generate_variants(
+                template.base_text, list(template.available_variables or [])
+            )
+            if not texts:
+                texts = [template.base_text]
+        except Exception as e:
+            logger.error(f"Rephraser variant generation failed: {e}")
+            texts = [template.base_text]
 
     for i, text in enumerate(texts):
         db.add(ResponseVariant(template_id=template.template_id, variant_text=text, position=i))
