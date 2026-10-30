@@ -7,6 +7,7 @@ import yaml
 
 from actions.actions import (
     ActionAskResetPasswordSecurityAnswer,
+    ActionCancelForm,
     ActionCheckTicketStatus,
     ActionSubmitRaiseTicket,
     ValidateResetPasswordForm,
@@ -128,3 +129,30 @@ def test_rasa_configuration_has_stable_assistant_id_and_local_action_fallback():
     endpoints = yaml.safe_load((root / "endpoints.yml").read_text(encoding="utf-8"))
     assert config["assistant_id"] == "it_assistant"
     assert endpoints["action_endpoint"]["url"] == "${ACTION_ENDPOINT_URL:-http://localhost:5055/webhook}"
+
+
+def test_cancel_action_ends_ticket_status_prompt_and_clears_slots():
+    dispatcher = FakeDispatcher()
+    tracker = FakeTracker({"ticket_id": "IT-1001", "status": "Open", "category": "hardware"})
+    events = ActionCancelForm().run(dispatcher, tracker, {})
+    assert any(event.get("event") == "active_loop" and event.get("name") is None for event in events)
+    cleared = {event.get("name") for event in events if event.get("value") is None}
+    assert {"ticket_id", "status", "category"} <= cleared
+    assert "cancelled" in dispatcher.messages[0]["text"].lower()
+
+
+def test_status_intent_examples_cover_ambiguous_status_requests():
+    root = Path(__file__).resolve().parents[1]
+    nlu = yaml.safe_load((root / "data" / "nlu.yml").read_text(encoding="utf-8"))
+    examples = next(item["examples"] for item in nlu["nlu"] if item.get("intent") == "check_ticket_status")
+    assert "is my ticket still open?" in examples
+    assert "status of the ticket I submitted" in examples
+
+
+def test_rasa_runtime_versions_are_pinned_to_supported_python_contract():
+    root = Path(__file__).resolve().parents[1]
+    requirements = (root / "requirements.txt").read_text(encoding="utf-8")
+    workflow = (root.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "rasa==3.6.20" in requirements
+    assert "rasa-sdk==3.6.2" in requirements
+    assert 'python-version: "3.10"' in workflow
