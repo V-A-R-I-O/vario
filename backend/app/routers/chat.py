@@ -154,6 +154,8 @@ async def chat(
                 )
             response_text = rendered or rasa_result.response_text or FALLBACK_RESPONSE
             card = rasa_result.card
+            if card and card.get("type") == "faq_answer" and rendered:
+                card = {**card, "text": rendered}
             next_form, next_step, next_slots = (
                 rasa_result.current_form,
                 rasa_result.current_step,
