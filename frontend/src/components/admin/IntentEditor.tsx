@@ -78,7 +78,10 @@ export function IntentEditor({ intentId }: { intentId?: string }) {
   const [error, setError] = useState<string | null>(null);
 
   const mode: 'workflow' | 'faq' = loaded?.intent_type === 'dynamic_workflow' ? 'workflow' : 'faq';
-  const availableVariables = loaded?.response_template?.available_variables ?? [];
+  const availableVariables = useMemo(
+    () => loaded?.response_template?.available_variables ?? [],
+    [loaded?.response_template?.available_variables]
+  );
 
   useEffect(() => {
     if (isCreate) return;
