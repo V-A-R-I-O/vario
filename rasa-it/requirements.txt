@@ -1,7 +1,11 @@
-fastapi==0.110.0
-uvicorn==0.28.0
-pydantic==2.13.4
-pytest==8.1.1
+# Rasa 3.6 supports Python 3.8–3.10; use Python 3.10 for native development.
+rasa==3.6.20
+rasa-sdk==3.6.2
 httpx==0.27.0
-pyyaml==6.0.1
-rasa-sdk>=3.6.0
+PyYAML==6.0.1
+pytest==8.1.1
+pytest-asyncio==0.23.6
+# Retained Slice 10 compatibility tests import the legacy server's FastAPI app.
+# FastAPI 0.99 stays on Pydantic v1, which is required by Rasa 3.6.
+fastapi==0.99.1
+setuptools<70
