@@ -295,3 +295,68 @@ def test_n7_reject_invalid_leave_requests():
     assert "cannot be after" in res_range.json()["detail"].lower()
 
 
+def test_m7a_topic_specific_policies_lookup():
+    """
+    Defect M7a: Single source of truth for all policy topics.
+    Maternity: 26 weeks
+    Paternity: 2 weeks
+    Bereavement: 5 days
+    Sick: 10 days
+    Carry-forward: 5 days
+    WFH: 2 days/week
+    Leave: 8 casual, 10 sick, 15 earned
+    """
+    client.post("/reset")
+
+    # Maternity
+    mat = client.get("/policies/maternity-policy").json()
+    assert mat["weeks"] == 26
+    assert "26 weeks" in mat["details"]
+
+    mat_alias = client.get("/policies/maternity").json()
+    assert mat_alias["weeks"] == 26
+
+    # Paternity
+    pat = client.get("/policies/paternity-policy").json()
+    assert pat["weeks"] == 2
+    assert "2 weeks" in pat["details"]
+
+    # Sick
+    sick = client.get("/policies/sick-leave-policy").json()
+    assert sick["days"] == 10
+    assert "10 paid sick days" in sick["details"]
+
+    # Bereavement
+    ber = client.get("/policies/bereavement-leave").json()
+    assert ber["days"] == 5
+    assert "5 consecutive business days" in ber["details"]
+
+    # Carry forward
+    cf = client.get("/policies/carry-forward-policy").json()
+    assert cf["days"] == 5
+    assert "5 days" in cf["details"]
+
+    # WFH
+    wfh = client.get("/policies/wfh-policy").json()
+    assert wfh["max_wfh_days_per_week"] == 2
+    assert "up to 2 days per week" in wfh["details"]
+
+    # Leave policy
+    lp = client.get("/policies/leave-policy").json()
+    assert lp["quota"] == {"casual": 8, "sick": 10, "earned": 15}
+    assert lp["carry_forward_days"] == 5
+
+
+def test_mock_auth_presenter_accounts_covered_in_hrms():
+    """
+    Slice-36 requirement: HRMS seed covers every mock-auth login.
+    """
+    client.post("/reset")
+    presenters = ["EMP-1001", "EMP-2001", "EMP-3001", "EMP-4001", "EMP-1010", "EMP-1011", "EMP-1012", "EMP-1013"]
+    for emp_id in presenters:
+        res = client.get(f"/employees/{emp_id}/leave-balance")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["employee_id"] == emp_id
+        assert data["total"] > 0
+
