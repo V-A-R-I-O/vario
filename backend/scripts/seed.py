@@ -368,7 +368,7 @@ async def seed_hr_data(session: AsyncSession):
         await session.flush()
         logger.info("Created response template: submit_leave_cancelled")
 
-    # 11. Response Template: ask_policy_faq_response (slice-16)
+    # 11. Response Template: ask_policy_faq_response (slice-16 / slice-36)
     stmt_policy_tmpl = select(ResponseTemplate).where(
         ResponseTemplate.template_key == "ask_policy_faq_response"
     )
@@ -378,20 +378,22 @@ async def seed_hr_data(session: AsyncSession):
         policy_tmpl = ResponseTemplate(
             role_pack="hr",
             template_key="ask_policy_faq_response",
-            base_text="Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days.",
+            base_text="Employees are entitled to 8 casual days, 10 sick days, and 15 earned days annually. Unused earned leaves can be carried forward up to 5 days.",
             allow_rephrasing=True,
             available_variables=[],
         )
         session.add(policy_tmpl)
         await session.flush()
         logger.info("Created response template: ask_policy_faq_response")
+    else:
+        policy_tmpl.base_text = "Employees are entitled to 8 casual days, 10 sick days, and 15 earned days annually. Unused earned leaves can be carried forward up to 5 days."
 
     policy_variants = [
-        "Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days.",
-        "Employees receive 20 annual, 10 sick, and 5 casual leave days annually. Up to 5 unused annual leave days roll over.",
-        "The leave policy provides 20 annual, 10 sick, and 5 casual days per calendar year, with a maximum of 5 annual days carried forward.",
-        "Under our leave policy, you get 20 annual, 10 sick, and 5 casual leave days per year. Unused annual leave carries over up to 5 days.",
-        "Standard leave allotment is 20 annual, 10 sick, and 5 casual days per year. Up to 5 unused annual leave days can be carried forward.",
+        "Employees are entitled to 8 casual days, 10 sick days, and 15 earned days annually. Unused earned leaves can be carried forward up to 5 days.",
+        "Our leave policy provides 8 casual, 10 sick, and 15 earned leave days per year, with up to 5 earned days eligible for carryover.",
+        "Under company policy, you receive 8 casual, 10 sick, and 15 earned days annually. Up to 5 unused earned days can roll over.",
+        "Standard annual allotment is 8 casual, 10 sick, and 15 earned days. You may carry forward up to 5 unused earned days.",
+        "The company grants 8 casual days, 10 sick days, and 15 earned days each calendar year. A maximum of 5 earned days roll over.",
     ]
     for variant_text in policy_variants:
         variant_stmt = select(ResponseVariant).where(
@@ -402,7 +404,7 @@ async def seed_hr_data(session: AsyncSession):
         if not existing_variant.scalar_one_or_none():
             session.add(ResponseVariant(template_id=policy_tmpl.template_id, variant_text=variant_text))
 
-    # 12. Response Template: ask_wfh_policy_response (slice-16)
+    # 12. Response Template: ask_wfh_policy_response (slice-16 / slice-36)
     stmt_wfh_tmpl = select(ResponseTemplate).where(
         ResponseTemplate.template_key == "ask_wfh_policy_response"
     )
@@ -412,20 +414,22 @@ async def seed_hr_data(session: AsyncSession):
         wfh_tmpl = ResponseTemplate(
             role_pack="hr",
             template_key="ask_wfh_policy_response",
-            base_text="Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location.",
+            base_text="Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM.",
             allow_rephrasing=True,
             available_variables=[],
         )
         session.add(wfh_tmpl)
         await session.flush()
         logger.info("Created response template: ask_wfh_policy_response")
+    else:
+        wfh_tmpl.base_text = "Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM."
 
     wfh_variants = [
-        "Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location.",
-        "Our WFH policy allows working from home up to 3 days per week with manager approval. Core hours are 10am to 4pm.",
-        "You are eligible to work from home up to 3 days each week, approved by your manager. Core hours remain 10:00 AM – 4:00 PM.",
-        "Remote work is permitted up to 3 days per week with managerial consent, adhering to core hours (10am–4pm).",
-        "Under company policy, you may work remotely up to 3 days per week upon manager approval. Core hours apply.",
+        "Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM.",
+        "Our WFH policy allows working from home up to 2 days per week with manager approval. Core hours are 10:00 AM to 4:00 PM.",
+        "You are eligible to work from home up to 2 days each week, approved by your manager. Core hours remain 10:00 AM – 4:00 PM.",
+        "Remote work is permitted up to 2 days per week with managerial consent, adhering to core hours (10:00 AM–4:00 PM).",
+        "Under company policy, you may work remotely up to 2 days per week upon manager approval. Core collaborative hours apply.",
     ]
     for variant_text in wfh_variants:
         variant_stmt = select(ResponseVariant).where(
@@ -435,6 +439,7 @@ async def seed_hr_data(session: AsyncSession):
         existing_variant = await session.execute(variant_stmt)
         if not existing_variant.scalar_one_or_none():
             session.add(ResponseVariant(template_id=wfh_tmpl.template_id, variant_text=variant_text))
+
 
 IT_TICKET_STATUS_PHRASES = [
     "what is the status of my ticket TKT-1234?",
