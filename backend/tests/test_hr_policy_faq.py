@@ -298,3 +298,64 @@ async def test_slice36_admin_edits_maternity_template_reflects_in_next_turn(db_s
         assert "28 weeks of paid maternity leave" in data["card"]["text"]
 
 
+@pytest.mark.asyncio
+async def test_slice36_leave_request_status_shown_as_card(db_session):
+    """
+    AC 5 & Defect N8:
+    Given "has my leave been approved?", then the status of the employee's latest request is shown as a card.
+    """
+    await seed_hr_data(db_session)
+    await db_session.commit()
+
+    async with _client() as client:
+        conv_res = await client.post("/api/conversations", json={"role_pack": "hr"}, headers=USER)
+        conv_id = conv_res.json()["data"]["id"]
+
+        card_payload = {
+            "type": "data_card",
+            "title": "Leave Request Status: LEAVE-2031",
+            "rows": [
+                {"label": "Reference ID", "value": "LEAVE-2031"},
+                {"label": "Leave Type", "value": "Casual"},
+                {"label": "Dates", "value": "2026-09-10 to 2026-09-11 (2 days)"},
+                {"label": "Status", "value": "Approved"},
+                {"label": "Reason", "value": "Personal appointment"},
+            ],
+        }
+
+        rasa_status_reply = {
+            "intent": "ask_leave_status",
+            "confidence": 0.95,
+            "entities": {},
+            "template_key": "ask_leave_status_response",
+            "slots": {
+                "reference_id": "LEAVE-2031",
+                "leave_type": "casual",
+                "status": "approved",
+                "start_date": "2026-09-10",
+                "end_date": "2026-09-11",
+                "days": 2,
+            },
+            "current_form": None,
+            "current_step": None,
+            "response_text": "Your casual leave request (LEAVE-2031) from 2026-09-10 to 2026-09-11 is currently approved.",
+            "card": card_payload,
+        }
+
+        with patch("app.services.dialogue_router._post_to_rasa", new=AsyncMock(return_value=rasa_status_reply)):
+            chat_res = await client.post(
+                "/api/chat",
+                json={"conversation_id": conv_id, "message": "has my leave been approved?"},
+                headers=USER,
+            )
+
+        assert chat_res.status_code == 200
+        data = chat_res.json()["data"]
+        assert data["intent"] == "ask_leave_status"
+        assert "LEAVE-2031" in data["response_text"]
+        assert "approved" in data["response_text"]
+        assert data["card"] is not None
+        assert data["card"]["type"] == "data_card"
+        assert data["card"]["title"] == "Leave Request Status: LEAVE-2031"
+        assert len(data["card"]["rows"]) >= 4
+
