@@ -181,3 +181,54 @@ async def test_gemini_variant_llm_failure_graceful():
     """AC: Given an LLM failure, then the save keeps the original variant and reports error (no crash)."""
     async def mock_handler(request: httpx.Request):
         return httpx.Response(500, text="Internal Server Error")
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    rephraser_client = GeminiRephraser(api_key="test-key", http_client=mock_http)
+
+    variants = await rephraser_client.generate_variants(
+        "You have {balance} days of leave remaining.", ["balance"]
+    )
+
+    assert variants == ["You have {balance} days of leave remaining."]
+
+
+@pytest.mark.asyncio
+async def test_gemini_generate_phrases_success():
+    """AC: Given POST generate-phrases, then ~8 seed-based phrases are returned."""
+    mock_phrases = [
+        "How much leave do I have?",
+        "Can you check my leave balance?",
+        "Tell me my remaining leave days",
+        "What is my current leave count?",
+        "How many leave days are available?",
+        "Show my time off balance",
+        "Check how many leaves I have left",
+        "What is my leave status?",
+    ]
+
+    async def mock_handler(request: httpx.Request):
+        return httpx.Response(200, json=make_gemini_response(mock_phrases))
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    rephraser_client = GeminiRephraser(api_key="test-key", http_client=mock_http)
+
+    phrases = await rephraser_client.generate_phrases(
+        ["What's my leave balance?", "How many leaves do I have?"], count=8
+    )
+
+    assert len(phrases) == 8
+    assert phrases == mock_phrases
+
+
+# --- API Endpoint Integration Tests ------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_intent_with_rephraser_variants(monkeypatch):
+    """AC: Template save with allow_rephrasing -> response contains original + up to 4 variants, all preserving placeholders."""
+    generated = [
+        "WFH is permitted up to 3 days weekly.",
+        "You may work remotely for a maximum of 3 days a week.",
+        "Our policy allows 3 work-from-home days each week.",
+        "Staff can work from home up to 3 days per week.",
+    ]
