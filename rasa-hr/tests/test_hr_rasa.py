@@ -713,3 +713,290 @@ async def test_validate_leave_request_form_direct():
     # Validate past date returns None
     res_past = await validator.validate_start_date("2020-01-01", dispatcher, tracker, {})
     assert res_past == {"start_date": None}
+
+
+# ============================================================================
+# Slice 36 (SCRUM-46): Topic-Specific Policy FAQ (M4b & M7a)
+# ============================================================================
+
+def test_m4b_m7a_topic_specific_policy_answers_and_facts():
+    """
+    Defect M4b & M7a:
+    1. Ask "what is the maternity policy?", "paternity leave policy", "bereavement leave",
+       "rules for sick leave", "tell me about the leave carryover rules", "what is the WFH policy?".
+    2. Verify each topic gets its own topic-specific template_key and matching text
+       consistent with mock-hrms.
+    """
+    test_cases = [
+        (
+            "what is the maternity policy?",
+            "ask_policy_faq",
+            "ask_maternity_policy_response",
+            "26 weeks",
+            "Maternity Leave Policy",
+        ),
+        (
+            "paternity leave policy",
+            "ask_policy_faq",
+            "ask_paternity_policy_response",
+            "2 weeks",
+            "Paternity Leave Policy",
+        ),
+        (
+            "bereavement leave",
+            "ask_policy_faq",
+            "ask_bereavement_policy_response",
+            "5 consecutive business days",
+            "Bereavement Leave Policy",
+        ),
+        (
+            "rules for sick leave",
+            "ask_policy_faq",
+            "ask_sick_policy_response",
+            "10 paid sick days",
+            "Sick Leave Policy",
+        ),
+        (
+            "tell me about the leave carryover rules",
+            "ask_policy_faq",
+            "ask_carry_forward_policy_response",
+            "5 days",
+            "Leave Carry-Forward Policy",
+        ),
+        (
+            "what is the WFH policy?",
+            "ask_wfh_policy",
+            "ask_wfh_policy_response",
+            "up to 2 days per week",
+            "Work From Home Policy",
+        ),
+        (
+            "what is the company leave policy?",
+            "ask_policy_faq",
+            "ask_policy_faq_response",
+            "8 casual days, 10 sick days, and 15 earned days",
+            "Company Leave Policy",
+        ),
+    ]
+
+    for user_msg, expected_intent, expected_tmpl, expected_snippet, expected_title in test_cases:
+        res = client.post(
+            "/webhooks/vario/converse",
+            json={
+                "sender": "conv-faq-test",
+                "message": user_msg,
+                "metadata": {
+                    "auth_context": {
+                        "employee_id": "EMP-1001",
+                        "full_name": "Employee One",
+                        "role": "end_user",
+                    }
+                },
+            },
+        )
+        assert res.status_code == 200, f"Failed for {user_msg}"
+        data = res.json()
+        assert data["intent"] == expected_intent, f"Wrong intent for {user_msg}: {data['intent']}"
+        assert data["template_key"] == expected_tmpl, f"Wrong template_key for {user_msg}: {data['template_key']}"
+        assert expected_snippet in data["response_text"], f"Snippet '{expected_snippet}' missing in {data['response_text']}"
+        assert data["card"] is not None
+        assert data["card"]["type"] == "faq_answer"
+        assert data["card"]["title"] == expected_title
+        assert expected_snippet in data["card"]["text"]
+
+
+# ============================================================================
+# Slice 36 (SCRUM-46): Leave Request Status (FR-6, Defect N8)
+# ============================================================================
+
+def test_n8_leave_request_status_shows_latest_request_as_data_card():
+    """
+    Defect N8:
+    Given 'has my leave been approved?', status of the employee's latest request from HRMS is shown as a card.
+    """
+    mock_status = {
+        "found": True,
+        "employee_id": "EMP-1001",
+        "employee_name": "Employee One",
+        "applications": [
+            {
+                "reference_id": "LEAVE-2031",
+                "leave_type": "casual",
+                "start_date": "2026-09-10",
+                "end_date": "2026-09-11",
+                "days": 2,
+                "status": "approved",
+                "reason": "Personal appointment",
+                "submitted_at": "2026-09-07T10:05:00Z",
+            }
+        ],
+    }
+
+    with patch.object(HRMSAdapter, "get_leave_status", new_callable=AsyncMock, return_value=mock_status) as mock_get:
+        res = client.post(
+            "/webhooks/vario/converse",
+            json={
+                "sender": "conv-status-101",
+                "message": "has my leave been approved?",
+                "metadata": {
+                    "auth_context": {
+                        "employee_id": "EMP-1001",
+                        "full_name": "Employee One",
+                        "role": "end_user",
+                    }
+                },
+            },
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["intent"] == "ask_leave_status"
+        assert data["template_key"] == "ask_leave_status_response"
+        assert "LEAVE-2031" in data["response_text"]
+        assert "approved" in data["response_text"].lower()
+
+        # Check card structure
+        assert data["card"] is not None
+        assert data["card"]["type"] == "data_card"
+        assert "LEAVE-2031" in data["card"]["title"]
+        row_labels = [r["label"] for r in data["card"]["rows"]]
+        assert "Reference ID" in row_labels
+        assert "Leave Type" in row_labels
+        assert "Status" in row_labels
+
+        mock_get.assert_awaited_once_with("EMP-1001", reference_id=None)
+
+
+def test_n8_leave_request_status_with_reference_id_filter():
+    """
+    Defect N8:
+    Given 'status of LEAVE-2031', queries HRMS with reference_id filter.
+    """
+    mock_status = {
+        "found": True,
+        "employee_id": "EMP-1001",
+        "employee_name": "Employee One",
+        "applications": [
+            {
+                "reference_id": "LEAVE-2031",
+                "leave_type": "casual",
+                "start_date": "2026-09-10",
+                "end_date": "2026-09-11",
+                "days": 2,
+                "status": "approved",
+                "reason": "Personal appointment",
+            }
+        ],
+    }
+
+    with patch.object(HRMSAdapter, "get_leave_status", new_callable=AsyncMock, return_value=mock_status) as mock_get:
+        res = client.post(
+            "/webhooks/vario/converse",
+            json={
+                "sender": "conv-status-102",
+                "message": "status of LEAVE-2031",
+                "metadata": {
+                    "auth_context": {
+                        "employee_id": "EMP-1001",
+                    }
+                },
+            },
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["intent"] == "ask_leave_status"
+        assert data["template_key"] == "ask_leave_status_response"
+        assert "LEAVE-2031" in data["response_text"]
+        mock_get.assert_awaited_once_with("EMP-1001", reference_id="LEAVE-2031")
+
+
+def test_n8_leave_request_status_not_found():
+    """
+    Defect N8:
+    When employee has no leave applications on record, returns not_found card.
+    """
+    mock_status = {
+        "found": True,
+        "employee_id": "EMP-3001",
+        "applications": [],
+    }
+
+    with patch.object(HRMSAdapter, "get_leave_status", new_callable=AsyncMock, return_value=mock_status):
+        res = client.post(
+            "/webhooks/vario/converse",
+            json={
+                "sender": "conv-status-103",
+                "message": "has my leave been approved?",
+                "metadata": {
+                    "auth_context": {
+                        "employee_id": "EMP-3001",
+                    }
+                },
+            },
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["intent"] == "ask_leave_status"
+        assert data["template_key"] == "ask_leave_status_not_found_response"
+        assert data["card"]["type"] == "not_found"
+
+
+def test_n8_leave_request_status_unauthenticated():
+    """
+    Defect N8:
+    When not logged in, prompt to log in.
+    """
+    res = client.post(
+        "/webhooks/vario/converse",
+        json={
+            "sender": "conv-status-104",
+            "message": "has my leave been approved?",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["intent"] == "ask_leave_status"
+    assert data["card"]["type"] == "error"
+    assert "log in" in data["response_text"].lower()
+
+
+@pytest.mark.anyio
+async def test_action_ask_leave_status_direct():
+    """Direct test for ActionAskLeaveStatus."""
+    from actions.actions import ActionAskLeaveStatus
+    action = ActionAskLeaveStatus()
+    assert action.name() == "action_ask_leave_status"
+
+    dispatcher = MagicMock()
+    tracker = MagicMock()
+    tracker.latest_message = {
+        "text": "has my leave been approved?",
+        "metadata": {"auth_context": {"employee_id": "EMP-1001"}},
+        "entities": [],
+    }
+    tracker.get_slot = MagicMock(return_value=None)
+
+    mock_status = {
+        "found": True,
+        "employee_id": "EMP-1001",
+        "applications": [
+            {
+                "reference_id": "LEAVE-2031",
+                "leave_type": "casual",
+                "start_date": "2026-09-10",
+                "end_date": "2026-09-11",
+                "days": 2,
+                "status": "approved",
+                "reason": "Personal",
+            }
+        ],
+    }
+    with patch.object(HRMSAdapter, "get_leave_status", new_callable=AsyncMock, return_value=mock_status):
+        events = await action.run(dispatcher, tracker, {})
+        assert events == []
+        dispatcher.utter_message.assert_called_once()
+        _, kwargs = dispatcher.utter_message.call_args
+        assert "LEAVE-2031" in kwargs["text"]
+        vario = kwargs["json_message"]["vario"]
+        assert vario["template_key"] == "ask_leave_status_response"
+        assert vario["card"]["type"] == "data_card"
+
