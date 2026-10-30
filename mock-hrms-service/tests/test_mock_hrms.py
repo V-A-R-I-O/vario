@@ -250,3 +250,48 @@ def test_n6_reset_restores_balances_and_reference_counter():
     assert submit2.json()["remaining_balance"]["breakdown"]["casual"] == 4
 
 
+def test_n7_reject_invalid_leave_requests():
+    """
+    Defect N7:
+    Reject past dates, end-before-start, and requests exceeding the balance with a clear error.
+    Repro step: POST a 90-day leave in 2020 for an employee with 6 days left.
+    """
+    client.post("/reset")
+
+    # Repro step 1: 90-day leave in 2020 for EMP-1001 (who has 6 days casual)
+    repro_payload = {
+        "employee_id": "EMP-1001",
+        "leave_type": "casual",
+        "start_date": "2020-01-01",
+        "end_date": "2020-03-31",
+        "reason": "Invalid past 90-day leave",
+    }
+    res = client.post("/leave/submit", json=repro_payload)
+    assert res.status_code == 400
+    assert "past" in res.json()["detail"].lower()
+
+    # Exceeding balance in future
+    exceed_payload = {
+        "employee_id": "EMP-1001",
+        "leave_type": "casual",
+        "start_date": "2026-11-01",
+        "end_date": "2026-11-10",  # 10 days, but only 6 casual days available
+        "reason": "Exceeding casual quota",
+    }
+    res_exceed = client.post("/leave/submit", json=exceed_payload)
+    assert res_exceed.status_code == 400
+    assert "insufficient casual leave balance" in res_exceed.json()["detail"].lower()
+
+    # End before start
+    end_before_start = {
+        "employee_id": "EMP-1001",
+        "leave_type": "sick",
+        "start_date": "2026-11-20",
+        "end_date": "2026-11-15",
+        "reason": "Backward dates",
+    }
+    res_range = client.post("/leave/submit", json=end_before_start)
+    assert res_range.status_code == 400
+    assert "cannot be after" in res_range.json()["detail"].lower()
+
+
