@@ -55,53 +55,38 @@ async def get_ticket(ticket_id: str) -> Dict[str, Any]:
     clean_id = (ticket_id or "").strip().upper()
     ticket = sd.TICKETS.get(clean_id)
     if not ticket:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"message": f"Ticket '{clean_id}' was not found.", "ticket_id": clean_id},
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"message": f"Ticket '{clean_id}' was not found.", "ticket_id": clean_id})
     return dict(ticket)
 
 
 @app.post("/tickets", status_code=status.HTTP_201_CREATED)
 async def create_ticket(request: TicketCreateRequest) -> Dict[str, Any]:
-    category = request.category.strip()
-    description = request.description.strip()
-    reporter = request.reporter.strip().upper()
+    category, description, reporter = request.category.strip(), request.description.strip(), request.reporter.strip().upper()
     if not category or not description or not reporter:
         raise HTTPException(status_code=400, detail="category, description, and reporter are required.")
     if reporter not in sd.EMPLOYEES:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"message": f"Employee '{reporter}' was not found.", "employee_id": reporter},
-        )
-
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"message": f"Employee '{reporter}' was not found.", "employee_id": reporter})
     sd.TICKET_COUNTER += 1
     ticket_id = f"IT-{sd.TICKET_COUNTER}"
     now = _now()
-    ticket = {
-        "ticket_id": ticket_id,
-        "category": category,
-        "description": description,
-        "reporter": reporter,
-        "status": "Open",
-        "created_at": now,
-        "updated_at": now,
-    }
+    ticket = {"ticket_id": ticket_id, "category": category, "description": description,
+              "reporter": reporter, "status": "Open", "created_at": now, "updated_at": now}
     sd.TICKETS[ticket_id] = ticket
     return dict(ticket)
 
 
 @app.get("/identity/{employee_id}/question")
 async def get_security_question(employee_id: str) -> Dict[str, Any]:
-    """Return only the configured question for a known demo employee."""
     clean_id = (employee_id or "").strip().upper()
     employee = sd.EMPLOYEES.get(clean_id)
     if not employee:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"message": "Employee was not found.", "employee_id": clean_id},
-        )
-    return {"found": True, "employee_id": clean_id, "security_question": employee["security_question"]}
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"message": "Employee was not found.", "employee_id": clean_id})
+    attempts = sd.identity_attempt_state(clean_id)
+    return {"found": True, "employee_id": clean_id, "security_question": employee["security_question"],
+            "locked": attempts["locked"], "attempts_remaining": attempts["attempts_remaining"]}
 
 
 @app.post("/identity/verify")
@@ -109,44 +94,38 @@ async def verify_identity(request: IdentityVerifyRequest) -> Dict[str, Any]:
     employee_id = request.employee_id.strip().upper()
     employee = sd.EMPLOYEES.get(employee_id)
     if not employee:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"message": f"Employee '{employee_id}' was not found.", "employee_id": employee_id},
-        )
-
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"message": f"Employee '{employee_id}' was not found.", "employee_id": employee_id})
+    state = sd.identity_attempt_state(employee_id)
+    if state["locked"]:
+        return {"verified": False, "employee_id": employee_id, "locked": True,
+                "attempts_remaining": 0, "detail": "Too many failed verification attempts. Contact IT Support."}
     expected = " ".join(employee["security_answer"].casefold().split())
     supplied = " ".join(request.answer.casefold().split())
     verified = bool(supplied) and supplied == expected
     if verified:
         sd.VERIFIED_EMPLOYEES.add(employee_id)
+        sd.clear_identity_attempts(employee_id)
+        state = {"locked": False, "attempts_remaining": 3, "attempts": 0}
     else:
         sd.VERIFIED_EMPLOYEES.discard(employee_id)
-    return {
-        "verified": verified,
-        "employee_id": employee_id,
-        "detail": "Identity verified." if verified else "The security answer did not match.",
-    }
+        state = sd.record_identity_failure(employee_id)
+    return {"verified": verified, "employee_id": employee_id, "locked": state["locked"],
+            "attempts_remaining": state["attempts_remaining"],
+            "detail": "Identity verified." if verified else (
+                "Too many failed verification attempts. Contact IT Support." if state["locked"]
+                else "The security answer did not match.")}
 
 
 @app.post("/password/reset")
 async def reset_password(request: PasswordResetRequest) -> Dict[str, Any]:
     employee_id = request.employee_id.strip().upper()
     if employee_id not in sd.EMPLOYEES:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"message": f"Employee '{employee_id}' was not found.", "employee_id": employee_id},
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"message": f"Employee '{employee_id}' was not found.", "employee_id": employee_id})
     if employee_id not in sd.VERIFIED_EMPLOYEES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Identity verification is required before a password reset.",
-        )
-
-    # This demo never handles or returns a real password; it only records the mock action.
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Identity verification is required before a password reset.")
     sd.VERIFIED_EMPLOYEES.discard(employee_id)
-    return {
-        "success": True,
-        "employee_id": employee_id,
-        "reset_requested": True,
-        "message": "Mock password reset initiated.",
-    }
+    return {"success": True, "employee_id": employee_id, "reset_requested": True,
+            "message": "Mock password reset initiated."}
