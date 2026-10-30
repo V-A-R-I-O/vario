@@ -302,6 +302,29 @@ async def submit_leave(
     }
 
 
+POLICY_KEY_ALIASES = {
+    "maternity": "maternity-policy",
+    "maternity-policy": "maternity-policy",
+    "paternity": "paternity-policy",
+    "paternity-policy": "paternity-policy",
+    "parental": "parental-leave",
+    "parental-leave": "parental-leave",
+    "sick": "sick-leave-policy",
+    "sick-leave": "sick-leave-policy",
+    "sick-leave-policy": "sick-leave-policy",
+    "bereavement": "bereavement-leave",
+    "bereavement-leave": "bereavement-leave",
+    "carry-forward": "carry-forward-policy",
+    "carry-forward-policy": "carry-forward-policy",
+    "carryover": "carry-forward-policy",
+    "wfh": "wfh-policy",
+    "wfh-policy": "wfh-policy",
+    "leave": "leave-policy",
+    "leave-policy": "leave-policy",
+    "annual": "leave-policy",
+}
+
+
 @app.get("/policies")
 async def list_policies() -> Dict[str, Any]:
     return {"policies": list(sd.POLICIES.values())}
@@ -310,7 +333,8 @@ async def list_policies() -> Dict[str, Any]:
 @app.get("/policies/{policy_id}")
 async def get_policy(policy_id: str) -> Dict[str, Any]:
     norm_key = (policy_id or "").strip().lower()
-    policy = sd.POLICIES.get(norm_key)
+    target_key = POLICY_KEY_ALIASES.get(norm_key, norm_key)
+    policy = sd.POLICIES.get(target_key)
     if not policy:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
