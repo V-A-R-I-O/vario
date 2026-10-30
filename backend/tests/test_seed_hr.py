@@ -30,12 +30,16 @@ async def test_seed_hr_data_creates_intents_and_template(db_session):
     phrases = (await db_session.execute(stmt_phrases)).scalars().all()
     assert len(phrases) >= 30
 
-    # 3. Verify stub intents
+    # 3. Verify intents
     stmt_status = select(Intent).where(Intent.name == "ask_leave_status")
     status_intent = (await db_session.execute(stmt_status)).scalar_one_or_none()
     assert status_intent is not None
     assert status_intent.role_pack == "hr"
     assert status_intent.intent_type == "dynamic_workflow"
+
+    stmt_status_phrases = select(TrainingPhrase).where(TrainingPhrase.intent_id == status_intent.intent_id)
+    status_phrases = (await db_session.execute(stmt_status_phrases)).scalars().all()
+    assert len(status_phrases) >= 10
 
     stmt_req = select(Intent).where(Intent.name == "submit_leave_request")
     req_intent = (await db_session.execute(stmt_req)).scalar_one_or_none()
@@ -75,30 +79,24 @@ async def test_seed_hr_data_creates_intents_and_template(db_session):
     assert "sick" in tmpl.available_variables
     assert "earned" in tmpl.available_variables
 
-    # 5. Verify policy FAQ templates and variants (slice-16)
-    stmt_policy_tmpl = select(ResponseTemplate).where(
-        ResponseTemplate.template_key == "ask_policy_faq_response"
-    )
-    policy_tmpl = (await db_session.execute(stmt_policy_tmpl)).scalar_one_or_none()
-    assert policy_tmpl is not None
-    assert policy_tmpl.available_variables == []
-    stmt_policy_variants = select(ResponseVariant).where(
-        ResponseVariant.template_id == policy_tmpl.template_id
-    )
-    policy_variants = (await db_session.execute(stmt_policy_variants)).scalars().all()
-    assert len(policy_variants) >= 1
-
-    stmt_wfh_tmpl = select(ResponseTemplate).where(
-        ResponseTemplate.template_key == "ask_wfh_policy_response"
-    )
-    wfh_tmpl = (await db_session.execute(stmt_wfh_tmpl)).scalar_one_or_none()
-    assert wfh_tmpl is not None
-    assert wfh_tmpl.available_variables == []
-    stmt_wfh_variants = select(ResponseVariant).where(
-        ResponseVariant.template_id == wfh_tmpl.template_id
-    )
-    wfh_variants = (await db_session.execute(stmt_wfh_variants)).scalars().all()
-    assert len(wfh_variants) >= 1
+    # 5. Verify policy FAQ templates and variants (slice-16 / slice-36)
+    for expected_key in [
+        "ask_policy_faq_response",
+        "ask_wfh_policy_response",
+        "ask_maternity_policy_response",
+        "ask_paternity_policy_response",
+        "ask_sick_policy_response",
+        "ask_bereavement_policy_response",
+        "ask_carry_forward_policy_response",
+        "ask_leave_status_response",
+        "ask_leave_status_not_found_response",
+    ]:
+        stmt_k = select(ResponseTemplate).where(ResponseTemplate.template_key == expected_key)
+        tmpl_k = (await db_session.execute(stmt_k)).scalar_one_or_none()
+        assert tmpl_k is not None, f"Template {expected_key} missing from seed"
+        stmt_vars = select(ResponseVariant).where(ResponseVariant.template_id == tmpl_k.template_id)
+        vars_k = (await db_session.execute(stmt_vars)).scalars().all()
+        assert len(vars_k) >= 1, f"Template {expected_key} has no variants"
 
     # 6. Verify response variants for check_leave_balance
     stmt_variants = select(ResponseVariant).where(
