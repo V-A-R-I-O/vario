@@ -20,11 +20,15 @@ install rasa-it/requirements.txt. In PowerShell:
 In a second terminal, activate the same environment and set PYTHONPATH to the
 repository's rasa-shared directory, then run:
 
+    $env:ACTION_ENDPOINT_URL = "http://localhost:5055/webhook"
     Set-Location .\rasa-it
     rasa run --enable-api --port 5006 --credentials credentials.yml --endpoints endpoints.yml
 
-The Rasa server listens on port 5006 and the action server on port 5055. Both
-use MOCK_ITSM_URL. The Rasa server uses the shared ADR-006 channel and redacting
+The Rasa server listens on port 5006 and the action server on port 5055. Set
+`ACTION_ENDPOINT_URL=http://localhost:5055/webhook` before starting the Rasa
+server (PowerShell: `$env:ACTION_ENDPOINT_URL = "http://localhost:5055/webhook"`).
+Docker Compose supplies `http://rasa-it-actions:5055/webhook` automatically.
+Both services use MOCK_ITSM_URL. The Rasa server uses the shared ADR-006 channel and redacting
 SQL tracker store. The security answer is verified from the live turn and is
 never retained in a slot or returned to the gateway.
 
