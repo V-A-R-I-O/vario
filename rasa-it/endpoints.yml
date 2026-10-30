@@ -1,5 +1,5 @@
 action_endpoint:
-  url: "${ACTION_ENDPOINT_URL:-http://localhost:5055/webhook}"
+  url: "${ACTION_ENDPOINT_URL}"
 tracker_store:
   type: vario_rasa.tracker_store.RedactingSQLTrackerStore
   dialect: postgresql
