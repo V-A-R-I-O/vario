@@ -1,5 +1,6 @@
 # Configuration for Rasa HR NLU & Dialogue Engine
 recipe: default.v1
+assistant_id: hr_assistant
 language: en
 
 pipeline:

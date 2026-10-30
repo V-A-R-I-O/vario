@@ -1,22 +1,17 @@
-import re
-import os
-import sys
-from typing import Any, Text, Dict, List, Optional
-
-# Add backend to path for HRMSAdapter import
-backend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../backend"))
-if backend_path not in sys.path:
-    sys.path.insert(0, backend_path)
+import logging
+from typing import Any, Dict, List, Optional, Text
+from datetime import date
 
 try:
-    from rasa_sdk import Action, Tracker
+    from rasa_sdk import Action, Tracker, FormValidationAction
     from rasa_sdk.executor import CollectingDispatcher
-    from rasa_sdk.events import SlotSet
-    HAS_RASA_SDK = True
+    from rasa_sdk.events import SlotSet, ActiveLoop, EventType
 except ImportError:
-    HAS_RASA_SDK = False
-
+    # Fallback types for static checking outside rasa-sdk
     class Action:  # type: ignore
+        pass
+
+    class FormValidationAction:  # type: ignore
         pass
 
     class Tracker:  # type: ignore
@@ -28,605 +23,599 @@ except ImportError:
     def SlotSet(key: str, value: Any) -> Dict[str, Any]:  # type: ignore
         return {"event": "slot", "name": key, "value": value}
 
-# Import HRMSAdapter for slice-14
+    def ActiveLoop(name: Optional[str]) -> Dict[str, Any]:  # type: ignore
+        return {"event": "active_loop", "name": name}
+
+import sys
+from pathlib import Path
+
+# Ensure rasa-shared is resolvable even when not explicitly on PYTHONPATH
+_shared_dir = Path(__file__).resolve().parent.parent.parent / "rasa-shared"
+if _shared_dir.exists() and str(_shared_dir) not in sys.path:
+    sys.path.insert(0, str(_shared_dir))
+
 try:
-    import asyncio
-    from app.services.hrms_adapter import HRMSAdapter
-    HAS_HRMS_ADAPTER = True
+    from vario_rasa.contract import vario_payload
 except ImportError:
-    HAS_HRMS_ADAPTER = False
-    HRMSAdapter = None  # type: ignore
+    def vario_payload(template_key: str, card: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        payload = {"template_key": template_key}
+        if card is not None:
+            payload["card"] = card
+        return payload
 
-# Offline fallback employee records (graceful degradation when mock service is offline)
-OFFLINE_EMPLOYEES: Dict[str, Dict[str, Any]] = {
-    "EMP-1042": {
-        "found": True,
-        "employee_id": "EMP-1042",
-        "employee_name": "Jane Smith",
-        "department": "Product Marketing",
-        "total": 22,
-        "casual": 4,
-        "sick": 6,
-        "earned": 12,
-    },
-    "EMP-1001": {
-        "found": True,
-        "employee_id": "EMP-1001",
-        "employee_name": "Employee One",
-        "department": "Engineering",
-        "total": 28,
-        "casual": 6,
-        "sick": 8,
-        "earned": 14,
-    },
-    "EMP-2001": {
-        "found": True,
-        "employee_id": "EMP-2001",
-        "employee_name": "HR Admin",
-        "department": "People Operations",
-        "total": 20,
-        "casual": 5,
-        "sick": 5,
-        "earned": 10,
-    },
-    "EMP-3045": {
-        "found": True,
-        "employee_id": "EMP-3045",
-        "employee_name": "Engineering Lead",
-        "department": "Engineering",
-        "total": 12,
-        "casual": 3,
-        "sick": 4,
-        "earned": 5,
-    },
-}
+try:
+    from actions.hrms_adapter import (
+        HRMSAdapter,
+        BackendUnavailableError,
+        EmployeeNotFoundError,
+        LeaveApplicationError,
+    )
+    from actions.date_utils import validate_date_input, parse_date
+except ImportError:
+    from .hrms_adapter import (
+        HRMSAdapter,
+        BackendUnavailableError,
+        EmployeeNotFoundError,
+        LeaveApplicationError,
+    )
+    from .date_utils import validate_date_input, parse_date
+
+logger = logging.getLogger(__name__)
 
 
-class ActionSubmitLeaveRequest(Action):
+def _extract_employee_id(tracker: Tracker) -> Optional[str]:
     """
-    Multi-turn leave request workflow (slice-15).
-    Collects: leave_type, start_date, end_date, reason
-    Shows confirmation before submission.
-    Calls HRMSAdapter.submit_leave() and fires audit log.
+    Extracts the trusted employee ID from message metadata (ADR-006).
+    Employee IDs typed in chat are deliberately ignored for balance & submissions.
     """
+    latest_msg = tracker.latest_message or {}
+    metadata = latest_msg.get("metadata") or {}
+    auth_ctx = metadata.get("auth_context") or {}
+    emp_id = auth_ctx.get("employee_id")
+    if emp_id and isinstance(emp_id, str) and emp_id.strip():
+        return emp_id.strip().upper()
+    return None
 
-    TEMPLATE_KEY_SLOT_PROMPT = "submit_leave_slot_prompt"
-    TEMPLATE_KEY_CONFIRMATION = "submit_leave_confirmation"
-    TEMPLATE_KEY_RESULT = "submit_leave_result"
-    TEMPLATE_KEY_CANCELLED = "submit_leave_cancelled"
+
+class ActionCheckLeaveBalance(Action):
+    """
+    Checks leave balance for the authenticated employee via HRMSAdapter.
+    Ignores any employee ID typed in chat text (Defect B6, M2a).
+    Does NOT preset or pollute leave_type in slots (Defect M1a).
+    """
 
     def name(self) -> Text:
-        return "action_submit_leave_request"
+        return "action_check_leave_balance"
 
-    def extract_employee_id(self, tracker: Any, sender: Optional[str] = None) -> Optional[str]:
-        """Extract employee_id from slot, entities, or authenticated sender."""
-        if hasattr(tracker, "get_slot"):
-            emp_id = tracker.get_slot("employee_id")
-            if emp_id:
-                return str(emp_id).strip().upper()
-
-        if hasattr(tracker, "latest_message") and isinstance(tracker.latest_message, dict):
-            entities = tracker.latest_message.get("entities", [])
-            for ent in entities:
-                if ent.get("entity") == "employee_id":
-                    return str(ent.get("value", "")).strip().upper()
-
-        if isinstance(tracker, dict):
-            slots = tracker.get("slots", {})
-            if slots and "employee_id" in slots and slots["employee_id"]:
-                return str(slots["employee_id"]).strip().upper()
-            for ent in tracker.get("entities", []):
-                if ent.get("entity") == "employee_id":
-                    return str(ent.get("value", "")).strip().upper()
-
-        if sender and re.match(r"^EMP-\d{4}$", sender.strip(), re.IGNORECASE):
-            return sender.strip().upper()
-
-        return None
-
-    def validate_date(self, date_str: str) -> bool:
-        """Validate date format (YYYY-MM-DD) and not in the past."""
-        if not date_str:
-            return False
-        try:
-            from datetime import datetime
-            parsed = datetime.strptime(date_str, "%Y-%m-%d")
-            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            return parsed >= today
-        except (ValueError, TypeError):
-            return False
-
-    def validate_date_range(self, start_date: str, end_date: str) -> bool:
-        """Validate that end_date >= start_date."""
-        if not start_date or not end_date:
-            return False
-        try:
-            from datetime import datetime
-            start = datetime.strptime(start_date, "%Y-%m-%d")
-            end = datetime.strptime(end_date, "%Y-%m-%d")
-            return end >= start
-        except (ValueError, TypeError):
-            return False
-
-    def execute_logic(
+    async def run(
         self,
-        employee_id: Optional[str] = None,
-        leave_type: Optional[str] = None,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        reason: Optional[str] = None,
-        confirmation_pending: bool = False,
-        user_action: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        Execute the multi-turn leave request workflow.
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+        employee_id = _extract_employee_id(tracker)
 
-        Flow:
-        1. Collect leave_type (with option buttons)
-        2. Collect start_date (validate format and not past)
-        3. Collect end_date (validate format and range)
-        4. Collect reason
-        5. Show confirmation summary
-        6. On Confirm: submit via HRMSAdapter
-        7. On Cancel: end workflow gracefully
-        """
-        # Handle user action (Confirm/Cancel)
-        if user_action == "cancel":
-            return {
-                "template_key": self.TEMPLATE_KEY_CANCELLED,
-                "slots": {
-                    "confirmation_pending": False,
-                    "leave_type": None,
-                    "start_date": None,
-                    "end_date": None,
-                    "reason": None,
-                    "requested_slot": None,
+        if not employee_id:
+            msg = "Please log in to your employee account to check your leave balance."
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "error", "text": msg}
+                ),
+            )
+            return []
+
+        try:
+            balance_data = await HRMSAdapter.get_leave_balance(employee_id)
+        except BackendUnavailableError:
+            msg = "The HR system is currently unavailable. Please try again in a moment."
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "error", "text": msg}
+                ),
+            )
+            return []
+        except Exception as exc:
+            logger.error("Error retrieving leave balance for %s: %s", employee_id, exc)
+            msg = "The HR system is currently unavailable. Please try again in a moment."
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "error", "text": msg}
+                ),
+            )
+            return []
+
+        if not balance_data.get("found"):
+            msg = "I couldn't find your employee record in the HR system. Please contact HR support."
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "not_found", "text": msg}
+                ),
+            )
+            return []
+
+        total = balance_data.get("total", 0)
+        casual = balance_data.get("casual", 0)
+        sick = balance_data.get("sick", 0)
+        earned = balance_data.get("earned", 0)
+        emp_name = balance_data.get("employee_name")
+
+        card_title = f"{emp_name}'s leave balance" if emp_name else "Your leave balance"
+        card = {
+            "type": "data_card",
+            "title": card_title,
+            "rows": [
+                {"label": "Casual", "value": f"{casual} days"},
+                {"label": "Sick", "value": f"{sick} days"},
+                {"label": "Earned", "value": f"{earned} days"},
+                {"label": "Total", "value": f"{total} days"},
+            ],
+        }
+
+        response_text = f"You have {total} days of leave remaining: {casual} casual, {sick} sick, {earned} earned."
+
+        dispatcher.utter_message(
+            text=response_text,
+            json_message=vario_payload(
+                template_key="check_leave_balance_response",
+                slots={
+                    "total": total,
+                    "casual": casual,
+                    "sick": sick,
+                    "earned": earned,
                 },
-                "requires_input": False,
-                "missing_slot": None,
-                "response_text": "Leave request cancelled. No changes were made.",
-            }
+                card=card,
+            ),
+        )
+        return []
 
-        # Step 1: Collect leave_type
-        if not leave_type:
-            return {
-                "template_key": self.TEMPLATE_KEY_SLOT_PROMPT,
-                "slots": {
-                    "requested_slot": "leave_type",
-                },
-                "requires_input": True,
-                "missing_slot": "leave_type",
-                "slot_prompt_type": "leave_type",
-                "response_text": None,
-            }
 
-        # Step 2: Collect start_date
-        if not start_date:
-            return {
-                "template_key": self.TEMPLATE_KEY_SLOT_PROMPT,
-                "slots": {
-                    "leave_type": leave_type,
-                    "requested_slot": "start_date",
-                },
-                "requires_input": True,
-                "missing_slot": "start_date",
-                "slot_prompt_type": "start_date",
-                "response_text": None,
-            }
+class ActionAskLeaveConfirm(Action):
+    """
+    Renders the confirmation summary step for leave_request_form.
+    Shows details, Confirm / Cancel buttons and confirmation card.
+    """
 
-        # Validate start_date
-        if not self.validate_date(start_date):
-            return {
-                "template_key": None,
-                "slots": {
-                    "leave_type": leave_type,
-                    "start_date": None,
-                    "requested_slot": "start_date",
-                },
-                "requires_input": True,
-                "missing_slot": "start_date",
-                "response_text": "Please provide a valid start date in YYYY-MM-DD format (e.g., 2026-10-20). The date cannot be in the past.",
-            }
+    def name(self) -> Text:
+        return "action_ask_leave_confirm"
 
-        # Step 3: Collect end_date
-        if not end_date:
-            return {
-                "template_key": self.TEMPLATE_KEY_SLOT_PROMPT,
-                "slots": {
-                    "leave_type": leave_type,
-                    "start_date": start_date,
-                    "requested_slot": "end_date",
-                },
-                "requires_input": True,
-                "missing_slot": "end_date",
-                "slot_prompt_type": "end_date",
-                "response_text": None,
-            }
+    async def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+        leave_type = tracker.get_slot("leave_type") or "leave"
+        start_date = tracker.get_slot("start_date") or ""
+        end_date = tracker.get_slot("end_date") or ""
+        reason = tracker.get_slot("reason") or "None"
 
-        # Validate end_date and range
-        if not self.validate_date(end_date):
-            return {
-                "template_key": None,
-                "slots": {
-                    "leave_type": leave_type,
-                    "start_date": start_date,
-                    "end_date": None,
-                    "requested_slot": "end_date",
-                },
-                "requires_input": True,
-                "missing_slot": "end_date",
-                "response_text": "Please provide a valid end date in YYYY-MM-DD format (e.g., 2026-10-22). The date cannot be in the past.",
-            }
-
-        if not self.validate_date_range(start_date, end_date):
-            return {
-                "template_key": None,
-                "slots": {
-                    "leave_type": leave_type,
-                    "start_date": start_date,
-                    "end_date": None,
-                    "requested_slot": "end_date",
-                },
-                "requires_input": True,
-                "missing_slot": "end_date",
-                "response_text": f"End date must be on or after the start date ({start_date}). Please provide a valid end date.",
-            }
-
-        # Step 4: Collect reason
-        if not reason:
-            return {
-                "template_key": self.TEMPLATE_KEY_SLOT_PROMPT,
-                "slots": {
-                    "leave_type": leave_type,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "requested_slot": "reason",
-                },
-                "requires_input": True,
-                "missing_slot": "reason",
-                "slot_prompt_type": "reason",
-                "response_text": None,
-            }
-
-        # Step 5: Show confirmation (if not already shown)
-        if not confirmation_pending and user_action != "confirm":
-            return {
-                "template_key": self.TEMPLATE_KEY_CONFIRMATION,
-                "slots": {
+        summary_text = (
+            f"Please confirm your leave request: {leave_type} leave from "
+            f"{start_date} to {end_date}. Reason: {reason}."
+        )
+        card = {
+            "type": "confirmation",
+            "title": "Confirm leave request",
+            "text": summary_text,
+            "options": [
+                {"label": "Confirm", "value": "confirm"},
+                {"label": "Cancel", "value": "cancel"},
+            ],
+        }
+        dispatcher.utter_message(
+            text=summary_text,
+            buttons=[
+                {"title": "Confirm", "payload": "confirm"},
+                {"title": "Cancel", "payload": "cancel"},
+            ],
+            json_message=vario_payload(
+                template_key="submit_leave_confirmation",
+                slots={
                     "leave_type": leave_type,
                     "start_date": start_date,
                     "end_date": end_date,
                     "reason": reason,
                     "confirmation_pending": True,
-                    "requested_slot": None,
                 },
-                "requires_input": True,
-                "missing_slot": None,
-                "response_text": None,
-            }
-
-        # Step 6: Submit on Confirm
-        if user_action == "confirm":
-            clean_id = (employee_id or "").strip().upper()
-            if not clean_id:
-                return {
-                    "template_key": None,
-                    "slots": {
-                        "confirmation_pending": False,
-                        "requested_slot": None,
-                    },
-                    "requires_input": False,
-                    "missing_slot": None,
-                    "response_text": "Unable to submit leave request: employee ID not found. Please try again.",
-                }
-
-            # Call HRMSAdapter.submit_leave()
-            submission_result: Optional[Dict[str, Any]] = None
-            if HAS_HRMS_ADAPTER and HRMSAdapter:
-                try:
-                    res = HRMSAdapter.submit_leave(
-                        employee_id=clean_id,
-                        leave_type=leave_type,
-                        start_date=start_date,
-                        end_date=end_date,
-                        reason=reason,
-                    )
-                    import inspect
-                    if inspect.isawaitable(res):
-                        try:
-                            loop = asyncio.get_running_loop()
-                        except RuntimeError:
-                            loop = None
-
-                        if loop is not None and loop.is_running():
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as pool:
-                                submission_result = pool.submit(
-                                    asyncio.run,
-                                    res,
-                                ).result()
-                        else:
-                            submission_result = asyncio.run(res)
-                    else:
-                        submission_result = res
-                except Exception as e:
-                    return {
-                        "template_key": None,
-                        "slots": {
-                            "confirmation_pending": False,
-                            "requested_slot": None,
-                        },
-                        "requires_input": False,
-                        "missing_slot": None,
-                        "response_text": f"Sorry, I couldn't submit your leave request due to a technical error: {str(e)}. Please try again later or contact HR.",
-                    }
-
-            if submission_result and submission_result.get("success"):
-                reference_id = submission_result.get("reference_id", "UNKNOWN")
-                return {
-                    "template_key": self.TEMPLATE_KEY_RESULT,
-                    "slots": {
-                        "reference_id": reference_id,
-                        "leave_type": leave_type,
-                        "start_date": start_date,
-                        "end_date": end_date,
-                        "days": submission_result.get("days", 1),
-                        "employee_id": clean_id,
-                        "confirmation_pending": False,
-                        "requested_slot": None,
-                    },
-                    "requires_input": False,
-                    "missing_slot": None,
-                    "response_text": None,
-                    "audit_event": {
-                        "action_type": "leave_submitted",
-                        "reference_id": reference_id,
-                        "details": {
-                            "leave_type": leave_type,
-                            "start_date": start_date,
-                            "end_date": end_date,
-                            "days": submission_result.get("days", 1),
-                        },
-                    },
-                }
-            else:
-                error_msg = submission_result.get("detail", "Unknown error") if submission_result else "Service unavailable"
-                return {
-                    "template_key": None,
-                    "slots": {
-                        "confirmation_pending": False,
-                    },
-                    "requires_input": False,
-                    "missing_slot": None,
-                    "response_text": f"Sorry, I couldn't submit your leave request: {error_msg}. Please try again or contact HR.",
-                }
-
-        # Shouldn't reach here, but graceful fallback
-        return {
-            "template_key": None,
-            "slots": {},
-            "requires_input": False,
-            "missing_slot": None,
-            "response_text": "Something went wrong with the leave request. Please start over.",
-        }
-
-    async def run(
-        self,
-        dispatcher: Any,
-        tracker: Any,
-        domain: Dict[Text, Any],
-    ) -> List[Dict[Text, Any]]:
-        emp_id = self.extract_employee_id(tracker)
-        leave_type = tracker.get_slot("leave_type") if hasattr(tracker, "get_slot") else None
-        start_date = tracker.get_slot("start_date") if hasattr(tracker, "get_slot") else None
-        end_date = tracker.get_slot("end_date") if hasattr(tracker, "get_slot") else None
-        reason = tracker.get_slot("reason") if hasattr(tracker, "get_slot") else None
-        confirmation_pending = tracker.get_slot("confirmation_pending") if hasattr(tracker, "get_slot") else False
-
-        # Check for user action (Confirm/Cancel) in latest message
-        user_action = None
-        if hasattr(tracker, "latest_message") and isinstance(tracker.latest_message, dict):
-            text = tracker.latest_message.get("text", "").lower().strip()
-            if text in ("confirm", "yes", "proceed"):
-                user_action = "confirm"
-            elif text in ("cancel", "no", "stop"):
-                user_action = "cancel"
-
-        result = self.execute_logic(
-            emp_id, leave_type, start_date, end_date, reason, confirmation_pending, user_action
+                card=card,
+            ),
         )
-
-        events = []
-        for key, val in result["slots"].items():
-            events.append(SlotSet(key, val))
-
-        if hasattr(dispatcher, "utter_message"):
-            if result.get("response_text"):
-                dispatcher.utter_message(text=result["response_text"])
-            else:
-                dispatcher.utter_message(
-                    text=f"Template: {result['template_key']} Slots: {result['slots']}"
-                )
-
-        return events
+        return []
 
 
-class ActionCheckLeaveBalance(Action):
+class ValidateLeaveRequestForm(FormValidationAction):
     """
-    Custom action skeleton for checking leave balance (slice-12).
-    Extracts employee_id and leave_type, returning the template_key + slots shape.
-    Full HRMS adapter call is wired in slice-14.
+    Validates slots for leave_request_form:
+    - leave_type: accepts casual, sick, annual, earned (N5)
+    - start_date: validates format, no past dates (N5)
+    - end_date: validates format, end >= start
+    - reason: requires non-empty text
+    - leave_confirm: handles confirm, cancel, and re-asks off-script replies (M3a)
     """
-
-    TEMPLATE_KEY = "check_leave_balance_response"
-    ASK_EMPLOYEE_ID_PROMPT = "Please provide your employee ID (e.g., EMP-1042) to check your leave balance."
 
     def name(self) -> Text:
-        return "action_check_leave_balance"
+        return "validate_leave_request_form"
 
-    def extract_employee_id(self, tracker: Any, sender: Optional[str] = None) -> Optional[str]:
-        """
-        Extracts employee_id from slot, extracted entities, or authenticated session context.
-        Does NOT silently fall back to a hardcoded employee ID.
-        """
-        # 1. Try tracker slot if available
-        if hasattr(tracker, "get_slot"):
-            emp_id = tracker.get_slot("employee_id")
-            if emp_id:
-                return str(emp_id).strip().upper()
-
-        # 2. Try latest message entities
-        if hasattr(tracker, "latest_message") and isinstance(tracker.latest_message, dict):
-            entities = tracker.latest_message.get("entities", [])
-            for ent in entities:
-                if ent.get("entity") == "employee_id":
-                    return str(ent.get("value", "")).strip().upper()
-
-        # 3. Direct dictionary access fallback
-        if isinstance(tracker, dict):
-            slots = tracker.get("slots", {})
-            if slots and "employee_id" in slots and slots["employee_id"]:
-                return str(slots["employee_id"]).strip().upper()
-            for ent in tracker.get("entities", []):
-                if ent.get("entity") == "employee_id":
-                    return str(ent.get("value", "")).strip().upper()
-
-        # 4. Resolve from authenticated session sender if formatted as an employee ID
-        if sender and re.match(r"^EMP-\d{4}$", sender.strip(), re.IGNORECASE):
-            return sender.strip().upper()
-
-        return None
-
-    def extract_leave_type(self, tracker: Any) -> Optional[str]:
-        """Extracts leave_type from slot or extracted entities."""
-        if hasattr(tracker, "get_slot"):
-            lt = tracker.get_slot("leave_type")
-            if lt:
-                return str(lt).strip().lower()
-
-        if hasattr(tracker, "latest_message") and isinstance(tracker.latest_message, dict):
-            entities = tracker.latest_message.get("entities", [])
-            for ent in entities:
-                if ent.get("entity") == "leave_type":
-                    return str(ent.get("value", "")).strip().lower()
-
-        if isinstance(tracker, dict):
-            if "leave_type" in tracker.get("slots", {}):
-                return str(tracker["slots"]["leave_type"]).strip().lower()
-            for ent in tracker.get("entities", []):
-                if ent.get("entity") == "leave_type":
-                    return str(ent.get("value", "")).strip().lower()
-
-        return None
-
-    def execute_logic(
+    async def validate_leave_type(
         self,
-        employee_id: Optional[str] = None,
-        leave_type: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        Executes action logic.
-        If employee_id is missing, prompts for the required ID rather than silently
-        returning another employee's data or hardcoded leave balance.
+        slot_value: Any,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> Dict[Text, Any]:
+        if not slot_value or not isinstance(slot_value, str):
+            dispatcher.utter_message(
+                text="Please choose a valid leave type: casual, sick, or annual.",
+                json_message=vario_payload(
+                    template_key="submit_leave_slot_prompt",
+                    card={
+                        "type": "slot_prompt",
+                        "text": "Please choose a valid leave type: casual, sick, or annual.",
+                        "options": [
+                            {"label": "Casual", "value": "casual"},
+                            {"label": "Sick", "value": "sick"},
+                            {"label": "Annual", "value": "annual"},
+                        ],
+                    },
+                ),
+            )
+            return {"leave_type": None}
 
-        Slice-14: Wired to call HRMSAdapter.get_leave_balance() for real data.
-        """
-        leave_type_clean = leave_type or "annual"
+        clean = slot_value.strip().lower()
+        if clean in ("casual", "sick", "annual", "earned", "vacation", "pto", "paid"):
+            norm = "annual" if clean in ("annual", "earned", "vacation", "pto", "paid") else clean
+            return {"leave_type": norm}
 
-        if not employee_id:
-            return {
-                "template_key": None,
-                "slots": {
-                    "leave_type": leave_type_clean,
+        dispatcher.utter_message(
+            text="Please choose a valid leave type: casual, sick, or annual.",
+            json_message=vario_payload(
+                template_key="submit_leave_slot_prompt",
+                card={
+                    "type": "slot_prompt",
+                    "text": "Please choose a valid leave type: casual, sick, or annual.",
+                    "options": [
+                        {"label": "Casual", "value": "casual"},
+                        {"label": "Sick", "value": "sick"},
+                        {"label": "Annual", "value": "annual"},
+                    ],
                 },
-                "requires_input": True,
-                "missing_slot": "employee_id",
-                "response_text": self.ASK_EMPLOYEE_ID_PROMPT,
+            ),
+        )
+        return {"leave_type": None}
+
+    async def validate_start_date(
+        self,
+        slot_value: Any,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> Dict[Text, Any]:
+        iso_date, error = validate_date_input(str(slot_value))
+        if error or not iso_date:
+            dispatcher.utter_message(
+                text=error or "Please provide a valid start date (e.g. 'YYYY-MM-DD' or 'tomorrow').",
+                json_message=vario_payload(
+                    template_key="submit_leave_slot_prompt",
+                    card={
+                        "type": "slot_prompt",
+                        "text": error or "Please provide a valid start date (e.g. 'YYYY-MM-DD' or 'tomorrow').",
+                    },
+                ),
+            )
+            return {"start_date": None}
+
+        current_end = tracker.get_slot("end_date")
+        if current_end:
+            end_parsed = parse_date(str(current_end))
+            start_parsed = parse_date(iso_date)
+            if end_parsed and start_parsed and end_parsed < start_parsed:
+                dispatcher.utter_message(
+                    text="End date cannot be earlier than the new start date. Please re-enter dates.",
+                    json_message=vario_payload(template_key="submit_leave_slot_prompt"),
+                )
+                return {"start_date": iso_date, "end_date": None}
+
+        return {"start_date": iso_date}
+
+    async def validate_end_date(
+        self,
+        slot_value: Any,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> Dict[Text, Any]:
+        start_date_str = tracker.get_slot("start_date")
+        start_ref = parse_date(start_date_str) if start_date_str else None
+
+        iso_date, error = validate_date_input(str(slot_value), reference_date=start_ref)
+        if error or not iso_date:
+            dispatcher.utter_message(
+                text=error or "Please provide a valid end date (e.g. 'YYYY-MM-DD' or 'next friday').",
+                json_message=vario_payload(
+                    template_key="submit_leave_slot_prompt",
+                    card={
+                        "type": "slot_prompt",
+                        "text": error or "Please provide a valid end date (e.g. 'YYYY-MM-DD' or 'next friday').",
+                    },
+                ),
+            )
+            return {"end_date": None}
+
+        return {"end_date": iso_date}
+
+    async def validate_reason(
+        self,
+        slot_value: Any,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> Dict[Text, Any]:
+        if not slot_value or not str(slot_value).strip():
+            dispatcher.utter_message(
+                text="Please provide a brief reason for your leave request.",
+                json_message=vario_payload(
+                    template_key="submit_leave_slot_prompt",
+                    card={
+                        "type": "slot_prompt",
+                        "text": "Please provide a brief reason for your leave request.",
+                    },
+                ),
+            )
+            return {"reason": None}
+
+        return {"reason": str(slot_value).strip()}
+
+    async def validate_leave_confirm(
+        self,
+        slot_value: Any,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> Dict[Text, Any]:
+        intent = tracker.latest_message.get("intent", {}).get("name")
+        text = (tracker.latest_message.get("text") or "").strip().lower()
+
+        if intent == "affirm" or slot_value is True or text in ("confirm", "yes", "y", "sure", "ok"):
+            return {"leave_confirm": True}
+
+        if intent in ("deny", "cancel") or slot_value is False or text in ("cancel", "no", "n", "stop", "abort"):
+            dispatcher.utter_message(
+                text="Leave request cancelled. Your request has not been submitted.",
+                json_message=vario_payload(template_key="submit_leave_cancelled"),
+            )
+            return {
+                "leave_confirm": False,
+                "leave_type": None,
+                "start_date": None,
+                "end_date": None,
+                "reason": None,
             }
 
-        clean_id = (employee_id or "").strip().upper()
-        balance_data: Optional[Dict[str, Any]] = None
-
-        # Slice-14: Call HRMSAdapter to get actual leave balance
-        if HAS_HRMS_ADAPTER and HRMSAdapter:
-            try:
-                try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    loop = None
-
-                if loop is not None and loop.is_running():
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as pool:
-                        balance_data = pool.submit(
-                            asyncio.run,
-                            HRMSAdapter.get_leave_balance(clean_id, raise_for_not_found=False),
-                        ).result()
-                else:
-                    balance_data = asyncio.run(
-                        HRMSAdapter.get_leave_balance(clean_id, raise_for_not_found=False)
-                    )
-            except Exception:
-                balance_data = None
-
-        if balance_data is None:
-            if clean_id in OFFLINE_EMPLOYEES:
-                balance_data = OFFLINE_EMPLOYEES[clean_id]
-            else:
-                balance_data = {
-                    "found": False,
-                    "employee_id": clean_id,
-                }
-
-        if balance_data.get("found"):
-            # Employee found - return data card slots with breakdown
-            return {
-                "template_key": self.TEMPLATE_KEY,
-                "slots": {
-                    "total": balance_data.get("total", 0),
-                    "casual": balance_data.get("casual", 0),
-                    "sick": balance_data.get("sick", 0),
-                    "earned": balance_data.get("earned", 0),
-                    "employee_id": clean_id,
-                    "leave_type": leave_type_clean,
+        # Off-script reply at confirmation step (Defect M3a)
+        leave_type = tracker.get_slot("leave_type") or "leave"
+        start_date = tracker.get_slot("start_date") or ""
+        end_date = tracker.get_slot("end_date") or ""
+        reason = tracker.get_slot("reason") or "None"
+        summary_text = (
+            f"Please confirm your leave request: {leave_type} leave from "
+            f"{start_date} to {end_date}. Reason: {reason}.\n"
+            "Please reply 'confirm' to submit or 'cancel' to exit."
+        )
+        card = {
+            "type": "confirmation",
+            "title": "Confirm leave request",
+            "text": summary_text,
+            "options": [
+                {"label": "Confirm", "value": "confirm"},
+                {"label": "Cancel", "value": "cancel"},
+            ],
+        }
+        dispatcher.utter_message(
+            text=summary_text,
+            buttons=[
+                {"title": "Confirm", "payload": "confirm"},
+                {"title": "Cancel", "payload": "cancel"},
+            ],
+            json_message=vario_payload(
+                template_key="submit_leave_confirmation",
+                slots={
+                    "leave_type": leave_type,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "reason": reason,
+                    "confirmation_pending": True,
                 },
-                "requires_input": False,
-                "missing_slot": None,
-                "response_text": None,
-            }
-        else:
-            # Employee not found - graceful fallback (AC 3)
-            return {
-                "template_key": None,
-                "slots": {
-                    "employee_id": clean_id,
-                    "leave_type": leave_type_clean,
-                },
-                "requires_input": False,
-                "missing_slot": None,
-                "response_text": f"Sorry, I couldn't find leave balance information for employee ID {clean_id}. Please check the ID and try again, or contact HR for assistance.",
-            }
+                card=card,
+            ),
+        )
+        return {"leave_confirm": None}
+
+
+class ActionSubmitLeave(Action):
+    """
+    Submits the confirmed leave request via HRMSAdapter.
+    Emits result card and audit_event with logged-in employee ID.
+    Resets all form slots on completion or cancellation (Defect M1a).
+    """
+
+    def name(self) -> Text:
+        return "action_submit_leave"
 
     async def run(
         self,
-        dispatcher: Any,
-        tracker: Any,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
         domain: Dict[Text, Any],
     ) -> List[Dict[Text, Any]]:
-        emp_id = self.extract_employee_id(tracker)
-        leave_type = self.extract_leave_type(tracker)
-        result = self.execute_logic(emp_id, leave_type)
+        # If user cancelled during confirmation
+        if tracker.get_slot("leave_confirm") is False:
+            return [
+                SlotSet("leave_type", None),
+                SlotSet("start_date", None),
+                SlotSet("end_date", None),
+                SlotSet("reason", None),
+                SlotSet("leave_confirm", None),
+                ActiveLoop(None),
+            ]
 
-        events = []
-        for key, val in result["slots"].items():
-            events.append(SlotSet(key, val))
+        employee_id = _extract_employee_id(tracker)
+        leave_type = tracker.get_slot("leave_type") or "casual"
+        start_date = tracker.get_slot("start_date")
+        end_date = tracker.get_slot("end_date")
+        reason = tracker.get_slot("reason") or ""
 
-        if hasattr(dispatcher, "utter_message"):
-            if result.get("requires_input"):
-                dispatcher.utter_message(text=result["response_text"])
-            else:
-                dispatcher.utter_message(
-                    text=f"Template: {result['template_key']} Slots: {result['slots']}"
-                )
+        if not employee_id:
+            msg = "Unable to submit leave request: employee ID not found in session context."
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "error", "text": msg}
+                ),
+            )
+            return [
+                SlotSet("leave_type", None),
+                SlotSet("start_date", None),
+                SlotSet("end_date", None),
+                SlotSet("reason", None),
+                SlotSet("leave_confirm", None),
+                ActiveLoop(None),
+            ]
 
-        return events
+        try:
+            res = await HRMSAdapter.submit_leave(
+                employee_id=employee_id,
+                leave_type=leave_type,
+                start_date=start_date,
+                end_date=end_date,
+                reason=reason,
+            )
+        except BackendUnavailableError:
+            msg = "The HR system is currently unavailable. Please try again in a moment."
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "error", "text": msg}
+                ),
+            )
+            return [
+                SlotSet("leave_type", None),
+                SlotSet("start_date", None),
+                SlotSet("end_date", None),
+                SlotSet("reason", None),
+                SlotSet("leave_confirm", None),
+                ActiveLoop(None),
+            ]
+        except LeaveApplicationError as lae:
+            msg = f"Leave application failed: {lae.message}"
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "error", "text": msg}
+                ),
+            )
+            return [
+                SlotSet("leave_type", None),
+                SlotSet("start_date", None),
+                SlotSet("end_date", None),
+                SlotSet("reason", None),
+                SlotSet("leave_confirm", None),
+                ActiveLoop(None),
+            ]
+        except Exception as exc:
+            logger.error("Unexpected error submitting leave: %s", exc)
+            msg = "The HR system is currently unavailable. Please try again in a moment."
+            dispatcher.utter_message(
+                text=msg,
+                json_message=vario_payload(
+                    card={"type": "error", "text": msg}
+                ),
+            )
+            return [
+                SlotSet("leave_type", None),
+                SlotSet("start_date", None),
+                SlotSet("end_date", None),
+                SlotSet("reason", None),
+                SlotSet("leave_confirm", None),
+                ActiveLoop(None),
+            ]
+
+        ref_id = res.get("reference_id", "LEAVE-CONFIRMED")
+        days = res.get("days", 1)
+
+        result_text = f"Your leave request has been submitted successfully. Reference ID: {ref_id}."
+        card = {
+            "type": "result",
+            "title": "Leave request submitted",
+            "text": result_text,
+            "status": "success",
+        }
+        audit_event = {
+            "action_type": "leave_submitted",
+            "reference_id": ref_id,
+            "details": {
+                "employee_id": employee_id,
+                "leave_type": leave_type,
+                "start_date": start_date,
+                "end_date": end_date,
+                "reason": reason,
+                "days": days,
+            },
+        }
+
+        dispatcher.utter_message(
+            text=result_text,
+            json_message=vario_payload(
+                template_key="submit_leave_result",
+                slots={
+                    "reference_id": ref_id,
+                    "leave_type": leave_type,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "days": days,
+                },
+                card=card,
+                audit_event=audit_event,
+            ),
+        )
+
+        return [
+            SlotSet("leave_type", None),
+            SlotSet("start_date", None),
+            SlotSet("end_date", None),
+            SlotSet("reason", None),
+            SlotSet("leave_confirm", None),
+            ActiveLoop(None),
+        ]
+
+
+class ActionCancelLeaveRequest(Action):
+    """
+    Handles user cancellation at any step of the leave request form.
+    Clears all form slots and deactivates the form.
+    """
+
+    def name(self) -> Text:
+        return "action_cancel_leave_request"
+
+    async def run(
+        self,
+        dispatcher: CollectingDispatcher,
+        tracker: Tracker,
+        domain: Dict[Text, Any],
+    ) -> List[Dict[Text, Any]]:
+        dispatcher.utter_message(
+            text="Leave request cancelled. All details have been cleared.",
+            json_message=vario_payload(template_key="submit_leave_cancelled"),
+        )
+        return [
+            SlotSet("leave_type", None),
+            SlotSet("start_date", None),
+            SlotSet("end_date", None),
+            SlotSet("reason", None),
+            SlotSet("leave_confirm", None),
+            ActiveLoop(None),
+        ]
