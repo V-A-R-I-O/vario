@@ -179,7 +179,11 @@ class GeminiRephraser:
     async def generate_variants(
         self, base_text: str, available_variables: Sequence[str]
     ) -> List[str]:
-        """Generate up to 4 paraphrased variants of base_text preserving placeholders."""
+        """Generate up to 4 paraphrased variants of base_text preserving placeholders.
+
+        Returns [base_text] at index 0 followed by up to 4 valid paraphrases.
+        Any variant with missing, altered, or extra placeholders is dropped.
+        """
         if not base_text or not base_text.strip():
             return [base_text]
 
@@ -211,4 +215,27 @@ class GeminiRephraser:
         raw = await self._call_gemini(prompt)
         if not raw:
             return [base_text]
-        return [base_text]
+
+        candidates = self._parse_json_list(raw)
+        valid_variants: List[str] = []
+        seen = {base_text.strip()}
+
+        for text in candidates:
+            cleaned = text.strip()
+            if not cleaned or cleaned in seen:
+                continue
+            # Validate placeholders: must match required set exactly
+            if _placeholders(cleaned) != required:
+                logger.warning(
+                    "Dropping variant due to placeholder mismatch: %r (required: %r, found: %r)",
+                    cleaned,
+                    required,
+                    _placeholders(cleaned),
+                )
+                continue
+            seen.add(cleaned)
+            valid_variants.append(cleaned)
+            if len(valid_variants) == 4:
+                break
+
+        return [base_text] + valid_variants
