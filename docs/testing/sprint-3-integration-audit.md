@@ -513,6 +513,7 @@ Steps:
 
 - **Actual:** rasa-sdk>=3.6.0 resolves to 3.21.x (pulls grpcio/sanic/opentelemetry and forces pydantic 2.13.4). The Dockerfile uses Python 3.11, but Rasa 3.6 needs <=3.10. backend/app/services/itsm_adapter.py is unused at runtime and lacks get_security_question.
 - **Expected:** rasa 3.6.20 / rasa-sdk 3.6.x on Python 3.10; a single ITSM adapter.
+- **Regression:** the unused backend adapter is removed; HTTP contract tests now cover the single runtime adapter in `rasa-it/tests/test_itsm_adapter.py`.
 - **Where:** `rasa-it/requirements.txt; rasa-it/Dockerfile; backend/app/services/itsm_adapter.py`
 
 ### M7b
