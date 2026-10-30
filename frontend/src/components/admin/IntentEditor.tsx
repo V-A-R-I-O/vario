@@ -396,19 +396,83 @@ export function IntentEditor({ intentId }: { intentId?: string }) {
                     : `${suggestions.length} suggestion${suggestions.length > 1 ? 's' : ''} — review before adding to training data.`}
                 </div>
                 <div>
-                  {suggestions.map((s) => (
-                    <div className="gen-phrase-row" key={s}>
-                      <span>{s}</span>
-                      <div className="actions">
-                        <button type="button" title="Accept" aria-label={`Accept ${s}`} onClick={() => acceptSuggestion(s)}>
-                          ✅
-                        </button>
-                        <button type="button" title="Reject" aria-label={`Reject ${s}`} onClick={() => rejectSuggestion(s)}>
-                          🗑️
-                        </button>
+                  {suggestions.map((s, idx) => {
+                    const isEditing = editingSuggestionIndex === idx;
+                    return (
+                      <div className="gen-phrase-row" key={`${s}-${idx}`}>
+                        {isEditing ? (
+                          <>
+                            <input
+                              aria-label={`Edit phrase ${s}`}
+                              value={editingSuggestionText}
+                              onChange={(e) => setEditingSuggestionText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveEditedSuggestion(idx);
+                                if (e.key === 'Escape') cancelEditSuggestion();
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: '4px 8px',
+                                border: '1px solid var(--brand-b)',
+                                borderRadius: 'var(--r-sm)',
+                                fontSize: 13.5,
+                                fontFamily: 'inherit',
+                              }}
+                              autoFocus
+                            />
+                            <div className="actions">
+                              <button
+                                type="button"
+                                title="Accept edited"
+                                aria-label={`Accept ${s}`}
+                                onClick={() => saveEditedSuggestion(idx)}
+                              >
+                                ✅
+                              </button>
+                              <button
+                                type="button"
+                                title="Cancel edit"
+                                aria-label={`Cancel edit ${s}`}
+                                onClick={cancelEditSuggestion}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <span>{s}</span>
+                            <div className="actions">
+                              <button
+                                type="button"
+                                title="Accept"
+                                aria-label={`Accept ${s}`}
+                                onClick={() => acceptSuggestion(s)}
+                              >
+                                ✅
+                              </button>
+                              <button
+                                type="button"
+                                title="Edit"
+                                aria-label={`Edit ${s}`}
+                                onClick={() => startEditSuggestion(idx, s)}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                title="Reject"
+                                aria-label={`Reject ${s}`}
+                                onClick={() => rejectSuggestion(s)}
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {suggestions.length > 0 && (
                   <button className="btn btn-signal btn-sm" type="button" style={{ marginTop: 6 }} onClick={acceptAll}>
