@@ -165,7 +165,7 @@ services:
       mock-itsm:
         condition: service_healthy
       rasa-it-actions:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "5006:5006"
     healthcheck:
@@ -187,6 +187,12 @@ services:
     depends_on:
       mock-itsm:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5055/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   rasa-admissions:
     image: rasa/rasa:3.6.20-full
