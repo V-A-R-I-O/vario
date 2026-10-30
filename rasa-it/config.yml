@@ -1,6 +1,6 @@
 recipe: default.v1
+assistant_id: it_assistant
 language: en
-
 pipeline:
   - name: WhitespaceTokenizer
   - name: RegexFeaturizer
@@ -13,11 +13,14 @@ pipeline:
   - name: DIETClassifier
     epochs: 100
     constrain_similar_probabilities: true
+  - name: RegexEntityExtractor
+    case_sensitive: false
+    use_lookup_tables: true
+    use_regexes: true
   - name: EntitySynonymMapper
   - name: FallbackClassifier
     threshold: 0.4
     ambiguity_threshold: 0.1
-
 policies:
   - name: MemoizationPolicy
   - name: RulePolicy
