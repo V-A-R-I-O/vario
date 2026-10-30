@@ -46,6 +46,29 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class Slice38CiGuardrailTests(unittest.TestCase):
+    def test_mock_service_matrix_covers_all_mock_backends(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        for service in ("mock-auth-service", "mock-hrms-service", "mock-itsm-service", "mock-admissions-service"):
+            self.assertIn(service, workflow)
+
+    def test_rasa_validation_matrix_covers_all_three_role_packs(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        for pack in ("rasa-hr", "rasa-it", "rasa-admissions"):
+            self.assertIn(pack, workflow)
+        self.assertIn("rasa data validate", workflow)
+
+    def test_pytest_jobs_fail_when_any_tests_are_skipped(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertEqual(workflow.count("--junitxml=pytest-results.xml"), 7)
+        self.assertEqual(workflow.count("skipped == 0"), 6)
+        self.assertIn("rasa-hr-real-integration", workflow)
+        self.assertIn("not test_rasa_data_validate", workflow)
+
+
 class Slice37ComposeWiringTests(unittest.TestCase):
     def test_compose_wires_it_rasa_action_server_and_tracker_store(self):
         root = Path(__file__).resolve().parents[2]

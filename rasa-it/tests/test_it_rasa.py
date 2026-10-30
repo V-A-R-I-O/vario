@@ -57,11 +57,11 @@ async def test_ticket_status_without_id_prompts_for_id():
 @pytest.mark.asyncio
 async def test_unknown_ticket_returns_its_own_not_found_card():
     with patch("actions.actions.ITSMAdapter.get_ticket_status", new_callable=AsyncMock,
-               return_value={"found": False, "ticket_id": "TKT-9999", "status": "Not Found"}):
-        result = await ActionCheckTicketStatus.lookup("TKT-9999")
-    assert result["slots"] == {"ticket_id": "TKT-9999", "found": False}
+               return_value={"found": False, "ticket_id": "IT-9999", "status": "Not Found"}):
+        result = await ActionCheckTicketStatus.lookup("IT-9999")
+    assert result["slots"] == {"ticket_id": "IT-9999", "found": False}
     assert result["card"]["type"] == "not_found"
-    assert "TKT-9999" in result["text"]
+    assert "IT-9999" in result["text"]
 
 
 def test_ticket_creation_uses_trusted_reporter_and_returns_ticket_id():
@@ -131,6 +131,52 @@ def test_rasa_configuration_has_stable_assistant_id_and_local_action_fallback():
     assert endpoints["action_endpoint"]["url"] == "${ACTION_ENDPOINT_URL}"
     readme = (root / "README.md").read_text(encoding="utf-8")
     assert "ACTION_ENDPOINT_URL=http://localhost:5055/webhook" in readme
+
+
+@pytest.mark.asyncio
+async def test_rejected_ticket_creation_returns_clear_reason_and_reopens_form():
+    from actions.actions import TicketCreationRejectedError
+
+    tracker = FakeTracker(
+        {"category": "access", "description": "Cannot access VPN", "confirmation": True},
+        {"metadata": {"auth_context": {"employee_id": "EMP-3001"}}},
+    )
+    dispatcher = FakeDispatcher()
+    with patch(
+        "actions.actions.ITSMAdapter.create_ticket",
+        new_callable=AsyncMock,
+        side_effect=TicketCreationRejectedError("Employee 'EMP-9999' was not found."),
+    ):
+        events = await ActionSubmitRaiseTicket().run(dispatcher, tracker, {})
+    assert "Employee 'EMP-9999' was not found" in dispatcher.messages[0]["text"]
+    assert any(event.get("name") == "requested_slot" and event.get("value") == "category" for event in events)
+
+
+def test_only_canonical_it_ticket_ids_are_accepted():
+    from actions.actions import TICKET_ID_REGEX
+
+    assert TICKET_ID_REGEX.search("IT-1001").group(1) == "IT-1001"
+    assert TICKET_ID_REGEX.search("TKT-1234") is None
+
+
+@pytest.mark.asyncio
+async def test_applicant_can_raise_ticket_without_enabling_employee_password_reset():
+    from actions.actions import REPORTER_ID_REGEX, EMPLOYEE_ID_REGEX
+
+    assert REPORTER_ID_REGEX.fullmatch("APP-2026-001")
+    assert EMPLOYEE_ID_REGEX.fullmatch("APP-2026-001") is None
+    tracker = FakeTracker(
+        {"category": "access", "description": "Admissions portal access", "confirmation": True},
+        {"metadata": {"auth_context": {"employee_id": "APP-2026-001"}}},
+    )
+    dispatcher = FakeDispatcher()
+    with patch(
+        "actions.actions.ITSMAdapter.create_ticket",
+        new_callable=AsyncMock,
+        return_value={"ticket_id": "IT-1004", "status": "Open"},
+    ) as create:
+        await ActionSubmitRaiseTicket().run(dispatcher, tracker, {})
+    create.assert_awaited_once_with("access", "Admissions portal access", "APP-2026-001")
 
 
 def test_cancel_action_ends_ticket_status_prompt_and_clears_slots():

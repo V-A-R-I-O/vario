@@ -525,6 +525,7 @@ Steps:
 
 - **Actual:** Not found. Seeded and created tickets are IT-1001…IT-1004.
 - **Expected:** One ticket ID format across mock-itsm, prompts, NLU examples and regex, seed and specs.
+- **Regression check:** `IT-1001` is the accepted prompt/example format; legacy `TKT-1001` is rejected by the IT role pack.
 - **Where:** `rasa-it/server.py prompts; mock-itsm-service/app/seed_data.py:6-8`
 
 ### M7c

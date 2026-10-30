@@ -76,6 +76,24 @@ nlu:
       - I need to apply for [annual](leave_type) leave from [2026-11-10](start_date) to [2026-11-24](end_date) for vacation
       - apply for 3 days of [annual](leave_type) leave
       - apply for [casual](leave_type) leave tomorrow
+      - I would like to request some time off next week
+      - please put in a leave application for me
+      - can you help me file a leave request?
+      - I am requesting a day off from work
+      - I need to apply for two days off
+      - submit my application for time away from work
+      - I would like to take a day of annual leave
+      - please record my request for sick leave
+      - can you raise a leave application for next Monday?
+      - I want to request a day off on [2026-11-18](start_date)
+      - I need leave starting [2026-11-21](start_date)
+      - please request [sick](leave_type) leave for me
+      - I'd like to book [annual](leave_type) leave next month
+      - file a [casual](leave_type) leave request for tomorrow
+      - I am planning to take [earned](leave_type) leave from [2026-12-02](start_date) to [2026-12-04](end_date)
+      - start a new leave application for me
+      - I want to submit my time-off request
+      - request a vacation day for [2026-11-27](start_date)
 
   - intent: inform
     examples: |

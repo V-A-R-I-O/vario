@@ -1,5 +1,6 @@
 # Configuration for Rasa Admissions NLU & Dialogue Engine
 recipe: default.v1
+assistant_id: admissions_assistant
 language: en
 
 pipeline:

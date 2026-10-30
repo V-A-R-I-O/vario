@@ -24,7 +24,7 @@ Deliverables:
 
 ## Acceptance criteria
 - [ ] Given the IT Rasa service, when it starts, then it is reachable at `RASA_IT_URL`.
-- [ ] Given variations of "what's the status of my ticket TKT-1234", then Rasa-IT classifies `check_ticket_status` and extracts the `ticket_id` entity.
+- [ ] Given variations of "what's the status of my ticket IT-1001", then Rasa-IT classifies `check_ticket_status` and extracts the `ticket_id` entity.
 - [ ] Given an off-topic message, then `nlu_fallback` fires.
 - [ ] Given the seed step, then the DB contains the IT dynamic-workflow intent(s) with training phrases and a ticket-status response template.
 - [ ] Given `action_check_ticket_status`, then it exists and returns a `template_key` + slots shape (adapter call wired in `slice-20`).
