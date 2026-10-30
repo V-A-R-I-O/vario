@@ -94,3 +94,48 @@ class GeminiRephraser:
 
     def _get_url(self) -> str:
         return f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+
+    async def _call_gemini(self, prompt: str) -> Optional[str]:
+        key = self.api_key
+        if not key:
+            logger.warning("GEMINI_API_KEY is not configured; skipping Gemini call.")
+            return None
+
+        url = self._get_url()
+        payload = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": 0.7,
+                "response_mime_type": "application/json",
+            },
+        }
+
+        try:
+            if self._http_client:
+                resp = await self._http_client.post(url, json=payload, timeout=10.0)
+            else:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    resp = await client.post(url, json=payload)
+
+            if resp.status_code != 200:
+                logger.error(
+                    "Gemini API returned status %s: %s", resp.status_code, resp.text
+                )
+                return None
+
+            data = resp.json()
+            candidates = data.get("candidates", [])
+            if not candidates:
+                logger.warning("Gemini API returned no candidates.")
+                return None
+
+            content = candidates[0].get("content", {})
+            parts = content.get("parts", [])
+            if not parts:
+                logger.warning("Gemini API candidate has no parts.")
+                return None
+
+            return parts[0].get("text", "")
+        except Exception as exc:
+            logger.error("Gemini API request failed: %s", exc)
+            return None
