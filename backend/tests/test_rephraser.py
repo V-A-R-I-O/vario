@@ -122,3 +122,62 @@ async def test_gemini_missing_api_key_graceful(monkeypatch):
     phrases = await client.generate_phrases(["Seed 1"], count=8)
     assert phrases == []
 
+
+@pytest.mark.asyncio
+async def test_gemini_variant_generation_success():
+    """AC: Response contains original plus up to 4 generated variants preserving placeholders (US-9)."""
+    generated = [
+        "You currently have {balance} days of leave remaining.",
+        "Your available leave count is {balance} days.",
+        "There are {balance} leave days left in your balance.",
+        "As of now, you have {balance} days of leave.",
+    ]
+
+    async def mock_handler(request: httpx.Request):
+        return httpx.Response(200, json=make_gemini_response(generated))
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    rephraser_client = GeminiRephraser(api_key="test-key", http_client=mock_http)
+
+    variants = await rephraser_client.generate_variants(
+        "You have {balance} days of leave remaining.", ["balance"]
+    )
+
+    assert len(variants) == 5
+    assert variants[0] == "You have {balance} days of leave remaining."
+    assert variants[1:] == generated
+
+
+@pytest.mark.asyncio
+async def test_gemini_variant_dropped_altered_placeholder_rejected():
+    """AC: Given a variant the LLM returned with a dropped/renamed placeholder, then it is rejected and not stored."""
+    candidates = [
+        "You have {balance} days left.",  # Valid: retains {balance}
+        "You have 5 days left.",  # Invalid: dropped {balance}
+        "Your balance is {days_left}.",  # Invalid: renamed to {days_left}
+        "You have {balance} days left on {account}.",  # Invalid: added {account}
+        "Current balance: {balance} days remaining.",  # Valid: retains {balance}
+    ]
+
+    async def mock_handler(request: httpx.Request):
+        return httpx.Response(200, json=make_gemini_response(candidates))
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    rephraser_client = GeminiRephraser(api_key="test-key", http_client=mock_http)
+
+    variants = await rephraser_client.generate_variants(
+        "You have {balance} days of leave remaining.", ["balance"]
+    )
+
+    # Original + 2 valid variants = 3
+    assert len(variants) == 3
+    assert variants[0] == "You have {balance} days of leave remaining."
+    assert variants[1] == "You have {balance} days left."
+    assert variants[2] == "Current balance: {balance} days remaining."
+
+
+@pytest.mark.asyncio
+async def test_gemini_variant_llm_failure_graceful():
+    """AC: Given an LLM failure, then the save keeps the original variant and reports error (no crash)."""
+    async def mock_handler(request: httpx.Request):
+        return httpx.Response(500, text="Internal Server Error")
