@@ -317,3 +317,135 @@ async def test_put_template_replaces_old_variants(monkeypatch):
         "Initial variant 4",
     ]
     updated_generated = [
+        "Updated variant 1",
+        "Updated variant 2",
+        "Updated variant 3",
+        "Updated variant 4",
+    ]
+
+    current_response = initial_generated
+
+    async def mock_handler(request: httpx.Request):
+        return httpx.Response(200, json=make_gemini_response(current_response))
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    test_rephraser = GeminiRephraser(api_key="test-key", http_client=mock_http)
+    monkeypatch.setattr(rephraser, "get_rephraser_client", lambda *_: test_rephraser)
+
+    async with _client() as client:
+        create_res = await client.post(
+            "/api/admin/intents",
+            headers=HR,
+            json={
+                "name": "ask_replace_variants_test",
+                "training_phrases": ["Initial phrase"],
+                "response_template": {
+                    "base_text": "Initial base text.",
+                    "allow_rephrasing": True,
+                },
+            },
+        )
+        assert create_res.status_code == 201
+        tpl_id = create_res.json()["data"]["intent"]["response_template"]["id"]
+        old_variant_ids = [v["id"] for v in create_res.json()["data"]["intent"]["response_template"]["variants"]]
+
+        # Switch mock response for update
+        current_response = updated_generated
+
+        # Update the template base text
+        put_res = await client.put(
+            f"/api/admin/templates/{tpl_id}",
+            headers=HR,
+            json={
+                "base_text": "Updated base text.",
+                "allow_rephrasing": True,
+            },
+        )
+        assert put_res.status_code == 200
+        new_variants = put_res.json()["data"]["template"]["variants"]
+        assert len(new_variants) == 5
+        assert new_variants[0]["variant_text"] == "Updated base text."
+        assert [v["variant_text"] for v in new_variants[1:]] == updated_generated
+
+        # Verify old variant IDs were replaced
+        new_variant_ids = [v["id"] for v in new_variants]
+        assert set(old_variant_ids).isdisjoint(set(new_variant_ids))
+
+
+@pytest.mark.asyncio
+async def test_generate_phrases_not_autosaved_and_persists_on_put(monkeypatch):
+    """AC: Given POST generate-phrases, ~8 seed-based phrases returned and NOT auto-saved (US-8).
+    Given accepted phrases saved via PUT intents/:id (training_phrases.add), then they persist.
+    """
+    mock_phrases = [
+        "Generated phrase 1",
+        "Generated phrase 2",
+        "Generated phrase 3",
+        "Generated phrase 4",
+        "Generated phrase 5",
+        "Generated phrase 6",
+        "Generated phrase 7",
+        "Generated phrase 8",
+    ]
+
+    async def mock_handler(request: httpx.Request):
+        return httpx.Response(200, json=make_gemini_response(mock_phrases))
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    test_rephraser = GeminiRephraser(api_key="test-key", http_client=mock_http)
+    monkeypatch.setattr(rephraser, "get_rephraser_client", lambda *_: test_rephraser)
+
+    async with _client() as client:
+        # Create intent with 1 seed phrase
+        create_res = await client.post(
+            "/api/admin/intents",
+            headers=HR,
+            json={
+                "name": "ask_phrase_gen_test",
+                "training_phrases": ["Seed phrase 1"],
+                "response_template": {"base_text": "Base text.", "allow_rephrasing": False},
+            },
+        )
+        assert create_res.status_code == 201
+        intent_id = create_res.json()["data"]["intent"]["id"]
+
+        # Call generate-phrases
+        gen_res = await client.post(
+            f"/api/admin/intents/{intent_id}/generate-phrases",
+            headers=HR,
+            json={"count": 8},
+        )
+        assert gen_res.status_code == 200
+        gen_data = gen_res.json()["data"]
+        assert gen_data["intent_id"] == intent_id
+        assert gen_data["generated_phrases"] == mock_phrases
+
+        # Verify phrases are NOT auto-saved: GET intent still has only 1 phrase
+        list_res = await client.get("/api/admin/intents", headers=HR)
+        found = next(i for i in list_res.json()["data"]["intents"] if i["id"] == intent_id)
+        assert len(found["training_phrases"]) == 1
+        assert found["training_phrases"][0]["phrase_text"] == "Seed phrase 1"
+
+        # Now accept 2 phrases via PUT /api/admin/intents/:id
+        accepted = ["Generated phrase 1", "Generated phrase 2"]
+        put_res = await client.put(
+            f"/api/admin/intents/{intent_id}",
+            headers=HR,
+            json={"training_phrases": {"add": accepted}},
+        )
+        assert put_res.status_code == 200
+        put_phrases = [p["phrase_text"] for p in put_res.json()["data"]["intent"]["training_phrases"]]
+        assert "Seed phrase 1" in put_phrases
+        assert "Generated phrase 1" in put_phrases
+        assert "Generated phrase 2" in put_phrases
+
+        # Verify persistence with a fresh GET
+        verify_res = await client.get("/api/admin/intents", headers=HR)
+        persisted = next(i for i in verify_res.json()["data"]["intents"] if i["id"] == intent_id)
+        persisted_phrases = [p["phrase_text"] for p in persisted["training_phrases"]]
+        assert len(persisted_phrases) == 3
+        assert "Generated phrase 1" in persisted_phrases
+        assert "Generated phrase 2" in persisted_phrases
+
+
+@pytest.mark.asyncio
