@@ -75,3 +75,18 @@ def test_three_failed_answers_lock_account_across_flow_restarts():
     assert locked.json()["locked"] is True
     assert locked.json()["attempts_remaining"] == 0
     assert client.post("/password/reset", json={"employee_id": "EMP-1042"}).status_code == 403
+
+
+def test_identity_lockout_survives_module_reload():
+    import importlib
+    from app import seed_data as seed_module
+
+    for attempt in range(3):
+        state = seed_module.record_identity_failure("EMP-1042")
+        assert state["attempts"] == attempt + 1
+    assert seed_module.identity_attempt_state("EMP-1042")["locked"] is True
+
+    importlib.reload(seed_module)
+    restored = seed_module.identity_attempt_state("EMP-1042")
+    assert restored["locked"] is True
+    assert restored["attempts_remaining"] == 0
