@@ -239,3 +239,43 @@ class GeminiRephraser:
                 break
 
         return [base_text] + valid_variants
+
+    async def generate_phrases(
+        self, seed_phrases: Sequence[str], count: int = 8
+    ) -> List[str]:
+        """Generate training phrases seeded from existing ones."""
+        if not seed_phrases:
+            return []
+
+        seeds_formatted = "\n".join(f"- {p}" for p in seed_phrases)
+        prompt = (
+            f"You are an NLU training phrase generator for an enterprise assistant.\n"
+            f"Given these seed phrases for an intent:\n"
+            f"{seeds_formatted}\n\n"
+            f"Generate exactly {count} diverse, realistic training phrases that users might say with the same intent.\n"
+            f"Vary syntax, vocabulary, and formality. Do not repeat the seed phrases.\n"
+            f'Return ONLY a JSON array of {count} strings, e.g. [\"phrase 1\", \"phrase 2\", ...].'
+        )
+
+        raw = await self._call_gemini(prompt)
+        if not raw:
+            return []
+
+        candidates = self._parse_json_list(raw)
+        seed_set = {p.strip().lower() for p in seed_phrases}
+        valid: List[str] = []
+        seen = set()
+
+        for phrase in candidates:
+            cleaned = phrase.strip()
+            if not cleaned:
+                continue
+            lower = cleaned.lower()
+            if lower in seed_set or lower in seen:
+                continue
+            seen.add(lower)
+            valid.append(cleaned)
+            if len(valid) == count:
+                break
+
+        return valid
