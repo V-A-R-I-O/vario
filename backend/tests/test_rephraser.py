@@ -232,3 +232,88 @@ async def test_create_intent_with_rephraser_variants(monkeypatch):
         "Our policy allows 3 work-from-home days each week.",
         "Staff can work from home up to 3 days per week.",
     ]
+
+    async def mock_handler(request: httpx.Request):
+        return httpx.Response(200, json=make_gemini_response(generated))
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    test_rephraser = GeminiRephraser(api_key="test-key", http_client=mock_http)
+    monkeypatch.setattr(rephraser, "get_rephraser_client", lambda *_: test_rephraser)
+
+    async with _client() as client:
+        res = await client.post(
+            "/api/admin/intents",
+            headers=HR,
+            json={
+                "name": "ask_wfh_rephrase_test",
+                "training_phrases": ["What is the remote work policy?"],
+                "response_template": {
+                    "base_text": "You may work from home up to 3 days a week.",
+                    "allow_rephrasing": True,
+                },
+            },
+        )
+
+    assert res.status_code == 201
+    intent = res.json()["data"]["intent"]
+    tpl = intent["response_template"]
+    assert tpl["allow_rephrasing"] is True
+
+    # Original + 4 generated variants = 5 total
+    variants = tpl["variants"]
+    assert len(variants) == 5
+    assert variants[0]["variant_text"] == "You may work from home up to 3 days a week."
+    assert [v["variant_text"] for v in variants[1:]] == generated
+
+
+@pytest.mark.asyncio
+async def test_create_intent_dropped_placeholder_not_stored(monkeypatch):
+    """AC: Variant with dropped/renamed placeholder is rejected and not stored."""
+    candidates = [
+        "Your balance is {balance} days remaining.",  # Valid
+        "You have days left.",  # Invalid: dropped placeholder
+        "Your total is {bal}.",  # Invalid: renamed placeholder
+        "{balance} days of leave are available.",  # Valid
+    ]
+
+    async def mock_handler(request: httpx.Request):
+        return httpx.Response(200, json=make_gemini_response(candidates))
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(mock_handler))
+    test_rephraser = GeminiRephraser(api_key="test-key", http_client=mock_http)
+    monkeypatch.setattr(rephraser, "get_rephraser_client", lambda *_: test_rephraser)
+
+    async with _client() as client:
+        res = await client.post(
+            "/api/admin/intents",
+            headers=HR,
+            json={
+                "name": "ask_placeholder_drop_test",
+                "training_phrases": ["Check my balance"],
+                "response_template": {
+                    "base_text": "You have {balance} days of leave.",
+                    "allow_rephrasing": True,
+                },
+            },
+        )
+
+    assert res.status_code == 201
+    variants = res.json()["data"]["intent"]["response_template"]["variants"]
+    # Original + 2 valid variants = 3
+    assert len(variants) == 3
+    assert variants[0]["variant_text"] == "You have {balance} days of leave."
+    assert variants[1]["variant_text"] == "Your balance is {balance} days remaining."
+    assert variants[2]["variant_text"] == "{balance} days of leave are available."
+
+
+@pytest.mark.asyncio
+async def test_put_template_replaces_old_variants(monkeypatch):
+    """AC: Given PUT /api/admin/templates/:id, then old variants are replaced with newly generated ones."""
+    # First, create an intent with initial variants
+    initial_generated = [
+        "Initial variant 1",
+        "Initial variant 2",
+        "Initial variant 3",
+        "Initial variant 4",
+    ]
+    updated_generated = [
