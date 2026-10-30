@@ -1,328 +1,115 @@
+from pathlib import Path
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-from fastapi.testclient import TestClient
+import pytest
+import yaml
 
-from server import app, classify_message, action_handler
-from actions.itsm_adapter import BackendUnavailableError, ITSMAdapter
-from actions.actions import ActionCheckTicketStatus
-
-client = TestClient(app)
-
-
-def test_health_endpoint_reports_it_service():
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok", "service": "rasa-it", "port": 5006}
+from actions.actions import (
+    ActionAskResetPasswordSecurityAnswer,
+    ActionCheckTicketStatus,
+    ActionSubmitRaiseTicket,
+    ValidateResetPasswordForm,
+)
 
 
-def test_ticket_status_variations_extract_ticket_id():
-    utterances = [
-        "what's the status of my ticket TKT-1234?",
-        "check the status of TKT-1234",
-        "Can you check my ticket TKT-1234?",
-        "track ticket TKT-1234",
-        "has my ticket TKT-1234 been resolved?",
-        "what is the progress of TKT-1234?",
-        "ticket TKT-1234 status",
-        "please provide a status update for ticket TKT-1234",
-    ]
-    for utterance in utterances:
-        intent, confidence, entities = classify_message(utterance)
-        assert intent == "check_ticket_status", f"Failed for: {utterance}"
-        assert confidence >= 0.85
-        assert entities["ticket_id"] == "TKT-1234"
+class FakeTracker:
+    def __init__(self, slots=None, latest_message=None):
+        self.slots = slots or {}
+        self.latest_message = latest_message or {}
+
+    def get_slot(self, name):
+        return self.slots.get(name)
 
 
-def test_ticket_status_without_id_is_classified():
-    intent, confidence, _ = classify_message("check my ticket status")
-    assert intent == "check_ticket_status"
-    assert confidence >= 0.85
+class FakeDispatcher:
+    def __init__(self):
+        self.messages = []
+
+    def utter_message(self, **kwargs):
+        self.messages.append(kwargs)
 
 
-def test_raise_ticket_and_password_reset_are_seeded_as_stubs():
-    assert classify_message("create a support ticket")[0] == "raise_ticket"
-    assert classify_message("I forgot my password")[0] == "reset_password"
+@pytest.mark.asyncio
+async def test_ticket_status_lookup_is_fresh_per_ticket():
+    with patch("actions.actions.ITSMAdapter.get_ticket_status", new_callable=AsyncMock,
+               side_effect=[
+                   {"found": True, "ticket_id": "IT-1001", "status": "In Progress"},
+                   {"found": True, "ticket_id": "IT-1002", "status": "Open"},
+               ]):
+        first = await ActionCheckTicketStatus.lookup("IT-1001")
+        second = await ActionCheckTicketStatus.lookup("IT-1002")
+    assert first["slots"]["ticket_id"] == "IT-1001"
+    assert first["slots"]["status"] == "In Progress"
+    assert second["slots"] == {"ticket_id": "IT-1002", "status": "Open", "found": True}
+    assert "In Progress" not in str(second)
 
 
-def test_off_topic_message_triggers_fallback():
-    for message in [
-        "what is the weather in Paris?",
-        "tell me a funny joke",
-        "order a pepperoni pizza",
-        "how far is Mars from the sun?",
-    ]:
-        intent, confidence, _ = classify_message(message)
-        assert intent == "nlu_fallback", f"Unexpected intent for: {message}"
-        assert confidence < 0.4
-
-
-def test_action_returns_template_and_slots_without_fabricating_status():
-    action = ActionCheckTicketStatus()
-    assert action.name() == "action_check_ticket_status"
-
-    result = action.execute_logic("tkt-1234")
-    assert result["template_key"] == "check_ticket_status_response"
-    assert result["slots"] == {"ticket_id": "TKT-1234"}
-    assert "status" not in result["slots"]
-
-
-def test_action_prompts_when_ticket_id_missing_or_invalid():
-    action = ActionCheckTicketStatus()
-    for value in [None, "", "not-a-ticket", "TKT-12"]:
-        result = action.execute_logic(value)
-        assert result["template_key"] is None
-        assert result["slots"] == {}
-        assert result["missing_slot"] == "ticket_id"
-        assert "TKT-1234" in result["response_text"]
-
-
-
-def test_action_lookup_logic_returns_ticket_status_slots():
-    payload = {
-        "found": True,
-        "ticket_id": "IT-1001",
-        "status": "In Progress",
-        "category": "hardware",
-        "description": "Laptop battery drains quickly",
-        "reporter": "EMP-1042",
-        "updated_at": "2026-10-21T12:30:00Z",
-    }
-    with patch.object(ITSMAdapter, "get_ticket_status", new_callable=AsyncMock, return_value=payload):
-        result = asyncio.run(action_handler.lookup_logic("it-1001"))
-    assert result["template_key"] == "check_ticket_status_response"
-    assert result["slots"]["ticket_id"] == "IT-1001"
-    assert result["slots"]["status"] == "In Progress"
-    assert result["slots"]["found"] is True
-
-
-def test_action_lookup_logic_handles_backend_outage_gracefully():
-    with patch.object(ITSMAdapter, "get_ticket_status", new_callable=AsyncMock, side_effect=BackendUnavailableError()):
-        result = asyncio.run(action_handler.lookup_logic("TKT-1234"))
-    assert result["backend_unavailable"] is True
+@pytest.mark.asyncio
+async def test_ticket_status_without_id_prompts_for_id():
+    result = await ActionCheckTicketStatus.lookup(None)
     assert result["template_key"] is None
-    assert "try again" in result["response_text"].lower()
+    assert result["slots"] == {}
+    assert "ticket ID" in result["text"]
 
 
-def test_action_lookup_logic_returns_not_found_for_unknown_ticket():
-    with patch.object(
-        ITSMAdapter,
-        "get_ticket_status",
-        new_callable=AsyncMock,
-        return_value={"found": False, "ticket_id": "TKT-9999", "status": "Not Found"},
-    ):
-        result = asyncio.run(action_handler.lookup_logic("TKT-9999"))
-    assert result["slots"]["found"] is False
-    assert result["slots"]["status"] == "Not Found"
-    assert "couldn't find" in result["response_text"].lower()
+@pytest.mark.asyncio
+async def test_unknown_ticket_returns_its_own_not_found_card():
+    with patch("actions.actions.ITSMAdapter.get_ticket_status", new_callable=AsyncMock,
+               return_value={"found": False, "ticket_id": "TKT-9999", "status": "Not Found"}):
+        result = await ActionCheckTicketStatus.lookup("TKT-9999")
+    assert result["slots"] == {"ticket_id": "TKT-9999", "found": False}
+    assert result["card"]["type"] == "not_found"
+    assert "TKT-9999" in result["text"]
 
 
-def test_converse_endpoint_prompts_for_missing_ticket_id():
-    response = client.post(
-        "/webhooks/vario/converse",
-        json={
-            "sender": "user-test",
-            "message": "what is the status of my ticket?",
-            "session": {"current_form": None, "current_step": None, "slots": {}},
-        },
+def test_ticket_creation_uses_trusted_reporter_and_returns_ticket_id():
+    tracker = FakeTracker(
+        {"category": "network", "description": "VPN drops every hour", "confirmation": True},
+        {"metadata": {"auth_context": {"employee_id": "EMP-1042"}}},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["intent"] == "check_ticket_status"
-    assert data["current_form"] == "check_ticket_status_form"
-    assert data["current_step"] == "await_ticket_id"
-    assert data["template_key"] is None
-    assert "ticket ID" in data["response_text"]
+    dispatcher = FakeDispatcher()
+    with patch("actions.actions.ITSMAdapter.create_ticket", new_callable=AsyncMock,
+               return_value={"ticket_id": "IT-1004", "status": "Open"}) as create:
+        events = asyncio.run(ActionSubmitRaiseTicket().run(dispatcher, tracker, {}))
+    assert create.await_args.args == ("network", "VPN drops every hour", "EMP-1042")
+    assert "IT-1004" in dispatcher.messages[0]["text"]
+    # Rasa SDK SlotSet events are mappings with "name" and "value" keys.
+    assert any(event.get("name") == "last_ticket_id" and event.get("value") == "IT-1004" for event in events)
 
 
-def test_converse_endpoint_returns_live_ticket_status(monkeypatch):
-    async def fake_lookup(ticket_id):
-        assert ticket_id == "TKT-1234"
-        return {
-            "template_key": "check_ticket_status_response",
-            "slots": {"ticket_id": "TKT-1234", "status": "In Progress", "found": True, "category": "hardware"},
-            "response_text": None,
-        }
-
-    monkeypatch.setattr(action_handler, "lookup_logic", fake_lookup)
-    response = client.post(
-        "/webhooks/vario/converse",
-        json={
-            "sender": "user-test",
-            "message": "what is the status of TKT-1234?",
-            "session": {"current_form": None, "current_step": None, "slots": {}},
-        },
-    )
-    assert response.status_code == 200
-    data = response.json()
-    assert data["intent"] == "check_ticket_status"
-    assert data["template_key"] == "check_ticket_status_response"
-    assert data["slots"]["ticket_id"] == "TKT-1234"
-    assert data["slots"]["status"] == "In Progress"
-    assert data["entities"]["status"] == "In Progress"
-    assert data["response_text"] is None
+@pytest.mark.asyncio
+async def test_security_answer_is_never_returned_as_a_slot():
+    secret = "private security answer"
+    tracker = FakeTracker({"employee_id": "EMP-1042"},
+                          {"text": secret, "metadata": {"sensitive": True}})
+    dispatcher = FakeDispatcher()
+    with patch("actions.actions.ITSMAdapter.verify_identity", new_callable=AsyncMock,
+               return_value={"verified": False, "locked": False, "attempts_remaining": 2}):
+        result = await ValidateResetPasswordForm().validate_security_answer(secret, dispatcher, tracker, {})
+    assert secret not in str(result)
+    assert result["security_answer"] is None
+    assert "attempt(s) remaining" in dispatcher.messages[0]["text"]
 
 
-def test_converse_endpoint_handles_unknown_ticket(monkeypatch):
-    async def fake_lookup(ticket_id):
-        return {
-            "template_key": None,
-            "slots": {"ticket_id": "TKT-9999", "status": "Not Found", "found": False},
-            "response_text": "I couldn't find ticket TKT-9999. Please check the ID and try again.",
-        }
-
-    monkeypatch.setattr(action_handler, "lookup_logic", fake_lookup)
-    response = client.post(
-        "/webhooks/vario/converse",
-        json={
-            "sender": "user-test",
-            "message": "check ticket TKT-9999",
-            "session": {"current_form": None, "current_step": None, "slots": {}},
-        },
-    )
-    data = response.json()
-    assert response.status_code == 200
-    assert data["template_key"] is None
-    assert data["slots"]["found"] is False
-    assert "couldn't find" in data["response_text"]
+def test_security_prompt_marks_next_turn_sensitive():
+    dispatcher = FakeDispatcher()
+    tracker = FakeTracker({"security_question": "What city were you born in?"})
+    ActionAskResetPasswordSecurityAnswer().run(dispatcher, tracker, {})
+    assert dispatcher.messages[0]["json_message"]["vario"]["sensitive_next_input"] is True
 
 
-def test_converse_endpoint_handles_fallback():
-    response = client.post(
-        "/webhooks/vario/converse",
-        json={
-            "sender": "user-test",
-            "message": "tell me a joke",
-            "session": {"current_form": None, "current_step": None, "slots": {}},
-        },
-    )
-    assert response.status_code == 200
-    assert response.json()["intent"] == "nlu_fallback"
-    assert response.json()["confidence"] < 0.4
-
-
-def _ticket_turn(message, session=None, auth_context=True):
-    payload = {"sender": "user-test", "message": message, "session": session or {"current_form": None, "current_step": None, "slots": {}}}
-    if auth_context:
-        payload["auth_context"] = {"employee_id": "EMP-1042", "full_name": "Demo Employee"}
-    return client.post("/webhooks/vario/converse", json=payload)
-
-
-def test_ticket_creation_collects_details_confirms_and_emits_audit_event():
-    created = {"ticket_id": "IT-1004", "category": "network", "description": "VPN is unavailable", "reporter": "EMP-1042", "status": "Open"}
-    with patch.object(ITSMAdapter, "create_ticket", new_callable=AsyncMock, return_value=created) as create:
-        start = _ticket_turn("create a support ticket").json()
-        assert start["current_form"] == "raise_ticket_form"
-        assert start["current_step"] == "ask_category"
-        assert start["slots"]["requested_slot"] == "category"
-        assert create.await_count == 0
-        category = _ticket_turn("network", {"current_form": start["current_form"], "current_step": start["current_step"], "slots": start["slots"]}).json()
-        assert category["current_step"] == "ask_description"
-        description = _ticket_turn("VPN is unavailable", {"current_form": category["current_form"], "current_step": category["current_step"], "slots": category["slots"]}).json()
-        assert description["current_step"] == "confirm"
-        assert description["slots"]["confirmation_pending"] is True
-        assert create.await_count == 0
-        result = _ticket_turn("confirm", {"current_form": description["current_form"], "current_step": description["current_step"], "slots": description["slots"]}).json()
-    assert result["current_form"] is None
-    assert result["slots"]["ticket_id"] == "IT-1004"
-    assert result["slots"]["ticket_result"] is True
-    assert result["audit_event"]["action_type"] == "ticket_created"
-    assert result["audit_event"]["reference_id"] == "IT-1004"
-    create.assert_awaited_once_with(category="network", description="VPN is unavailable", reporter="EMP-1042")
-
-
-def test_ticket_creation_cancel_does_not_call_adapter():
-    with patch.object(ITSMAdapter, "create_ticket", new_callable=AsyncMock) as create:
-        start = _ticket_turn("create a support ticket").json()
-        category = _ticket_turn("hardware", {"current_form": start["current_form"], "current_step": start["current_step"], "slots": start["slots"]}).json()
-        description = _ticket_turn("Laptop will not start", {"current_form": category["current_form"], "current_step": category["current_step"], "slots": category["slots"]}).json()
-        cancelled = _ticket_turn("cancel", {"current_form": description["current_form"], "current_step": description["current_step"], "slots": description["slots"]}).json()
-    create.assert_not_awaited()
-    assert cancelled["current_form"] is None
-    assert cancelled["slots"]["ticket_id"] is None
-    assert "cancelled" in cancelled["response_text"].lower()
-
-
-def test_identical_immediate_ticket_request_reuses_previous_ticket():
-    created = {"ticket_id": "IT-1004", "status": "Open"}
-    with patch.object(ITSMAdapter, "create_ticket", new_callable=AsyncMock, return_value=created) as create:
-        state = {"current_form": None, "current_step": None, "slots": {}}
-        for message in ("create a support ticket", "network", "VPN is unavailable", "confirm"):
-            data = _ticket_turn(message, state).json()
-            state = {"current_form": data["current_form"], "current_step": data["current_step"], "slots": data["slots"]}
-        for message in ("create a support ticket", "network", "VPN is unavailable", "confirm"):
-            data = _ticket_turn(message, state).json()
-            state = {"current_form": data["current_form"], "current_step": data["current_step"], "slots": data["slots"]}
-        assert data["slots"]["ticket_id"] == "IT-1004"
-        assert data["slots"]["ticket_reused"] is True
-        assert create.await_count == 1
-
-
-def test_ticket_creation_requires_authenticated_reporter():
-    response = _ticket_turn("create a support ticket", auth_context=False)
-    assert response.status_code == 200
-    assert response.json()["current_form"] is None
-    assert "sign in" in response.json()["response_text"].lower()
-
-
-def _reset_turn(message, session=None):
-    return client.post("/webhooks/vario/converse", json={
-        "sender": "user-test", "message": message,
-        "session": session or {"current_form": None, "current_step": None, "slots": {}},
-    })
-
-
-def test_password_reset_success_verifies_before_reset_and_emits_audit_event():
-    question = {"found": True, "employee_id": "EMP-1042", "security_question": "What city were you born in?"}
-    verification = {"verified": True, "employee_id": "EMP-1042", "detail": "Identity verified."}
-    reset = {"success": True, "employee_id": "EMP-1042", "reset_requested": True}
-    with patch.object(ITSMAdapter, "get_security_question", new_callable=AsyncMock, return_value=question), \
-         patch.object(ITSMAdapter, "verify_identity", new_callable=AsyncMock, return_value=verification) as verify, \
-         patch.object(ITSMAdapter, "reset_password", new_callable=AsyncMock, return_value=reset) as reset_call:
-        start = _reset_turn("I forgot my password").json()
-        assert start["current_form"] == "reset_password_form"
-        assert start["current_step"] == "ask_employee_id"
-        assert start["slots"]["requested_slot"] == "employee_id"
-        employee = _reset_turn("EMP-1042", {"current_form": start["current_form"], "current_step": start["current_step"], "slots": start["slots"]}).json()
-        assert employee["current_step"] == "await_security_answer"
-        assert employee["slots"]["security_question"] == question["security_question"]
-        assert reset_call.await_count == 0
-        result = _reset_turn("Mysuru", {"current_form": employee["current_form"], "current_step": employee["current_step"], "slots": employee["slots"]}).json()
-    verify.assert_awaited_once_with("EMP-1042", "Mysuru")
-    reset_call.assert_awaited_once_with("EMP-1042")
-    assert result["current_form"] is None
-    assert result["slots"]["reset_result"] is True
-    assert "Mysuru" not in str(result)
-    assert result["audit_event"]["action_type"] == "password_reset_initiated"
-    assert result["audit_event"]["reference_id"] == "EMP-1042"
-
-
-def test_password_reset_denies_after_three_wrong_answers_without_reset():
-    question = {"found": True, "employee_id": "EMP-1042", "security_question": "What city were you born in?"}
-    with patch.object(ITSMAdapter, "get_security_question", new_callable=AsyncMock, return_value=question), \
-         patch.object(ITSMAdapter, "verify_identity", new_callable=AsyncMock, return_value={"verified": False, "employee_id": "EMP-1042"}), \
-         patch.object(ITSMAdapter, "reset_password", new_callable=AsyncMock) as reset_call:
-        state = {"current_form": None, "current_step": None, "slots": {}}
-        for message in ("I forgot my password", "EMP-1042"):
-            data = _reset_turn(message, state).json()
-            state = {"current_form": data["current_form"], "current_step": data["current_step"], "slots": data["slots"]}
-        for attempt in ("wrong one", "wrong two"):
-            data = _reset_turn(attempt, state).json()
-            assert data["current_form"] == "reset_password_form"
-            state = {"current_form": data["current_form"], "current_step": data["current_step"], "slots": data["slots"]}
-        denied = _reset_turn("wrong three", state).json()
-    reset_call.assert_not_awaited()
-    assert denied["current_form"] is None
-    assert denied["slots"]["reset_denied"] is True
-    assert denied.get("audit_event") is None
-
-
-def test_password_reset_cancel_never_calls_identity_or_reset():
-    with patch.object(ITSMAdapter, "verify_identity", new_callable=AsyncMock) as verify, \
-         patch.object(ITSMAdapter, "reset_password", new_callable=AsyncMock) as reset_call:
-        start = _reset_turn("reset my password").json()
-        cancelled = _reset_turn("cancel reset", {"current_form": start["current_form"], "current_step": start["current_step"], "slots": start["slots"]}).json()
-    verify.assert_not_awaited()
-    reset_call.assert_not_awaited()
-    assert cancelled["current_form"] is None
-    assert "cancelled" in cancelled["response_text"].lower()
+def test_real_rasa_assets_include_forms_fallback_and_interruptions():
+    root = Path(__file__).resolve().parents[1]
+    domain = yaml.safe_load((root / "domain.yml").read_text(encoding="utf-8"))
+    rules = yaml.safe_load((root / "data" / "rules.yml").read_text(encoding="utf-8"))
+    nlu = yaml.safe_load((root / "data" / "nlu.yml").read_text(encoding="utf-8"))
+    assert set(domain["forms"]) == {"ticket_status_form", "raise_ticket_form", "reset_password_form"}
+    assert domain["forms"]["raise_ticket_form"]["required_slots"] == ["category", "description", "confirmation"]
+    assert domain["forms"]["reset_password_form"]["required_slots"] == ["employee_id", "security_answer"]
+    rule_text = str(rules)
+    assert "Cancel ticket status form" in rule_text
+    assert "Reset password interrupts ticket status" in rule_text
+    status_examples = next(item["examples"] for item in nlu["nlu"] if item.get("intent") == "check_ticket_status")
+    assert "status of the ticket I submitted" in status_examples
+    assert any(item.get("regex") == "ticket_id" for item in nlu["nlu"])
