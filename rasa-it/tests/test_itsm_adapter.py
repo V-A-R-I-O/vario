@@ -29,8 +29,8 @@ async def test_get_ticket_status_returns_card_fields():
 async def test_unknown_ticket_is_a_not_found_result():
     with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = httpx.Response(404, json={"detail": "not found"})
-        result = await ITSMAdapter.get_ticket_status("TKT-9999")
-    assert result == {"found": False, "ticket_id": "TKT-9999", "status": "Not Found"}
+        result = await ITSMAdapter.get_ticket_status("IT-9999")
+    assert result == {"found": False, "ticket_id": "IT-9999", "status": "Not Found"}
 
 
 @pytest.mark.asyncio

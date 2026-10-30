@@ -77,6 +77,32 @@ def test_three_failed_answers_lock_account_across_flow_restarts():
     assert client.post("/password/reset", json={"employee_id": "EMP-1042"}).status_code == 403
 
 
+def test_all_employee_demo_accounts_exist_for_identity_and_ticket_creation():
+    employee_ids = (
+        "EMP-1001", "EMP-2001", "EMP-3001", "EMP-4001",
+        "EMP-1010", "EMP-1011", "EMP-1012", "EMP-1013", "APP-2026-001",
+    )
+    for employee_id in employee_ids:
+        question = client.get(f"/identity/{employee_id}/question")
+        assert question.status_code == 200, employee_id
+        assert question.json()["security_question"]
+        created = client.post(
+            "/tickets",
+            json={"category": "access", "description": "Demo account smoke test", "reporter": employee_id},
+        )
+        assert created.status_code == 201, employee_id
+        assert created.json()["reporter"] == employee_id
+
+
+def test_ticket_ids_use_the_canonical_it_prefix():
+    response = client.post(
+        "/tickets",
+        json={"category": "software", "description": "Canonical ID check", "reporter": "EMP-3001"},
+    )
+    assert response.status_code == 201
+    assert response.json()["ticket_id"].startswith("IT-")
+
+
 def test_identity_lockout_survives_module_reload():
     import importlib
     from app import seed_data as seed_module

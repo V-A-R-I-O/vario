@@ -10,8 +10,9 @@ from rasa_sdk.executor import CollectingDispatcher
 from actions.itsm_adapter import BackendUnavailableError, IdentityVerificationError, ITSMAdapter, TicketCreationRejectedError
 from vario_rasa.contract import vario_payload
 
-TICKET_ID_REGEX = re.compile(r"\b((?:TKT|IT)-\d{4})\b", re.IGNORECASE)
+TICKET_ID_REGEX = re.compile(r"\b(IT-\d{4})\b", re.IGNORECASE)
 EMPLOYEE_ID_REGEX = re.compile(r"\bEMP-\d{4}\b", re.IGNORECASE)
+REPORTER_ID_REGEX = re.compile(r"\b(?:EMP-\d{4}|APP-\d{4}-\d{3})\b", re.IGNORECASE)
 VALID_CATEGORIES = {"hardware", "software", "network", "access", "email", "other"}
 
 
@@ -124,7 +125,7 @@ class ActionSubmitRaiseTicket(Action):
         if tracker.get_slot("confirmation") is not True:
             dispatcher.utter_message(text="Okay, I cancelled the ticket request.")
             return reset
-        if not EMPLOYEE_ID_REGEX.fullmatch(reporter):
+        if not REPORTER_ID_REGEX.fullmatch(reporter):
             dispatcher.utter_message(text="I couldn't verify your signed-in employee identity. Please sign in again.")
             return reset
         signature = hashlib.sha256(
