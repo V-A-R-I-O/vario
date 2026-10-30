@@ -193,23 +193,23 @@ class GeminiRephraser:
             prompt = (
                 f"You are a conversational assistant response rephraser.\n"
                 f"Generate exactly 4 distinct paraphrased variations of the following text:\n"
-                f'\"{base_text}\"\n\n'
+                f'"{base_text}"\n\n'
                 f"CRITICAL REQUIREMENT:\n"
                 f"The following placeholder(s) MUST appear in EVERY variation exactly as written with curly braces:\n"
                 f"{var_list}\n"
                 f"Do NOT invent, alter, or remove any placeholders.\n"
                 f"Keep the meaning identical and natural.\n"
-                f'Return ONLY a JSON array of 4 strings, e.g. [\"variant 1\", \"variant 2\", \"variant 3\", \"variant 4\"].'
+                f'Return ONLY a JSON array of 4 strings, e.g. ["variant 1", "variant 2", "variant 3", "variant 4"].'
             )
         else:
             prompt = (
                 f"You are a conversational assistant response rephraser.\n"
                 f"Generate exactly 4 distinct paraphrased variations of the following text:\n"
-                f'\"{base_text}\"\n\n'
+                f'"{base_text}"\n\n'
                 f"CRITICAL REQUIREMENT:\n"
                 f"Do NOT include any placeholders or curly braces like {{var}} in the output.\n"
                 f"Keep the meaning identical and natural.\n"
-                f'Return ONLY a JSON array of 4 strings, e.g. [\"variant 1\", \"variant 2\", \"variant 3\", \"variant 4\"].'
+                f'Return ONLY a JSON array of 4 strings, e.g. ["variant 1", "variant 2", "variant 3", "variant 4"].'
             )
 
         raw = await self._call_gemini(prompt)
@@ -254,7 +254,7 @@ class GeminiRephraser:
             f"{seeds_formatted}\n\n"
             f"Generate exactly {count} diverse, realistic training phrases that users might say with the same intent.\n"
             f"Vary syntax, vocabulary, and formality. Do not repeat the seed phrases.\n"
-            f'Return ONLY a JSON array of {count} strings, e.g. [\"phrase 1\", \"phrase 2\", ...].'
+            f'Return ONLY a JSON array of {count} strings, e.g. ["phrase 1", "phrase 2", ...].'
         )
 
         raw = await self._call_gemini(prompt)
@@ -279,3 +279,39 @@ class GeminiRephraser:
                 break
 
         return valid
+
+
+def get_rephraser_client(provider: Optional[str] = None) -> RephraserClient:
+    """Return the configured rephraser client according to REPHRASER_PROVIDER."""
+    prov = (
+        provider
+        or os.getenv("REPHRASER_PROVIDER")
+        or getattr(settings, "REPHRASER_PROVIDER", "gemini")
+    ).strip().lower()
+    if prov == "gemini":
+        return GeminiRephraser()
+    elif prov == "passthrough":
+        return PassthroughRephraser()
+    else:
+        raise ValueError(f"Unsupported REPHRASER_PROVIDER: '{prov}'")
+
+
+class _RephraserProxy:
+    """Dynamic proxy delegating to the client selected by REPHRASER_PROVIDER."""
+
+    def _delegate(self) -> RephraserClient:
+        return get_rephraser_client()
+
+    async def generate_variants(
+        self, base_text: str, available_variables: Sequence[str]
+    ) -> List[str]:
+        return await self._delegate().generate_variants(base_text, available_variables)
+
+    async def generate_phrases(
+        self, seed_phrases: Sequence[str], count: int = 8
+    ) -> List[str]:
+        return await self._delegate().generate_phrases(seed_phrases, count)
+
+
+# The active client. Dynamically uses the provider configured by REPHRASER_PROVIDER.
+client: RephraserClient = _RephraserProxy()
