@@ -61,3 +61,36 @@ class PassthroughRephraser:
         self, seed_phrases: Sequence[str], count: int = 8
     ) -> List[str]:
         return []
+
+
+class GeminiRephraser:
+    """Gemini API provider for variant and phrase generation via Google AI Studio."""
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        http_client: Optional[httpx.AsyncClient] = None,
+    ):
+        self._api_key = api_key
+        self._model = model
+        self._http_client = http_client
+
+    @property
+    def api_key(self) -> str:
+        return (
+            self._api_key
+            or os.getenv("GEMINI_API_KEY")
+            or getattr(settings, "GEMINI_API_KEY", "")
+        )
+
+    @property
+    def model(self) -> str:
+        return (
+            self._model
+            or os.getenv("GEMINI_MODEL")
+            or getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+        )
+
+    def _get_url(self) -> str:
+        return f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
