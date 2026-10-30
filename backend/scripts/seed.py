@@ -100,21 +100,46 @@ async def seed_hr_data(session: AsyncSession):
         if not existing.scalar_one_or_none():
             session.add(TrainingPhrase(intent_id=status_intent.intent_id, phrase_text=phrase_text))
 
-    # 2. Stub Intent: ask_leave_status (placeholder for later slice)
+    # 2. Intent: ask_leave_status (FR-6)
     stmt_status = select(Intent).where(Intent.name == "ask_leave_status")
     res_status = await session.execute(stmt_status)
-    if not res_status.scalar_one_or_none():
-        status_stub = Intent(
+    status_intent = res_status.scalar_one_or_none()
+    if not status_intent:
+        status_intent = Intent(
             role_pack="hr",
             name="ask_leave_status",
             intent_type="dynamic_workflow",
             needs_retrain=False,
         )
-        session.add(status_stub)
+        session.add(status_intent)
         await session.flush()
-        session.add(TrainingPhrase(intent_id=status_stub.intent_id, phrase_text="what is the status of my leave request?"))
-        session.add(TrainingPhrase(intent_id=status_stub.intent_id, phrase_text="check my leave application status"))
-        logger.info("Created stub intent: ask_leave_status")
+        logger.info("Created intent: ask_leave_status")
+
+    leave_status_phrases = [
+        "has my leave been approved?",
+        "what is the status of my leave request?",
+        "check my leave application status",
+        "is my leave approved?",
+        "status of my leave",
+        "leave request status",
+        "check status of my leave",
+        "did my manager approve my leave?",
+        "where does my leave request stand?",
+        "has my leave request been accepted?",
+        "check status of LEAVE-2031",
+        "is LEAVE-2015 approved?",
+        "what is the status of LEAVE-2032?",
+        "can you track my leave application?",
+        "tell me if my leave is approved",
+    ]
+    for phrase_text in leave_status_phrases:
+        phrase_stmt = select(TrainingPhrase).where(
+            TrainingPhrase.intent_id == status_intent.intent_id,
+            TrainingPhrase.phrase_text == phrase_text,
+        )
+        existing = await session.execute(phrase_stmt)
+        if not existing.scalar_one_or_none():
+            session.add(TrainingPhrase(intent_id=status_intent.intent_id, phrase_text=phrase_text))
 
     # 3. Intent: submit_leave_request (slice-15)
     stmt_req = select(Intent).where(Intent.name == "submit_leave_request")
@@ -531,6 +556,72 @@ async def seed_hr_data(session: AsyncSession):
             if not existing_v.scalar_one_or_none():
                 session.add(ResponseVariant(template_id=t_obj.template_id, variant_text=v_text))
 
+    # 14. Response Templates for Leave Request Status (FR-6 / slice-36)
+    stmt_status_tmpl = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_leave_status_response"
+    )
+    res_status_tmpl = await session.execute(stmt_status_tmpl)
+    status_tmpl = res_status_tmpl.scalar_one_or_none()
+    if not status_tmpl:
+        status_tmpl = ResponseTemplate(
+            role_pack="hr",
+            template_key="ask_leave_status_response",
+            base_text="Your {leave_type} leave request ({reference_id}) is currently {status}.",
+            allow_rephrasing=True,
+            available_variables=["reference_id", "leave_type", "status", "start_date", "end_date", "days", "employee_id"],
+        )
+        session.add(status_tmpl)
+        await session.flush()
+        logger.info("Created response template: ask_leave_status_response")
+
+    status_variants = [
+        "Your {leave_type} leave request ({reference_id}) is currently {status}.",
+        "The status of your {leave_type} leave request {reference_id} is: {status}.",
+        "Your leave application {reference_id} ({leave_type}) is marked as {status}.",
+        "For request {reference_id}: your {leave_type} leave is currently {status}.",
+        "Your {leave_type} request ({reference_id}) status: {status}.",
+    ]
+    for variant_text in status_variants:
+        variant_stmt = select(ResponseVariant).where(
+            ResponseVariant.template_id == status_tmpl.template_id,
+            ResponseVariant.variant_text == variant_text,
+        )
+        existing_variant = await session.execute(variant_stmt)
+        if not existing_variant.scalar_one_or_none():
+            session.add(ResponseVariant(template_id=status_tmpl.template_id, variant_text=variant_text))
+
+    stmt_nf_tmpl = select(ResponseTemplate).where(
+        ResponseTemplate.template_key == "ask_leave_status_not_found_response"
+    )
+    res_nf_tmpl = await session.execute(stmt_nf_tmpl)
+    nf_tmpl = res_nf_tmpl.scalar_one_or_none()
+    if not nf_tmpl:
+        nf_tmpl = ResponseTemplate(
+            role_pack="hr",
+            template_key="ask_leave_status_not_found_response",
+            base_text="You do not have any submitted leave applications on record.",
+            allow_rephrasing=True,
+            available_variables=["reference_id", "employee_id"],
+        )
+        session.add(nf_tmpl)
+        await session.flush()
+        logger.info("Created response template: ask_leave_status_not_found_response")
+
+    nf_variants = [
+        "You do not have any submitted leave applications on record.",
+        "No leave requests were found for your account.",
+        "We couldn't find any recent leave applications on file.",
+        "There are no active or past leave requests recorded for your profile.",
+        "No leave applications on file. You can apply for leave whenever you need time off.",
+    ]
+    for variant_text in nf_variants:
+        variant_stmt = select(ResponseVariant).where(
+            ResponseVariant.template_id == nf_tmpl.template_id,
+            ResponseVariant.variant_text == variant_text,
+        )
+        existing_variant = await session.execute(variant_stmt)
+        if not existing_variant.scalar_one_or_none():
+            session.add(ResponseVariant(template_id=nf_tmpl.template_id, variant_text=variant_text))
 
 IT_TICKET_STATUS_PHRASES = [
     "what is the status of my ticket TKT-1234?",
