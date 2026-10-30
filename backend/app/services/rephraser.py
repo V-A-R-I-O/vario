@@ -139,3 +139,39 @@ class GeminiRephraser:
         except Exception as exc:
             logger.error("Gemini API request failed: %s", exc)
             return None
+
+    def _parse_json_list(self, raw_text: str) -> List[str]:
+        if not raw_text:
+            return []
+        cleaned = raw_text.strip()
+        # Strip markdown code blocks if present
+        if cleaned.startswith("```"):
+            lines = cleaned.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            cleaned = "\n".join(lines).strip()
+
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+            if isinstance(parsed, dict):
+                for key in ["variants", "phrases", "paraphrases", "data", "results"]:
+                    val = parsed.get(key)
+                    if isinstance(val, list):
+                        return [str(item).strip() for item in val if str(item).strip()]
+        except json.JSONDecodeError:
+            pass
+
+        # Fallback line-by-line parsing
+        results = []
+        for line in raw_text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            line = re.sub(r'^(?:[-*]|\d+[\.)])\s*', '', line).strip(' "[],\'')
+            if line:
+                results.append(line)
+        return results
