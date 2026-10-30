@@ -128,7 +128,9 @@ def test_rasa_configuration_has_stable_assistant_id_and_local_action_fallback():
     config = yaml.safe_load((root / "config.yml").read_text(encoding="utf-8"))
     endpoints = yaml.safe_load((root / "endpoints.yml").read_text(encoding="utf-8"))
     assert config["assistant_id"] == "it_assistant"
-    assert endpoints["action_endpoint"]["url"] == "${ACTION_ENDPOINT_URL:-http://localhost:5055/webhook}"
+    assert endpoints["action_endpoint"]["url"] == "${ACTION_ENDPOINT_URL}"
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert "ACTION_ENDPOINT_URL=http://localhost:5055/webhook" in readme
 
 
 def test_cancel_action_ends_ticket_status_prompt_and_clears_slots():
