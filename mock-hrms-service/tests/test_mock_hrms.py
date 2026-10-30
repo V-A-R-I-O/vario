@@ -200,3 +200,53 @@ def test_artificial_delay():
     elapsed = time.perf_counter() - start
     assert res.status_code == 200
     assert elapsed >= 0.08
+
+
+def test_n6_reset_restores_balances_and_reference_counter():
+    """
+    Defect N6:
+    1. Submit a leave (balance drops, counter increments).
+    2. POST /reset.
+    3. Check balance and submit again.
+    Expected: Balance returns to pristine seed values and counter resets cleanly.
+    """
+    # 0. Ensure clean state
+    reset_res = client.post("/reset")
+    assert reset_res.status_code == 200
+
+    bal_before = client.get("/employees/EMP-1001/leave-balance").json()
+    assert bal_before["breakdown"]["casual"] == 6
+    assert bal_before["total"] == 28
+
+    # 1. Submit leave
+    payload = {
+        "employee_id": "EMP-1001",
+        "leave_type": "casual",
+        "start_date": "2026-11-10",
+        "end_date": "2026-11-11",
+        "reason": "Doctor appointment",
+    }
+    submit1 = client.post("/leave/submit", json=payload)
+    assert submit1.status_code == 201
+    assert submit1.json()["reference_id"] == "LEAVE-2032"
+    assert submit1.json()["remaining_balance"]["breakdown"]["casual"] == 4
+
+    bal_reduced = client.get("/employees/EMP-1001/leave-balance").json()
+    assert bal_reduced["breakdown"]["casual"] == 4
+
+    # 2. POST /reset
+    res = client.post("/reset")
+    assert res.status_code == 200
+
+    # 3. Check balance is restored
+    bal_after = client.get("/employees/EMP-1001/leave-balance").json()
+    assert bal_after["breakdown"]["casual"] == 6
+    assert bal_after["total"] == 28
+
+    # Submit again and verify reference counter and balance
+    submit2 = client.post("/leave/submit", json=payload)
+    assert submit2.status_code == 201
+    assert submit2.json()["reference_id"] == "LEAVE-2032"
+    assert submit2.json()["remaining_balance"]["breakdown"]["casual"] == 4
+
+
