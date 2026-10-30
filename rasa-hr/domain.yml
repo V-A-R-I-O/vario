@@ -4,6 +4,9 @@ intents:
   - check_leave_balance:
       use_entities:
         - leave_type
+  - ask_leave_status:
+      use_entities:
+        - reference_id
   - submit_leave_request:
       use_entities:
         - leave_type
@@ -33,8 +36,16 @@ entities:
   - reason
   - policy_topic
   - employee_id
+  - reference_id
 
 slots:
+  reference_id:
+    type: text
+    influence_conversation: false
+    mappings:
+      - type: from_entity
+        entity: reference_id
+
   leave_type:
     type: text
     influence_conversation: true
@@ -204,24 +215,74 @@ responses:
                 value: "cancel"
 
   utter_ask_policy_faq:
-    - text: "Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days."
+    - text: "Employees are entitled to 8 casual days, 10 sick days, and 15 earned days annually. Unused earned leaves can be carried forward up to 5 days."
       custom:
         vario:
           template_key: ask_policy_faq_response
           card:
             type: faq_answer
             title: "Company Leave Policy"
-            text: "Our company leave policy grants 20 annual leaves, 10 sick leaves, and 5 casual leaves per year. Unused annual leaves can be carried forward up to 5 days."
+            text: "Employees are entitled to 8 casual days, 10 sick days, and 15 earned days annually. Unused earned leaves can be carried forward up to 5 days."
+
+  utter_ask_maternity_policy:
+    - text: "Primary caregivers receive 26 weeks of paid maternity and adoption leave."
+      custom:
+        vario:
+          template_key: ask_maternity_policy_response
+          card:
+            type: faq_answer
+            title: "Maternity Leave Policy"
+            text: "Primary caregivers receive 26 weeks of paid maternity and adoption leave."
+
+  utter_ask_paternity_policy:
+    - text: "Secondary caregivers receive 2 weeks of paid paternity leave within the child's first 6 months."
+      custom:
+        vario:
+          template_key: ask_paternity_policy_response
+          card:
+            type: faq_answer
+            title: "Paternity Leave Policy"
+            text: "Secondary caregivers receive 2 weeks of paid paternity leave within the child's first 6 months."
+
+  utter_ask_sick_policy:
+    - text: "Employees are entitled to 10 paid sick days per year. Sick leave exceeding 3 consecutive days requires a medical certificate."
+      custom:
+        vario:
+          template_key: ask_sick_policy_response
+          card:
+            type: faq_answer
+            title: "Sick Leave Policy"
+            text: "Employees are entitled to 10 paid sick days per year. Sick leave exceeding 3 consecutive days requires a medical certificate."
+
+  utter_ask_bereavement_policy:
+    - text: "Employees are entitled to 5 consecutive business days of paid compassionate leave upon the loss of an immediate family member."
+      custom:
+        vario:
+          template_key: ask_bereavement_policy_response
+          card:
+            type: faq_answer
+            title: "Bereavement Leave Policy"
+            text: "Employees are entitled to 5 consecutive business days of paid compassionate leave upon the loss of an immediate family member."
+
+  utter_ask_carry_forward_policy:
+    - text: "Employees may carry forward up to 5 days of unused earned leave into the following calendar year."
+      custom:
+        vario:
+          template_key: ask_carry_forward_policy_response
+          card:
+            type: faq_answer
+            title: "Leave Carry-Forward Policy"
+            text: "Employees may carry forward up to 5 days of unused earned leave into the following calendar year."
 
   utter_ask_wfh_policy:
-    - text: "Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location."
+    - text: "Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM."
       custom:
         vario:
           template_key: ask_wfh_policy_response
           card:
             type: faq_answer
             title: "Work From Home Policy"
-            text: "Employees may work from home up to 3 days per week, subject to manager approval. Core hours (10am–4pm) apply regardless of location."
+            text: "Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM."
 
   utter_default_fallback:
     - text: "I can help with leave balances, leave requests, and leave or WFH policies. For travel or expense policies, please check the employee portal or contact HR."
@@ -233,6 +294,7 @@ responses:
 
 actions:
   - action_check_leave_balance
+  - action_ask_leave_status
   - validate_leave_request_form
   - action_ask_leave_confirm
   - action_submit_leave
