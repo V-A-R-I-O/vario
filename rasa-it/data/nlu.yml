@@ -2,46 +2,46 @@ version: "3.1"
 nlu:
   - intent: check_ticket_status
     examples: |
-      - what is the status of my ticket [TKT-1234](ticket_id)?
-      - what's happening with ticket [TKT-1234](ticket_id)?
-      - check the status of [TKT-1234](ticket_id)
-      - can you check my ticket [TKT-1234](ticket_id)?
-      - track ticket [TKT-1234](ticket_id)
-      - give me an update on ticket [TKT-1234](ticket_id)
-      - has my ticket [TKT-1234](ticket_id) been resolved?
-      - is ticket [TKT-1234](ticket_id) still open?
-      - is my IT ticket [TKT-1234](ticket_id) closed?
-      - what is the progress of [TKT-1234](ticket_id)?
-      - please look up ticket [TKT-1234](ticket_id)
-      - show me the current status of [TKT-1234](ticket_id)
-      - I need an update for [TKT-1234](ticket_id)
-      - where does ticket [TKT-1234](ticket_id) stand?
-      - when will ticket [TKT-1234](ticket_id) be fixed?
-      - has anyone worked on [TKT-1234](ticket_id)?
-      - check my IT support request [TKT-1234](ticket_id)
-      - what's the latest on my support ticket [TKT-1234](ticket_id)?
-      - is there any update on [TKT-1234](ticket_id)?
-      - tell me whether [TKT-1234](ticket_id) is pending
-      - find the status of support request [TKT-1234](ticket_id)
-      - I want to follow up on support ticket [TKT-1234](ticket_id)
-      - can I get the status for [TKT-1234](ticket_id)?
-      - ticket [TKT-1234](ticket_id) status
-      - status update for ticket [TKT-1234](ticket_id)
-      - please track my support issue [TKT-1234](ticket_id)
-      - has the issue in [TKT-1234](ticket_id) been fixed?
-      - check if ticket [TKT-1234](ticket_id) is in progress
-      - what stage is my ticket [TKT-1234](ticket_id) at?
-      - is [TKT-1234](ticket_id) assigned to someone?
-      - look up the progress of my ticket [TKT-1234](ticket_id)
-      - I would like to know the status of [TKT-1234](ticket_id)
-      - could you tell me if [TKT-1234](ticket_id) is resolved?
-      - is my help desk request [TKT-1234](ticket_id) complete?
-      - check the progress of IT request [TKT-1234](ticket_id)
-      - please provide a status update for ticket [TKT-1234](ticket_id)
-      - do you have news about [TKT-1234](ticket_id)?
-      - what is the current state of my incident [TKT-1234](ticket_id)
-      - I am following up on support ticket [TKT-1234](ticket_id)
-      - tell me the status of my issue [TKT-1234](ticket_id)
+      - what is the status of my ticket [IT-1001](ticket_id)?
+      - what's happening with ticket [IT-1001](ticket_id)?
+      - check the status of [IT-1001](ticket_id)
+      - can you check my ticket [IT-1001](ticket_id)?
+      - track ticket [IT-1001](ticket_id)
+      - give me an update on ticket [IT-1001](ticket_id)
+      - has my ticket [IT-1001](ticket_id) been resolved?
+      - is ticket [IT-1001](ticket_id) still open?
+      - is my IT ticket [IT-1001](ticket_id) closed?
+      - what is the progress of [IT-1001](ticket_id)?
+      - please look up ticket [IT-1001](ticket_id)
+      - show me the current status of [IT-1001](ticket_id)
+      - I need an update for [IT-1001](ticket_id)
+      - where does ticket [IT-1001](ticket_id) stand?
+      - when will ticket [IT-1001](ticket_id) be fixed?
+      - has anyone worked on [IT-1001](ticket_id)?
+      - check my IT support request [IT-1001](ticket_id)
+      - what's the latest on my support ticket [IT-1001](ticket_id)?
+      - is there any update on [IT-1001](ticket_id)?
+      - tell me whether [IT-1001](ticket_id) is pending
+      - find the status of support request [IT-1001](ticket_id)
+      - I want to follow up on support ticket [IT-1001](ticket_id)
+      - can I get the status for [IT-1001](ticket_id)?
+      - ticket [IT-1001](ticket_id) status
+      - status update for ticket [IT-1001](ticket_id)
+      - please track my support issue [IT-1001](ticket_id)
+      - has the issue in [IT-1001](ticket_id) been fixed?
+      - check if ticket [IT-1001](ticket_id) is in progress
+      - what stage is my ticket [IT-1001](ticket_id) at?
+      - is [IT-1001](ticket_id) assigned to someone?
+      - look up the progress of my ticket [IT-1001](ticket_id)
+      - I would like to know the status of [IT-1001](ticket_id)
+      - could you tell me if [IT-1001](ticket_id) is resolved?
+      - is my help desk request [IT-1001](ticket_id) complete?
+      - check the progress of IT request [IT-1001](ticket_id)
+      - please provide a status update for ticket [IT-1001](ticket_id)
+      - do you have news about [IT-1001](ticket_id)?
+      - what is the current state of my incident [IT-1001](ticket_id)
+      - I am following up on support ticket [IT-1001](ticket_id)
+      - tell me the status of my issue [IT-1001](ticket_id)
       - check my ticket status
       - what is the status of my support ticket?
       - can you tell me where my ticket is in the queue?
@@ -131,7 +131,7 @@ nlu:
       - my laptop won't start
       - the VPN keeps disconnecting
       - EMP-1001
-      - TKT-1234
+      - IT-1001
       - IT-1001
   - regex: ticket_id
     examples: |
