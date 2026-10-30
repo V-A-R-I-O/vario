@@ -449,3 +449,31 @@ async def test_generate_phrases_not_autosaved_and_persists_on_put(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_llm_failure_during_template_save_keeps_original_and_does_not_crash(monkeypatch):
+    """AC: Given an LLM failure, then the save keeps the original variant and reports the error (no crash)."""
+    async def failing_handler(request: httpx.Request):
+        return httpx.Response(500, text="Gemini service unavailable")
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(failing_handler))
+    test_rephraser = GeminiRephraser(api_key="test-key", http_client=mock_http)
+    monkeypatch.setattr(rephraser, "get_rephraser_client", lambda *_: test_rephraser)
+
+    async with _client() as client:
+        # POST create intent with allow_rephrasing=True when LLM fails
+        res = await client.post(
+            "/api/admin/intents",
+            headers=HR,
+            json={
+                "name": "ask_llm_failure_test",
+                "training_phrases": ["Failure test phrase"],
+                "response_template": {
+                    "base_text": "This original variant is kept.",
+                    "allow_rephrasing": True,
+                },
+            },
+        )
+
+        assert res.status_code == 201
+        tpl = res.json()["data"]["intent"]["response_template"]
+        assert len(tpl["variants"]) == 1
+        assert tpl["variants"][0]["variant_text"] == "This original variant is kept."
