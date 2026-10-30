@@ -47,3 +47,17 @@ class RephraserClient(Protocol):
     ) -> List[str]:
         """Return `count` training-phrase variants seeded from existing phrases."""
         ...
+
+
+class PassthroughRephraser:
+    """Default no-op client: stores the original, generates nothing."""
+
+    async def generate_variants(
+        self, base_text: str, available_variables: Sequence[str]
+    ) -> List[str]:
+        return [base_text]
+
+    async def generate_phrases(
+        self, seed_phrases: Sequence[str], count: int = 8
+    ) -> List[str]:
+        return []
