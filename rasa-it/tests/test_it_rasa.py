@@ -113,3 +113,18 @@ def test_real_rasa_assets_include_forms_fallback_and_interruptions():
     status_examples = next(item["examples"] for item in nlu["nlu"] if item.get("intent") == "check_ticket_status")
     assert "status of the ticket I submitted" in status_examples
     assert any(item.get("regex") == "ticket_id" for item in nlu["nlu"])
+
+
+def test_ticket_id_entity_mapping_is_not_limited_to_an_active_form():
+    root = Path(__file__).resolve().parents[1]
+    domain = yaml.safe_load((root / "domain.yml").read_text(encoding="utf-8"))
+    mappings = domain["slots"]["ticket_id"]["mappings"]
+    assert mappings == [{"type": "from_entity", "entity": "ticket_id"}]
+
+
+def test_rasa_configuration_has_stable_assistant_id_and_local_action_fallback():
+    root = Path(__file__).resolve().parents[1]
+    config = yaml.safe_load((root / "config.yml").read_text(encoding="utf-8"))
+    endpoints = yaml.safe_load((root / "endpoints.yml").read_text(encoding="utf-8"))
+    assert config["assistant_id"] == "it_assistant"
+    assert endpoints["action_endpoint"]["url"] == "${ACTION_ENDPOINT_URL:-http://localhost:5055/webhook}"
