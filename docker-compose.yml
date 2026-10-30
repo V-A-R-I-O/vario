@@ -109,6 +109,10 @@ services:
       context: ./mock-itsm-service
     profiles: [full]
     restart: unless-stopped
+    environment:
+      IDENTITY_ATTEMPTS_PATH: /data/identity-attempts.json
+    volumes:
+      - itsmdata:/data
     ports:
       - "${MOCK_ITSM_PORT:-9003}:9003"
     healthcheck:
@@ -173,4 +177,5 @@ services:
 
 volumes:
   pgdata:
+  itsmdata:
   rasa-it-data:
