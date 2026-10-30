@@ -48,8 +48,7 @@ from app.schemas.admin import (
     VariantResponse,
     VariantUpdate,
 )
-from app.services import logging
-import rephraser, audit_log_service
+from app.services import rephraser, audit_log_service
 from app.services.admin_guard import AdminContext, require_admin
 
 logger = logging.getLogger(__name__)
@@ -405,6 +404,8 @@ async def update_template(
             await db.flush()
             await _create_variants(db, template)
         else:
+            for v in existing[1:]:
+                await db.delete(v)
             if existing:
                 existing[0].variant_text = template.base_text
             else:
