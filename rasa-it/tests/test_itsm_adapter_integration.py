@@ -1,4 +1,4 @@
-"""End-to-end adapter contract tests against the in-process Mock ITSM app."""
+"""End-to-end contract tests for the single runtime Rasa ITSM adapter."""
 import importlib.util
 import sys
 import types
@@ -8,7 +8,9 @@ from unittest.mock import patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-repo_root = Path(__file__).resolve().parent.parent.parent
+from actions.itsm_adapter import ITSMAdapter, IdentityVerificationError
+
+repo_root = Path(__file__).resolve().parents[2]
 mock_itsm_dir = repo_root / "mock-itsm-service"
 
 mock_pkg = types.ModuleType("mock_itsm_app")
@@ -26,8 +28,6 @@ sys.modules["mock_itsm_app.main"] = main_mod
 main_spec.loader.exec_module(main_mod)
 mock_itsm_app = main_mod.app
 reset_seed_data = seed_mod.reset_seed_data
-
-from app.services.itsm_adapter import ITSMAdapter, IdentityVerificationError
 
 
 @pytest.fixture(autouse=True)

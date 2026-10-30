@@ -1,21 +1,46 @@
 version: "3.1"
-
 stories:
-  - story: Check ticket status with ticket ID
+  - story: Ticket status with an ID
     steps:
       - intent: check_ticket_status
+      - action: ticket_status_form
+      - active_loop: ticket_status_form
+      - intent: inform
         entities:
-          - ticket_id: "TKT-1234"
+          - ticket_id: "IT-1001"
+      - action: ticket_status_form
+      - active_loop: null
       - action: action_check_ticket_status
-
-  - story: Ask for ticket ID when missing
+  - story: Cancel ticket ID prompt
     steps:
       - intent: check_ticket_status
-      - action: action_check_ticket_status
-
-  - story: Greet then check ticket status
+      - action: ticket_status_form
+      - active_loop: ticket_status_form
+      - intent: cancel
+      - action: action_cancel_form
+      - active_loop: null
+  - story: Create ticket with confirmation
     steps:
-      - intent: greet
-      - action: utter_greet
-      - intent: check_ticket_status
-      - action: action_check_ticket_status
+      - intent: raise_ticket
+      - action: raise_ticket_form
+      - active_loop: raise_ticket_form
+      - intent: inform
+      - action: raise_ticket_form
+      - intent: inform
+      - action: raise_ticket_form
+      - intent: affirm
+      - action: raise_ticket_form
+      - active_loop: null
+      - action: action_submit_raise_ticket
+  - story: Password reset form
+    steps:
+      - intent: reset_password
+      - action: reset_password_form
+      - active_loop: reset_password_form
+      - intent: inform
+      - action: reset_password_form
+      - action: action_ask_reset_password_form_security_answer
+      - intent: inform
+      - action: reset_password_form
+      - active_loop: null
+      - action: action_submit_reset_password

@@ -1,5 +1,4 @@
 version: "3.1"
-
 nlu:
   - intent: check_ticket_status
     examples: |
@@ -24,10 +23,10 @@ nlu:
       - is there any update on [TKT-1234](ticket_id)?
       - tell me whether [TKT-1234](ticket_id) is pending
       - find the status of support request [TKT-1234](ticket_id)
-      - I want to follow up on [TKT-1234](ticket_id)
+      - I want to follow up on support ticket [TKT-1234](ticket_id)
       - can I get the status for [TKT-1234](ticket_id)?
       - ticket [TKT-1234](ticket_id) status
-      - status update for [TKT-1234](ticket_id)
+      - status update for ticket [TKT-1234](ticket_id)
       - please track my support issue [TKT-1234](ticket_id)
       - has the issue in [TKT-1234](ticket_id) been fixed?
       - check if ticket [TKT-1234](ticket_id) is in progress
@@ -53,8 +52,10 @@ nlu:
       - give me the latest update on my IT issue
       - is my service desk ticket still pending?
       - I want to check a ticket
-      - look up an incident for me
-
+      - status of the ticket I submitted
+      - is my ticket still open?
+      - can you tell me whether my incident was resolved?
+      - check the status of my last support request
   - intent: raise_ticket
     examples: |
       - I need to raise an IT ticket
@@ -67,7 +68,8 @@ nlu:
       - log a problem with my computer
       - submit an IT support request
       - something is broken and I need support
-
+      - report a network outage
+      - my printer is not working
   - intent: reset_password
     examples: |
       - I forgot my password
@@ -85,7 +87,6 @@ nlu:
       - I cannot access my work account
       - start the password reset process
       - I need help getting back into my account
-
   - intent: greet
     examples: |
       - hello
@@ -93,11 +94,48 @@ nlu:
       - hey
       - good morning
       - hello IT support
-
   - intent: goodbye
     examples: |
       - bye
       - goodbye
       - thanks, bye
       - see you later
-
+  - intent: cancel
+    examples: |
+      - cancel
+      - stop
+      - never mind
+      - forget it
+      - cancel this request
+  - intent: affirm
+    examples: |
+      - yes
+      - confirm
+      - go ahead
+      - submit it
+      - yes please
+  - intent: deny
+    examples: |
+      - no
+      - no thanks
+      - cancel it
+      - don't submit
+  - intent: inform
+    examples: |
+      - hardware
+      - software
+      - network
+      - access
+      - email
+      - other
+      - my laptop won't start
+      - the VPN keeps disconnecting
+      - EMP-1001
+      - TKT-1234
+      - IT-1001
+  - regex: ticket_id
+    examples: |
+      - (?:TKT|IT)-\d{4}
+  - regex: employee_id
+    examples: |
+      - EMP-\d{4}

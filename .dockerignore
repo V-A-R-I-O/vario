@@ -1,0 +1,14 @@
+# Keep repository metadata and local credentials out of the root-context Rasa image build.
+.git
+.env
+.env.*
+!.env.example
+**/.venv
+**/venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/node_modules
+**/.next
+**/coverage

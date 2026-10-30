@@ -44,3 +44,14 @@ class VerificationEvidenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Slice37ComposeWiringTests(unittest.TestCase):
+    def test_compose_wires_it_rasa_action_server_and_tracker_store(self):
+        root = Path(__file__).resolve().parents[2]
+        compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+        self.assertIn("rasa-it-actions:", compose)
+        self.assertIn("ACTION_ENDPOINT_URL: http://rasa-it-actions:5055/webhook", compose)
+        self.assertIn("POSTGRES_HOST: postgres", compose)
+        self.assertIn("itsmdata:/data", compose)
+        self.assertIn("dockerfile: rasa-it/Dockerfile", compose)

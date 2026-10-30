@@ -1,21 +1,175 @@
 version: "3.1"
-
 rules:
-  - rule: Check ticket status
+  - rule: Activate ticket status form
     steps:
       - intent: check_ticket_status
+      - action: ticket_status_form
+      - active_loop: ticket_status_form
+  - rule: Submit ticket status form
+    condition: [{active_loop: ticket_status_form}]
+    steps:
+      - action: ticket_status_form
+      - active_loop: null
       - action: action_check_ticket_status
-
-  - rule: Handle low confidence fallback
+  - rule: Activate raise ticket form
+    steps:
+      - intent: raise_ticket
+      - action: raise_ticket_form
+      - active_loop: raise_ticket_form
+  - rule: Submit raise ticket form
+    condition: [{active_loop: raise_ticket_form}]
+    steps:
+      - action: raise_ticket_form
+      - active_loop: null
+      - action: action_submit_raise_ticket
+  - rule: Activate reset password form
+    steps:
+      - intent: reset_password
+      - action: reset_password_form
+      - active_loop: reset_password_form
+  - rule: Submit reset password form
+    condition: [{active_loop: reset_password_form}]
+    steps:
+      - action: reset_password_form
+      - active_loop: null
+      - action: action_submit_reset_password
+  - rule: Cancel ticket status form
+    condition: [{active_loop: ticket_status_form}]
+    steps:
+      - intent: cancel
+      - action: action_cancel_form
+      - active_loop: null
+  - rule: Cancel raise ticket form
+    condition: [{active_loop: raise_ticket_form}]
+    steps:
+      - intent: cancel
+      - action: action_cancel_form
+      - active_loop: null
+  - rule: Cancel reset password form
+    condition: [{active_loop: reset_password_form}]
+    steps:
+      - intent: cancel
+      - action: action_cancel_form
+      - active_loop: null
+  - rule: Greet interrupts ticket status
+    condition: [{active_loop: ticket_status_form}]
+    steps:
+      - intent: greet
+      - action: action_cancel_form
+      - active_loop: null
+      - action: utter_greet
+  - rule: Greet interrupts ticket creation
+    condition: [{active_loop: raise_ticket_form}]
+    steps:
+      - intent: greet
+      - action: action_cancel_form
+      - active_loop: null
+      - action: utter_greet
+  - rule: Greet interrupts password reset
+    condition: [{active_loop: reset_password_form}]
+    steps:
+      - intent: greet
+      - action: action_cancel_form
+      - active_loop: null
+      - action: utter_greet
+  - rule: Goodbye interrupts ticket status
+    condition: [{active_loop: ticket_status_form}]
+    steps:
+      - intent: goodbye
+      - action: action_cancel_form
+      - active_loop: null
+      - action: utter_goodbye
+  - rule: Goodbye interrupts ticket creation
+    condition: [{active_loop: raise_ticket_form}]
+    steps:
+      - intent: goodbye
+      - action: action_cancel_form
+      - active_loop: null
+      - action: utter_goodbye
+  - rule: Goodbye interrupts password reset
+    condition: [{active_loop: reset_password_form}]
+    steps:
+      - intent: goodbye
+      - action: action_cancel_form
+      - active_loop: null
+      - action: utter_goodbye
+  - rule: Reset password interrupts ticket status
+    condition: [{active_loop: ticket_status_form}]
+    steps:
+      - intent: reset_password
+      - action: action_cancel_form
+      - active_loop: null
+      - action: reset_password_form
+      - active_loop: reset_password_form
+  - rule: Raise ticket interrupts ticket status
+    condition: [{active_loop: ticket_status_form}]
+    steps:
+      - intent: raise_ticket
+      - action: action_cancel_form
+      - active_loop: null
+      - action: raise_ticket_form
+      - active_loop: raise_ticket_form
+  - rule: Check status interrupts ticket creation
+    condition: [{active_loop: raise_ticket_form}]
+    steps:
+      - intent: check_ticket_status
+      - action: action_cancel_form
+      - active_loop: null
+      - action: ticket_status_form
+      - active_loop: ticket_status_form
+  - rule: Reset password interrupts ticket creation
+    condition: [{active_loop: raise_ticket_form}]
+    steps:
+      - intent: reset_password
+      - action: action_cancel_form
+      - active_loop: null
+      - action: reset_password_form
+      - active_loop: reset_password_form
+  - rule: Check status interrupts password reset
+    condition: [{active_loop: reset_password_form}]
+    steps:
+      - intent: check_ticket_status
+      - action: action_cancel_form
+      - active_loop: null
+      - action: ticket_status_form
+      - active_loop: ticket_status_form
+  - rule: Raise ticket interrupts password reset
+    condition: [{active_loop: reset_password_form}]
+    steps:
+      - intent: raise_ticket
+      - action: action_cancel_form
+      - active_loop: null
+      - action: raise_ticket_form
+      - active_loop: raise_ticket_form
+  - rule: Fallback interrupts ticket status form
+    condition: [{active_loop: ticket_status_form}]
+    steps:
+      - intent: nlu_fallback
+      - action: action_cancel_form
+      - active_loop: null
+      - action: action_default_fallback
+  - rule: Fallback interrupts ticket creation form
+    condition: [{active_loop: raise_ticket_form}]
+    steps:
+      - intent: nlu_fallback
+      - action: action_cancel_form
+      - active_loop: null
+      - action: action_default_fallback
+  - rule: Fallback interrupts password reset form
+    condition: [{active_loop: reset_password_form}]
+    steps:
+      - intent: nlu_fallback
+      - action: action_cancel_form
+      - active_loop: null
+      - action: action_default_fallback
+  - rule: Handle fallback
     steps:
       - intent: nlu_fallback
       - action: action_default_fallback
-
   - rule: Greet
     steps:
       - intent: greet
       - action: utter_greet
-
   - rule: Goodbye
     steps:
       - intent: goodbye

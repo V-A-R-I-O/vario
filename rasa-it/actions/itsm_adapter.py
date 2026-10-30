@@ -1,8 +1,4 @@
-"""Small ITSM HTTP client for the separately deployed IT role-pack container.
-
-The backend owns the canonical adapter; this thin client keeps the Rasa runtime
-behind the same mockable HTTP contract without importing backend application code.
-"""
+"""Small ITSM HTTP client for the separately deployed IT role-pack container."""
 import os
 from typing import Any, Dict
 from urllib.parse import quote
@@ -18,6 +14,10 @@ class TicketCreationRejectedError(Exception):
     """The ITSM service rejected ticket creation because the submitted details are invalid."""
 
 
+class IdentityVerificationError(Exception):
+    """The mock ITSM service rejected a reset because identity was not verified."""
+
+
 class ITSMAdapter:
     DEFAULT_TIMEOUT = 2.5
 
@@ -30,45 +30,26 @@ class ITSMAdapter:
         clean_id = (ticket_id or "").strip().upper()
         if not clean_id:
             return {"found": False, "ticket_id": clean_id, "status": "Not Found"}
-
         try:
             async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
-                response = await client.get(
-                    f"{cls.base_url()}/tickets/{quote(clean_id, safe='')}"
-                )
+                response = await client.get(f"{cls.base_url()}/tickets/{quote(clean_id, safe='')}")
         except (httpx.RequestError, httpx.TimeoutException) as exc:
-            raise BackendUnavailableError(
-                "ITSM service is currently unavailable. Please try again shortly."
-            ) from exc
-
+            raise BackendUnavailableError("ITSM service is currently unavailable. Please try again shortly.") from exc
         if response.status_code == 404:
             return {"found": False, "ticket_id": clean_id, "status": "Not Found"}
         if response.status_code != 200:
-            raise BackendUnavailableError(
-                f"ITSM service returned HTTP {response.status_code}."
-            )
-
+            raise BackendUnavailableError(f"ITSM service returned HTTP {response.status_code}.")
         try:
             data = response.json()
         except ValueError as exc:
             raise BackendUnavailableError("ITSM service returned a malformed response.") from exc
         if not isinstance(data, dict) or not data.get("ticket_id") or not data.get("status"):
             raise BackendUnavailableError("ITSM service returned an incomplete ticket response.")
-
-        return {
-            "found": True,
-            "ticket_id": data.get("ticket_id", clean_id),
-            "category": data.get("category"),
-            "description": data.get("description"),
-            "reporter": data.get("reporter"),
-            "status": data.get("status"),
-            "updated_at": data.get("updated_at"),
-        }
-
+        return {key: data.get(key) for key in
+                ("found", "ticket_id", "category", "description", "reporter", "status", "updated_at")} | {"found": True}
 
     @classmethod
     async def create_ticket(cls, category: str, description: str, reporter: str) -> Dict[str, Any]:
-        """Create a support ticket through the mockable ITSM HTTP contract."""
         clean_category = (category or "").strip()
         clean_description = (description or "").strip()
         clean_reporter = (reporter or "").strip().upper()
@@ -78,16 +59,13 @@ class ITSMAdapter:
             raise TicketCreationRejectedError("Ticket details exceed the supported length.")
         try:
             async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
-                response = await client.post(
-                    f"{cls.base_url()}/tickets",
-                    json={"category": clean_category, "description": clean_description, "reporter": clean_reporter},
-                )
+                response = await client.post(f"{cls.base_url()}/tickets",
+                    json={"category": clean_category, "description": clean_description, "reporter": clean_reporter})
         except (httpx.RequestError, httpx.TimeoutException) as exc:
             raise BackendUnavailableError("ITSM service is currently unavailable. Please try again shortly.") from exc
         if response.status_code in (400, 404, 422):
             try:
-                payload = response.json()
-                detail = payload.get("detail", "Ticket details were rejected.")
+                detail = response.json().get("detail", "Ticket details were rejected.")
                 if isinstance(detail, dict):
                     detail = detail.get("message", "Ticket details were rejected.")
             except ValueError:
@@ -103,10 +81,8 @@ class ITSMAdapter:
             raise BackendUnavailableError("ITSM service returned an incomplete ticket response.")
         return ticket
 
-
     @classmethod
     async def get_security_question(cls, employee_id: str) -> Dict[str, Any]:
-        """Return the mock employee's security question, never the stored answer."""
         clean_id = (employee_id or "").strip().upper()
         if not clean_id:
             return {"found": False, "employee_id": "", "detail": "Employee ID is required."}
@@ -125,22 +101,25 @@ class ITSMAdapter:
             raise BackendUnavailableError("ITSM service returned a malformed identity response.") from exc
         if not isinstance(payload, dict) or not payload.get("security_question"):
             raise BackendUnavailableError("ITSM service returned an incomplete identity response.")
-        return {"found": True, "employee_id": str(payload.get("employee_id") or clean_id).upper(), "security_question": str(payload["security_question"])}
+        return {"found": True, "employee_id": str(payload.get("employee_id") or clean_id).upper(),
+                "security_question": str(payload["security_question"]), "locked": bool(payload.get("locked")),
+                "attempts_remaining": int(payload.get("attempts_remaining", 3))}
 
     @classmethod
     async def verify_identity(cls, employee_id: str, answer: str) -> Dict[str, Any]:
-        """Verify the submitted mock security answer; never return or log it."""
-        clean_id = (employee_id or "").strip().upper()
-        clean_answer = (answer or "").strip()
+        clean_id, clean_answer = (employee_id or "").strip().upper(), (answer or "").strip()
         if not clean_id or not clean_answer:
-            return {"verified": False, "employee_id": clean_id, "detail": "Employee ID and answer are required."}
+            return {"verified": False, "employee_id": clean_id, "detail": "Employee ID and answer are required.",
+                    "locked": False, "attempts_remaining": 3}
         try:
             async with httpx.AsyncClient(timeout=cls.DEFAULT_TIMEOUT) as client:
-                response = await client.post(f"{cls.base_url()}/identity/verify", json={"employee_id": clean_id, "answer": clean_answer})
+                response = await client.post(f"{cls.base_url()}/identity/verify",
+                                             json={"employee_id": clean_id, "answer": clean_answer})
         except (httpx.RequestError, httpx.TimeoutException) as exc:
             raise BackendUnavailableError("ITSM service is currently unavailable. Please try again shortly.") from exc
         if response.status_code == 404:
-            return {"verified": False, "employee_id": clean_id, "detail": "Employee was not found."}
+            return {"verified": False, "employee_id": clean_id, "detail": "Employee was not found.",
+                    "locked": False, "attempts_remaining": 3}
         if response.status_code != 200:
             raise BackendUnavailableError(f"ITSM service returned HTTP {response.status_code}.")
         try:
@@ -149,11 +128,12 @@ class ITSMAdapter:
             raise BackendUnavailableError("ITSM service returned a malformed verification response.") from exc
         if not isinstance(payload, dict):
             raise BackendUnavailableError("ITSM service returned a malformed verification response.")
-        return {"verified": bool(payload.get("verified", False)), "employee_id": str(payload.get("employee_id") or clean_id).upper(), "detail": str(payload.get("detail") or "")}
+        return {"verified": bool(payload.get("verified")), "employee_id": str(payload.get("employee_id") or clean_id).upper(),
+                "detail": str(payload.get("detail") or ""), "locked": bool(payload.get("locked")),
+                "attempts_remaining": int(payload.get("attempts_remaining", 3))}
 
     @classmethod
     async def reset_password(cls, employee_id: str) -> Dict[str, Any]:
-        """Request a mock password reset; Mock ITSM independently enforces verification."""
         clean_id = (employee_id or "").strip().upper()
         if not clean_id:
             raise IdentityVerificationError("Employee ID is required for password reset.")
@@ -175,7 +155,3 @@ class ITSMAdapter:
         if not isinstance(payload, dict) or payload.get("success") is not True or payload.get("reset_requested") is not True:
             raise BackendUnavailableError("ITSM service did not confirm the mock password-reset request.")
         return payload
-
-
-class IdentityVerificationError(Exception):
-    """The mock ITSM service rejected a reset because identity was not verified."""

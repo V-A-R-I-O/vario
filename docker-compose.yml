@@ -109,6 +109,10 @@ services:
       context: ./mock-itsm-service
     profiles: [full]
     restart: unless-stopped
+    environment:
+      IDENTITY_ATTEMPTS_PATH: /data/identity-attempts.json
+    volumes:
+      - itsmdata:/data
     ports:
       - "${MOCK_ITSM_PORT:-9003}:9003"
     healthcheck:
@@ -140,22 +144,51 @@ services:
 
   rasa-it:
     build:
-      context: ./rasa-it
+      context: .
+      dockerfile: rasa-it/Dockerfile
     profiles: [full]
     restart: unless-stopped
     environment:
       MOCK_ITSM_URL: http://mock-itsm:9003
+      ACTION_ENDPOINT_URL: http://rasa-it-actions:5055/webhook
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-vario}
+      POSTGRES_USER: ${POSTGRES_USER:-vario}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vario}
       RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-}
       RETRAINING_DATA_PATH: /var/lib/vario/training_examples.json
     volumes:
       - rasa-it-data:/var/lib/vario
     depends_on:
+      postgres:
+        condition: service_healthy
       mock-itsm:
+        condition: service_healthy
+      rasa-it-actions:
         condition: service_healthy
     ports:
       - "5006:5006"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5006/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5006/status')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  rasa-it-actions:
+    build:
+      context: .
+      dockerfile: rasa-it/Dockerfile
+    profiles: [full]
+    restart: unless-stopped
+    command: ["run", "actions", "--actions", "actions", "--port", "5055"]
+    environment:
+      MOCK_ITSM_URL: http://mock-itsm:9003
+    depends_on:
+      mock-itsm:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5055/health')"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -172,4 +205,5 @@ services:
 
 volumes:
   pgdata:
+  itsmdata:
   rasa-it-data:
