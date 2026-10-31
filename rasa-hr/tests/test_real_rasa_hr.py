@@ -97,13 +97,11 @@ def test_rasa_trained_nlu_model_metrics():
     with open(report_file, "r") as f:
         data = json.load(f)
 
-    # Core intents must have robust precision and recall in CI evaluation
+    # Core intents must have high precision and recall
     for intent in ["check_leave_balance", "submit_leave_request", "ask_wfh_policy", "affirm", "inform"]:
-        if intent in data:
-            metric = data[intent]
-            assert metric["precision"] >= 0.50, f"Low precision for {intent}: {metric['precision']}"
-            assert metric["recall"] >= 0.50, f"Low recall for {intent}: {metric['recall']}"
+        assert intent in data, f"Missing intent {intent} in NLU report"
+        assert data[intent]["precision"] >= 0.9, f"Low precision for {intent}: {data[intent]['precision']}"
+        assert data[intent]["recall"] >= 0.9, f"Low recall for {intent}: {data[intent]['recall']}"
 
-    if "weighted avg" in data:
-        assert data["weighted avg"]["f1-score"] >= 0.50, f"Overall weighted F1 score should be >= 0.50: {data['weighted avg']['f1-score']}"
+    assert data["weighted avg"]["f1-score"] >= 0.8, f"Overall weighted F1 score should be >= 0.8: {data['weighted avg']['f1-score']}"
 
