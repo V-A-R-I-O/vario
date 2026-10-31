@@ -71,12 +71,17 @@ export function IntentEditor({ intentId }: { intentId?: string }) {
   const [variants, setVariants] = useState<Variant[]>([]);
   const [newPhrase, setNewPhrase] = useState('');
   const [suggestions, setSuggestions] = useState<string[] | null>(null);
+  const [editingSuggestionIndex, setEditingSuggestionIndex] = useState<number | null>(null);
+  const [editingSuggestionText, setEditingSuggestionText] = useState('');
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const mode: 'workflow' | 'faq' = loaded?.intent_type === 'dynamic_workflow' ? 'workflow' : 'faq';
-  const availableVariables = loaded?.response_template?.available_variables ?? [];
+  const availableVariables = useMemo(
+    () => loaded?.response_template?.available_variables ?? [],
+    [loaded?.response_template?.available_variables]
+  );
 
   useEffect(() => {
     if (isCreate) return;
@@ -134,14 +139,32 @@ export function IntentEditor({ intentId }: { intentId?: string }) {
   const acceptSuggestion = (text: string) => {
     setPhrases((p) => [...p, { phrase_text: text }]);
     setSuggestions((s) => (s ? s.filter((x) => x !== text) : s));
+    if (editingSuggestionIndex !== null) cancelEditSuggestion();
   };
   const rejectSuggestion = (text: string) => {
     setSuggestions((s) => (s ? s.filter((x) => x !== text) : s));
+    if (editingSuggestionIndex !== null) cancelEditSuggestion();
+  };
+  const startEditSuggestion = (idx: number, text: string) => {
+    setEditingSuggestionIndex(idx);
+    setEditingSuggestionText(text);
+  };
+  const cancelEditSuggestion = () => {
+    setEditingSuggestionIndex(null);
+    setEditingSuggestionText('');
+  };
+  const saveEditedSuggestion = (idx: number) => {
+    const text = editingSuggestionText.trim();
+    if (!text) return;
+    setPhrases((p) => [...p, { phrase_text: text }]);
+    setSuggestions((s) => (s ? s.filter((_, i) => i !== idx) : s));
+    cancelEditSuggestion();
   };
   const acceptAll = () => {
     if (!suggestions) return;
     setPhrases((p) => [...p, ...suggestions.map((phrase_text) => ({ phrase_text }))]);
     setSuggestions([]);
+    cancelEditSuggestion();
   };
 
   const editVariantText = (id: string, text: string) => {
@@ -376,19 +399,83 @@ export function IntentEditor({ intentId }: { intentId?: string }) {
                     : `${suggestions.length} suggestion${suggestions.length > 1 ? 's' : ''} — review before adding to training data.`}
                 </div>
                 <div>
-                  {suggestions.map((s) => (
-                    <div className="gen-phrase-row" key={s}>
-                      <span>{s}</span>
-                      <div className="actions">
-                        <button type="button" title="Accept" aria-label={`Accept ${s}`} onClick={() => acceptSuggestion(s)}>
-                          ✅
-                        </button>
-                        <button type="button" title="Reject" aria-label={`Reject ${s}`} onClick={() => rejectSuggestion(s)}>
-                          🗑️
-                        </button>
+                  {suggestions.map((s, idx) => {
+                    const isEditing = editingSuggestionIndex === idx;
+                    return (
+                      <div className="gen-phrase-row" key={`${s}-${idx}`}>
+                        {isEditing ? (
+                          <>
+                            <input
+                              aria-label={`Edit phrase ${s}`}
+                              value={editingSuggestionText}
+                              onChange={(e) => setEditingSuggestionText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveEditedSuggestion(idx);
+                                if (e.key === 'Escape') cancelEditSuggestion();
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: '4px 8px',
+                                border: '1px solid var(--brand-b)',
+                                borderRadius: 'var(--r-sm)',
+                                fontSize: 13.5,
+                                fontFamily: 'inherit',
+                              }}
+                              autoFocus
+                            />
+                            <div className="actions">
+                              <button
+                                type="button"
+                                title="Accept edited"
+                                aria-label={`Accept ${s}`}
+                                onClick={() => saveEditedSuggestion(idx)}
+                              >
+                                ✅
+                              </button>
+                              <button
+                                type="button"
+                                title="Cancel edit"
+                                aria-label={`Cancel edit ${s}`}
+                                onClick={cancelEditSuggestion}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <span>{s}</span>
+                            <div className="actions">
+                              <button
+                                type="button"
+                                title="Accept"
+                                aria-label={`Accept ${s}`}
+                                onClick={() => acceptSuggestion(s)}
+                              >
+                                ✅
+                              </button>
+                              <button
+                                type="button"
+                                title="Edit"
+                                aria-label={`Edit ${s}`}
+                                onClick={() => startEditSuggestion(idx, s)}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                title="Reject"
+                                aria-label={`Reject ${s}`}
+                                onClick={() => rejectSuggestion(s)}
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 {suggestions.length > 0 && (
                   <button className="btn btn-signal btn-sm" type="button" style={{ marginTop: 6 }} onClick={acceptAll}>

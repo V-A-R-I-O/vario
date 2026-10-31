@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     # JSON with Text-to-Speech access. Empty → talk mode degrades to text-only.
     GOOGLE_APPLICATION_CREDENTIALS: str = ""
 
+    # Rephraser service (variant + phrase generation, slice-09)
+    REPHRASER_PROVIDER: str = "gemini"
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-1.5-flash"
+
     class Config:
         env_file = ".env"
         extra = "ignore"

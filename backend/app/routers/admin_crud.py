@@ -14,6 +14,7 @@ admins own their static FAQs:
 Variant generation / "Generate Similar" go through the rephraser seam
 (`services.rephraser.client`), which is a passthrough until slice-09.
 """
+import logging
 import re
 from typing import List, Optional
 
@@ -49,6 +50,8 @@ from app.schemas.admin import (
 )
 from app.services import rephraser, audit_log_service
 from app.services.admin_guard import AdminContext, require_admin
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
@@ -142,9 +145,19 @@ async def _intent_out(db: AsyncSession, intent: Intent) -> IntentOut:
 
 async def _create_variants(db: AsyncSession, template: ResponseTemplate) -> None:
     """(Re)create variants for a template via the rephraser seam, position-ordered."""
-    texts = await rephraser.client.generate_variants(
-        template.base_text, list(template.available_variables or [])
-    )
+    if not template.allow_rephrasing:
+        texts = [template.base_text]
+    else:
+        try:
+            texts = await rephraser.client.generate_variants(
+                template.base_text, list(template.available_variables or [])
+            )
+            if not texts:
+                texts = [template.base_text]
+        except Exception as e:
+            logger.error(f"Rephraser variant generation failed: {e}")
+            texts = [template.base_text]
+
     for i, text in enumerate(texts):
         db.add(ResponseVariant(template_id=template.template_id, variant_text=text, position=i))
 
@@ -391,6 +404,8 @@ async def update_template(
             await db.flush()
             await _create_variants(db, template)
         else:
+            for v in existing[1:]:
+                await db.delete(v)
             if existing:
                 existing[0].variant_text = template.base_text
             else:
