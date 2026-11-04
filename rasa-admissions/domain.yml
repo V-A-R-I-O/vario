@@ -17,19 +17,23 @@ entities:
   - program
 
 slots:
+  # Filled only from the lookup's own intent, so a fee question that names a
+  # program can't fill a form slot (it interrupts the form instead).
   application_id:
     type: text
-    influence_conversation: true
+    influence_conversation: false
     mappings:
       - type: from_entity
         entity: application_id
+        intent: check_application_status
 
   program:
     type: text
-    influence_conversation: true
+    influence_conversation: false
     mappings:
       - type: from_entity
         entity: program
+        intent: get_document_checklist
 
   status:
     type: any
@@ -90,7 +94,14 @@ responses:
     - text: "Please provide your application reference ID (for example: APP-1001)."
 
   utter_ask_program:
-    - text: "Which program would you like the document checklist for? (e.g. B.Tech, M.Tech, MBA)"
+    - text: "Which program would you like the document checklist for?"
+      buttons:
+        - title: "B.Tech"
+          payload: "B.Tech"
+        - title: "M.Tech"
+          payload: "M.Tech"
+        - title: "MBA"
+          payload: "MBA"
 
   utter_default_fallback:
     - text: "I'm sorry, I didn't quite catch that. You can ask me about your application status (e.g. 'check application APP-1001'), document checklists, or fee deadlines."

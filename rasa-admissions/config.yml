@@ -15,6 +15,11 @@ pipeline:
   - name: DIETClassifier
     epochs: 100
     constrain_similar_probabilities: true
+  # Deterministic APP-#### IDs and program names (regex + lookup in data/nlu.yml).
+  - name: RegexEntityExtractor
+    case_sensitive: false
+    use_regexes: true
+    use_lookup_tables: true
   - name: EntitySynonymMapper
   - name: ResponseSelector
     epochs: 100

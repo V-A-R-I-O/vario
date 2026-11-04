@@ -1,7 +1,13 @@
-# Endpoints configuration for Rasa Admissions
+# Endpoints configuration for Rasa Admissions (ADR-006).
+# Rasa only expands plain, unquoted ${VAR} references. Docker Compose supplies
+# every value; for native runs, export them.
 action_endpoint:
-  url: "http://localhost:5055/webhook"
+  url: ${ACTION_ENDPOINT_URL}
 
-models:
-  url: ""
-  wait_time_between_pulls: 10
+tracker_store:
+  type: vario_rasa.tracker_store.RedactingSQLTrackerStore
+  dialect: postgresql
+  url: ${POSTGRES_HOST}
+  db: ${POSTGRES_DB}
+  username: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}

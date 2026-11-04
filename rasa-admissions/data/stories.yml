@@ -1,49 +1,26 @@
 version: "3.1"
 
-stories:
-  - story: Direct application status inquiry
-    steps:
-      - intent: check_application_status
-        entities:
-          - application_id: "APP-1001"
-      - action: action_check_application_status
+# Lookups are driven by the form rules in rules.yml; stories here only cover
+# multi-turn paths that cannot contradict them.
 
-  - story: Greet then ask application status
+stories:
+  - story: Greet then ask about fees
     steps:
       - intent: greet
       - action: utter_greet
-      - intent: check_application_status
-        entities:
-          - application_id: "APP-1002"
-      - action: action_check_application_status
-
-  - story: Direct document checklist inquiry
-    steps:
-      - intent: get_document_checklist
-        entities:
-          - program: "btech"
-      - action: action_get_document_checklist
-
-  - story: Document checklist prompt for missing program
-    steps:
-      - intent: get_document_checklist
-      - action: utter_ask_program
-      - intent: get_document_checklist
-        entities:
-          - program: "mba"
-      - action: action_get_document_checklist
-
-  - story: Direct fee inquiry
-    steps:
       - intent: ask_fee_deadline
       - action: action_ask_fee_deadline
 
-  - story: Direct deadline inquiry
+  - story: Fee follow-up question
     steps:
       - intent: ask_fee_deadline
       - action: action_ask_fee_deadline
+      - intent: ask_fee_deadline
+      - action: action_ask_fee_deadline
 
-  - story: Goodbye flow
+  - story: Fees then goodbye
     steps:
+      - intent: ask_fee_deadline
+      - action: action_ask_fee_deadline
       - intent: goodbye
       - action: utter_goodbye
