@@ -201,6 +201,8 @@ class ActionCheckApplicationStatus(Action):
         events = []
         for key, val in result.get("slots", {}).items():
             events.append(SlotSet(key, val))
+        # Clear the form slot so the next request asks again (M1b).
+        events.append(SlotSet("application_id", None))
 
         if hasattr(dispatcher, "utter_message"):
             if result.get("response_text"):
@@ -359,6 +361,8 @@ class ActionGetDocumentChecklist(Action):
         events = []
         for key, val in result.get("slots", {}).items():
             events.append(SlotSet(key, val))
+        # Clear the form slot so the next request asks again (M1b).
+        events.append(SlotSet("program", None))
 
         if hasattr(dispatcher, "utter_message"):
             if result.get("response_text"):
