@@ -29,7 +29,9 @@ ACTIVE_STATES = ("pending", "training")
 
 
 def now():
-    return datetime.now(timezone.utc)
+    # Naive UTC, like every other timestamp column (TIMESTAMP WITHOUT TIME ZONE):
+    # asyncpg rejects timezone-aware values there, which crashed startup.
+    return datetime.utcnow()
 
 
 async def load_rows(pack):
