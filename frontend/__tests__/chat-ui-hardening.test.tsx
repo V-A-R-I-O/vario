@@ -8,7 +8,8 @@ import HomeLayout from '../src/app/home/layout';
 import NewConversationPage from '../src/app/home/new/page';
 import * as api from '../src/lib/api';
 import { ApiError } from '../src/lib/apiError';
-import { CARD_TYPES } from '../src/lib/chatCards';
+import { CARD_REQUIRED_FIELDS, CARD_TYPES } from '../src/lib/chatCards';
+import { BotMessage } from '../src/components/chat';
 import { CONVERSATIONS_CHANGED, notifyConversationsChanged } from '../src/lib/conversationEvents';
 
 jest.mock('../src/lib/api');
@@ -427,5 +428,30 @@ describe('sidebar and navigation', () => {
     render(<HomeLayout><div /></HomeLayout>);
     await screen.findByText('No conversations yet.');
     expect(screen.queryByRole('link', { name: 'Admin console' })).not.toBeInTheDocument();
+  });
+});
+
+
+describe('malformed cards (A2-15)', () => {
+  test('required card fields match the shared ADR-006 contract', () => {
+    expect(CARD_REQUIRED_FIELDS).toEqual(contract('card-fields.json'));
+  });
+
+  // The exact cards audit 2 found crashing the page or rendering empty.
+  const malformed: Array<[string, Record<string, unknown>]> = [
+    ['slot_prompt without options', { type: 'slot_prompt', text: 'What is the start date for your leave?' }],
+    ['confirmation without rows', { type: 'confirmation', title: 'Confirm leave request', text: 'ok?', options: [{ label: 'Confirm' }] }],
+    ['result without text', { type: 'result', title: 'Ticket created', message: 'Created', ticket_id: 'IT-1004' }],
+  ];
+
+  test.each(malformed)('a %s falls back to the reply text', async (_name, card) => {
+    await openChat();
+    mockedApi.sendChatMessage.mockResolvedValueOnce(chatReply(null, { response_text: 'The plain reply text.', card }));
+    await send('hello');
+    expect(await screen.findByText('The plain reply text.')).toHaveClass('bot-text');
+  });
+
+  test.each(malformed)('the card components survive a %s', (_name, card) => {
+    expect(() => render(<BotMessage message={card as any} />)).not.toThrow();
   });
 });
