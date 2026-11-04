@@ -63,8 +63,12 @@ class Slice38CiGuardrailTests(unittest.TestCase):
     def test_pytest_jobs_fail_when_any_tests_are_skipped(self):
         root = Path(__file__).resolve().parents[2]
         workflow = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-        self.assertEqual(workflow.count("--junitxml=pytest-results.xml"), 7)
-        self.assertEqual(workflow.count("skipped == 0"), 6)
+        # Every step that writes pytest results must also fail on skipped tests,
+        # however many pytest jobs the workflow grows.
+        steps = [step for step in workflow.split("- name:") if "--junitxml=pytest-results.xml" in step]
+        self.assertGreaterEqual(len(steps), 6)
+        for step in steps:
+            self.assertIn("skipped == 0", step, step.splitlines()[0])
         self.assertIn("rasa-hr-real-integration", workflow)
         self.assertIn("not test_rasa_data_validate", workflow)
 
