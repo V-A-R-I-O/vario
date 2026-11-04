@@ -21,7 +21,7 @@ How to run the whole VARIO stack on one laptop and open it from the other laptop
 
 ### 1.1 Give Docker enough memory
 
-The three Rasa servers need most of the RAM. Docker Desktop on Windows runs inside WSL 2, and WSL 2 takes only part of the RAM by default.
+The three Rasa servers need most of the RAM: about 2.5 GB together, plus about 1.5 GB more while an admin retrain runs inside one of them. Docker Desktop on Windows runs inside WSL 2, and WSL 2 takes only part of the RAM by default.
 
 1. Create or edit `C:\Users\<you>\.wslconfig`:
    ```ini
@@ -230,6 +230,7 @@ Give each presenter their own login. Login attempts are limited per account (10 
 | A Rasa server keeps restarting | Usually out of memory. Raise `.wslconfig` memory (§1.1), then `docker compose up -d`. |
 | `No trained model in this image` | The image was built without training. Run `docker compose build rasa-<pack>`. |
 | `Rate limit exceeded` on login | 10 login attempts per minute per account (60 per minute in total through the proxy). Wait a minute. |
+| Retrain fails with `RemoteProtocolError`, and that pack briefly answers "unavailable" | Docker ran out of memory while training, and the pack restarted on its previous model. Raise `.wslconfig` memory (§1.1). Check with `docker stats` that there's at least 2 GB free, then retrain again. |
 | Retrain stays **failed** | Check `docker compose logs gateway` and `docker compose logs rasa-<pack>`. The token is shared automatically from `RETRAINING_INTERNAL_TOKEN`. If you changed it, run `docker compose up -d` so every service gets the new value. |
 | `exec ./docker-entrypoint.sh: no such file or directory` | The scripts were checked out with CRLF line endings. Run `git config core.autocrlf false`, then `git rm --cached -r . ; git reset --hard`, and rebuild. |
 | Other laptops can't open the page | Work through §3.4. |
