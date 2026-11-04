@@ -44,6 +44,14 @@ nlu:
       - check application status
       - I want to check my application status
       - can I check the status of my admission application?
+      - "[APP-1003](application_id)"
+      - "[APP-1004](application_id)"
+      - "[APP-1001](application_id)"
+      - it's [APP-1002](application_id)
+      - my id is [APP-1003](application_id)
+      - the reference is [APP-1004](application_id)
+      - status of [APP-9999](application_id)
+      - check [APP-2026](application_id)
 
   - intent: get_document_checklist
     examples: |
@@ -57,6 +65,18 @@ nlu:
       - show me the checklist for [mba](program)
       - what papers are required for [mtech](program) admission?
       - mandatory documents for [Computer Science (B.Tech)](program)
+      - what documents do I need?
+      - which documents are required?
+      - "[MBA](program)"
+      - "[B.Tech](program)"
+      - "[M.Tech](program)"
+      - "[btech](program)"
+      - "[mtech](program)"
+      - "[mba](program)"
+      - for [MBA](program)
+      - the [B.Tech](program) program
+      - "[Data Science (M.Tech)](program)"
+      - "[Computer Science](program)"
 
   - intent: ask_fee_deadline
     examples: |
@@ -100,6 +120,27 @@ nlu:
       - what about the fee?
       - fees?
       - deadlines?
+
+  - regex: application_id
+    examples: |
+      - \bAPP-\d{4}\b
+
+  - lookup: program
+    examples: |
+      - B.Tech
+      - BTech
+      - btech
+      - b.tech
+      - M.Tech
+      - MTech
+      - mtech
+      - m.tech
+      - MBA
+      - mba
+      - Computer Science
+      - Data Science
+      - Computer Science (B.Tech)
+      - Data Science (M.Tech)
 
   - intent: nlu_fallback
     examples: |
