@@ -56,6 +56,39 @@ async def test_rate_limiting():
     limiter.requests.clear()
 
 
+async def _login(client, email):
+    return await client.post("/api/auth/login", json={"email": email, "password": "wrong"})
+
+
+@pytest.mark.asyncio
+async def test_login_limit_is_per_account_not_per_address():
+    # N3: four presenters behind the demo proxy arrive from one address.
+    from app.utils.rate_limit import limiter
+    limiter.requests.clear()
+
+    transport = ASGITransport(app=app, client=("172.18.0.9", 40000))  # the proxy
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        for _ in range(10):
+            assert (await _login(client, "pavan@org.example.com")).status_code != 429
+        assert (await _login(client, "Pavan@org.example.com ")).status_code == 429
+        # Another presenter on another laptop, same proxy address, still gets in.
+        assert (await _login(client, "rohith@org.example.com")).status_code != 429
+    limiter.requests.clear()
+
+
+@pytest.mark.asyncio
+async def test_one_address_is_still_capped_across_accounts():
+    from app.utils.rate_limit import limiter
+    limiter.requests.clear()
+
+    transport = ASGITransport(app=app, client=("192.168.1.100", 12345))
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        for i in range(60):
+            assert (await _login(client, f"user{i}@org.example.com")).status_code != 429
+        assert (await _login(client, "user60@org.example.com")).status_code == 429
+    limiter.requests.clear()
+
+
 @pytest.mark.asyncio
 async def test_auth_route_injects_user_state():
     # To test this we need a dummy route. 
