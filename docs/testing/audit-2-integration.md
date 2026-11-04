@@ -22,7 +22,7 @@
 
 SCRUM-60 (B1), SCRUM-61 (B3), SCRUM-62 (B4), SCRUM-63 (N3), SCRUM-64 (N4) — slice-34 · SCRUM-70 (M3a) and SCRUM-71 (M4a) — slice-35 · SCRUM-74 (M4b) — slice-36 · SCRUM-101 (N12) — slice-10.
 
-## New defects (18)
+## New defects (20)
 
 | ID | Severity | Summary | Fixed by |
 |---|---|---|---|
@@ -44,6 +44,8 @@ SCRUM-60 (B1), SCRUM-61 (B3), SCRUM-62 (B4), SCRUM-63 (N3), SCRUM-64 (N4) — sl
 | A2-17 | Minor | Compose never passes Gemini, TTS or retraining settings to the gateway | slice-34-local-demo-stack (SCRUM-44) |
 | A2-18 | Trivial | Rephraser defaults to the retired gemini-1.5-flash model | slice-34-local-demo-stack (SCRUM-44) |
 | A2-19 | Minor | rasa-shared tests are not run in CI | slice-34-local-demo-stack (SCRUM-44) |
+| A2-20 | Minor | Form answers report the intent of the message that started the form | slice-32-rasa-contract-v2 (SCRUM-42) |
+| A2-21 | Major | 'cancel' cannot end IT ticket creation or password reset | slice-37-it-real-rasa (SCRUM-47) |
 
 ## Details
 
@@ -245,6 +247,29 @@ Steps:
 - **Actual:** The shared channel, tracker-store redaction and contract tests (31) only run locally.
 - **Expected:** CI runs rasa-shared tests on Python 3.10.
 - **Where:** `.github/workflows/ci.yml`
+
+### A2-20 — Form answers report the intent of the message that started the form
+
+Minor · fixed by `slice-32-rasa-contract-v2`
+
+Steps:
+1. Run a pack with Rasa's in-memory tracker store (no tracker_store, or Postgres unreachable when Rasa starts).
+2. Say "my laptop screen is broken", then "cancel", then "hardware".
+
+- **Actual:** Every reply reports raise_ticket 0.97: the channel reads tracker.latest_message from a tracker rebuilt from applied events, and Rasa folds happy-path form turns out of those. The gateway stores and logs the wrong intent, confidence and entities for each form answer.
+- **Expected:** The reply describes the message just handled (cancel 0.76, then inform 1.0).
+- **Where:** `rasa-shared/vario_rasa/channel.py (tracker.latest_message)`
+
+### A2-21 — 'cancel' cannot end IT ticket creation or password reset
+
+Major · fixed by `slice-37-it-real-rasa`
+
+Steps:
+1. Say "my laptop screen is broken", then "cancel".
+
+- **Actual:** The category slot takes 'cancel' as its value, validation re-asks 'Choose hardware, software, ...', and the cancel/goodbye/greet rules never run. The same happens at the description, employee-ID and security-answer steps.
+- **Expected:** Cancel, goodbye and greet end the form at any step.
+- **Where:** `rasa-it/domain.yml from_text slot mappings`
 
 ## Flagged, not fixed
 

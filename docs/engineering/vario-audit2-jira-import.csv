@@ -198,3 +198,26 @@ ACTUAL: The shared channel, tracker-store redaction and contract tests (31) only
 EXPECTED: CI runs rasa-shared tests on Python 3.10.
 
 WHERE: .github/workflows/ci.yml"
+"218","SCRUM-41","Bug","[A2-20] Form answers report the intent of the message that started the form","slice-32","Sprint 4","Medium","Mohammed Tahir Siddique","Platform — Tahir","audit-2","slice-32-rasa-contract-v2","relates-scrum-42","owner-d","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-20)
+SEVERITY: Minor    FIXED BY: slice-32-rasa-contract-v2 (SCRUM-42) — link this bug to SCRUM-42 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Run a pack with Rasa's in-memory tracker store (no tracker_store, or Postgres unreachable when Rasa starts).
+# Say ""my laptop screen is broken"", then ""cancel"", then ""hardware"".
+
+ACTUAL: Every reply reports raise_ticket 0.97: the channel reads tracker.latest_message from a tracker rebuilt from applied events, and Rasa folds happy-path form turns out of those. The gateway stores and logs the wrong intent, confidence and entities for each form answer.
+
+EXPECTED: The reply describes the message just handled (cancel 0.76, then inform 1.0).
+
+WHERE: rasa-shared/vario_rasa/channel.py (tracker.latest_message)"
+"219","SCRUM-41","Bug","[A2-21] 'cancel' cannot end IT ticket creation or password reset","slice-37","Sprint 4","High","Rohith G.S","IT — Rohith","audit-2","slice-37-it-real-rasa","relates-scrum-47","owner-b","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-21)
+SEVERITY: Major    FIXED BY: slice-37-it-real-rasa (SCRUM-47) — link this bug to SCRUM-47 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Say ""my laptop screen is broken"", then ""cancel"".
+
+ACTUAL: The category slot takes 'cancel' as its value, validation re-asks 'Choose hardware, software, ...', and the cancel/goodbye/greet rules never run. The same happens at the description, employee-ID and security-answer steps.
+
+EXPECTED: Cancel, goodbye and greet end the form at any step.
+
+WHERE: rasa-it/domain.yml from_text slot mappings"
