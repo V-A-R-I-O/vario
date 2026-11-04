@@ -28,6 +28,19 @@ CARD_TYPES = frozenset(
     }
 )
 
+# Fields the UI needs to render each card type; must match contract/card-fields.json.
+CARD_REQUIRED_FIELDS = {
+    "plain_text": ("text",),
+    "faq_answer": ("text",),
+    "error": ("text",),
+    "not_found": ("text",),
+    "result": ("text",),
+    "data_card": ("rows",),
+    "confirmation": ("rows",),
+    "slot_prompt": ("text", "options"),
+    "list": ("items",),
+}
+
 _PAYLOAD_FIELDS = ("template_key", "slots", "card", "audit_event", "sensitive_next_input")
 
 
@@ -40,8 +53,8 @@ def vario_payload(
     sensitive_next_input: bool = False,
 ) -> Dict[str, Any]:
     """Build the custom JSON an action passes to `dispatcher.utter_message(json_message=...)`."""
-    if card is not None and not is_valid_card(card):
-        raise ValueError(f"card type must be one of {sorted(CARD_TYPES)}")
+    if card is not None and card_problem(card):
+        raise ValueError(card_problem(card))
     fields = {
         "template_key": template_key,
         "slots": slots,
@@ -52,8 +65,27 @@ def vario_payload(
     return {VARIO_PAYLOAD_KEY: {k: v for k, v in fields.items() if v is not None}}
 
 
+def card_problem(card: Any) -> Optional[str]:
+    """Why the UI couldn't render `card`, or None if it can."""
+    if not isinstance(card, dict) or card.get("type") not in CARD_TYPES:
+        return f"card type must be one of {sorted(CARD_TYPES)}"
+    kind = card["type"]
+    missing = [f for f in CARD_REQUIRED_FIELDS[kind] if not card.get(f)]
+    if missing:
+        return f"{kind} card is missing {', '.join(missing)}"
+    if kind in ("data_card", "confirmation") and not all(
+        isinstance(r, dict) and "label" in r and "value" in r for r in card["rows"]
+    ):
+        return f"{kind} rows need label and value"
+    if kind == "slot_prompt" and not all(isinstance(o, dict) and o.get("label") for o in card["options"]):
+        return "slot_prompt options need a label"
+    if kind == "list" and not isinstance(card["items"], list):
+        return "list items must be a list"
+    return None
+
+
 def is_valid_card(card: Any) -> bool:
-    return isinstance(card, dict) and card.get("type") in CARD_TYPES
+    return card_problem(card) is None
 
 
 def validate_converse_request(body: Any) -> Optional[str]:

@@ -1,0 +1,11 @@
+{
+  "plain_text": ["text"],
+  "faq_answer": ["text"],
+  "error": ["text"],
+  "not_found": ["text"],
+  "result": ["text"],
+  "data_card": ["rows"],
+  "confirmation": ["rows"],
+  "slot_prompt": ["text", "options"],
+  "list": ["items"]
+}
