@@ -8,4 +8,6 @@ pytest-asyncio==0.23.6
 # Retained Slice 10 compatibility tests import the legacy server's FastAPI app.
 # FastAPI 0.99 stays on Pydantic v1, which is required by Rasa 3.6.
 fastapi==0.99.1
+# tests/test_real_rasa_it_e2e.py runs the real mock-itsm service in this environment.
+uvicorn==0.28.0
 setuptools<70

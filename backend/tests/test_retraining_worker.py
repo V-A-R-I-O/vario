@@ -1,8 +1,10 @@
 """Worker-level tests for Slice 10 retraining outcomes and model activation."""
-import io
-import zipfile
+import json
+from pathlib import Path
 
+import httpx
 import pytest
+import yaml
 from sqlalchemy import select
 
 from app.models.intent import Intent
@@ -98,118 +100,140 @@ async def test_worker_failure_keeps_dirty_flag_and_marks_job_failed(
     assert "RuntimeError" in job.error_message
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("pack", ["hr", "admissions"])
-async def test_rasa_training_activates_model_after_training(monkeypatch, pack):
-    calls = []
+REPO = Path(__file__).resolve().parents[2]
+FAQ = {"name": "ask_parking_policy", "examples": ["where can I park"], "answer": "Use the P2 lot."}
 
-    class Response:
-        def raise_for_status(self):
-            return None
 
-    class Client:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-        async def post(self, url, **kwargs):
-            calls.append((url, kwargs))
-            return Response()
-
-    monkeypatch.setattr(service.httpx, "AsyncClient", Client)
-    monkeypatch.setattr(
-        service,
-        "_prepare_assets",
-        lambda _pack, _rows: ("recipe: default.v1", "intents: []", b"training archive"),
+def _pack(tmp_path, monkeypatch):
+    root = tmp_path / "hr"
+    (root / "data").mkdir(parents=True)
+    (root / "config.yml").write_text("recipe: default.v1\nlanguage: en\npipeline: []\npolicies: []\n")
+    (root / "domain.yml").write_text(
+        "version: '3.1'\nintents:\n  - submit_leave_request\nresponses:\n  utter_greet:\n    - text: Hi\n"
     )
-
-    await service.train(pack, [{"name": "new_intent", "examples": ["example"]}])
-
-    assert len(calls) == 2
-    assert calls[0][0].endswith("/model/train")
-    assert calls[1][0].endswith("/model/reload")
-    assert calls[0][1]["data"]["save_to_default_model_directory"] == "true"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("pack", ["hr", "admissions"])
-async def test_rasa_training_fails_if_model_reload_fails(monkeypatch, pack):
-    calls = []
-
-    class Response:
-        def __init__(self, status=200):
-            self.status = status
-
-        def raise_for_status(self):
-            if self.status >= 400:
-                raise RuntimeError(f"HTTP {self.status}")
-
-    class Client:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *args):
-            return False
-
-        async def post(self, url, **kwargs):
-            calls.append((url, kwargs))
-            return Response(500 if url.endswith("/model/reload") else 200)
-
-    monkeypatch.setattr(service.httpx, "AsyncClient", Client)
-    monkeypatch.setattr(
-        service,
-        "_prepare_assets",
-        lambda _pack, _rows: ("recipe: default.v1", "intents: []", b"training archive"),
+    (root / "data" / "nlu.yml").write_text(
+        "version: '3.1'\nnlu:\n- intent: submit_leave_request\n  examples: |\n"
+        "    - apply for [sick](leave_type) leave\n    - I want leave\n"
+        "- regex: application_id\n  examples: |\n    - \\bAPP-\\d{4}\\b\n"
     )
-
-    with pytest.raises(RuntimeError, match="HTTP 500"):
-        await service.train(pack, [{"name": "new_intent", "examples": ["example"]}])
-
-    assert len(calls) == 2
-    assert calls[0][0].endswith("/model/train")
-    assert calls[1][0].endswith("/model/reload")
+    (root / "data" / "rules.yml").write_text("version: '3.1'\nrules: []\n")
+    monkeypatch.setattr(service.settings, "ROLE_PACKS_DIR", str(tmp_path))
+    return root
 
 
-@pytest.mark.asyncio
-async def test_it_training_posts_examples_to_internal_runtime(monkeypatch):
-    calls = []
-    monkeypatch.setattr(service.settings, "RETRAINING_INTERNAL_TOKEN", "test-only-token")
+def _nlu(document, intent):
+    return next(item for item in document["nlu"] if item.get("intent") == intent)
 
-    class Response:
-        def raise_for_status(self):
-            return None
 
-    class Client:
-        def __init__(self, *args, **kwargs):
-            pass
+def test_training_yaml_keeps_annotated_examples_and_adds_new_phrases(tmp_path, monkeypatch):
+    _pack(tmp_path, monkeypatch)
+    rows = [{"name": "submit_leave_request", "examples": ["apply for sick leave", "book time off"], "answer": None}]
 
-        async def __aenter__(self):
-            return self
+    document = yaml.safe_load(service.build_training_yaml("hr", rows))
 
-        async def __aexit__(self, *args):
-            return False
+    examples = _nlu(document, "submit_leave_request")["examples"].splitlines()
+    # The annotated form example survives; its plain duplicate from the DB is not re-added.
+    assert examples == ["- apply for [sick](leave_type) leave", "- I want leave", "- book time off"]
+    assert any(item.get("regex") == "application_id" for item in document["nlu"])
+    assert document["recipe"] == "default.v1" and document["version"] == "3.1"
 
-        async def post(self, url, **kwargs):
-            calls.append((url, kwargs))
-            return Response()
 
-    monkeypatch.setattr(service.httpx, "AsyncClient", Client)
-    await service.train(
-        "it", [{"name": "ask_vpn_renewal", "examples": ["renew my vpn certificate"]}]
-    )
+def test_training_yaml_teaches_rasa_a_new_static_faq(tmp_path, monkeypatch):
+    _pack(tmp_path, monkeypatch)
 
-    assert len(calls) == 1
-    url, kwargs = calls[0]
-    assert url.endswith("/internal/retrain")
-    assert kwargs["headers"]["X-Vario-Internal-Token"] == "test-only-token"
-    assert kwargs["json"]["examples_by_intent"]["ask_vpn_renewal"] == [
-        "renew my vpn certificate"
+    document = yaml.safe_load(service.build_training_yaml("hr", [FAQ]))
+
+    assert "ask_parking_policy" in document["intents"]
+    assert _nlu(document, "ask_parking_policy")["examples"] == "- where can I park\n"
+    assert document["responses"]["utter_ask_parking_policy"] == [
+        {"text": "Use the P2 lot.", "custom": {"vario": {"template_key": "ask_parking_policy_response"}}}
     ]
+    assert {"rule": "Answer ask_parking_policy",
+            "steps": [{"intent": "ask_parking_policy"}, {"action": "utter_ask_parking_policy"}]} in document["rules"]
+    assert document["responses"]["utter_greet"] == [{"text": "Hi"}]
+
+
+def test_training_yaml_skips_unknown_intents_without_an_answer(tmp_path, monkeypatch):
+    _pack(tmp_path, monkeypatch)
+
+    document = yaml.safe_load(
+        service.build_training_yaml("hr", [{"name": "ghost_intent", "examples": ["boo"], "answer": None}])
+    )
+
+    assert "ghost_intent" not in document["intents"]
+    assert all(item.get("intent") != "ghost_intent" for item in document["nlu"])
+
+
+@pytest.mark.parametrize("pack", ["hr", "it", "admissions"])
+def test_training_yaml_builds_from_the_repo_packs(monkeypatch, pack):
+    # A native run points ROLE_PACKS_DIR at the repo, whose folders are rasa-<pack>.
+    monkeypatch.setattr(service.settings, "ROLE_PACKS_DIR", str(REPO))
+
+    document = yaml.safe_load(service.build_training_yaml(pack, [FAQ]))
+
+    assert document["pipeline"] and document["policies"] and document["forms"]
+    assert "utter_ask_parking_policy" in document["responses"]
+
+
+def _client(monkeypatch, handler):
+    calls = []
+    real = httpx.AsyncClient
+
+    def record(request):
+        calls.append(request)
+        return handler(request)
+
+    monkeypatch.setattr(
+        service.httpx, "AsyncClient", lambda **kwargs: real(transport=httpx.MockTransport(record), **kwargs)
+    )
+    return calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pack", ["hr", "it", "admissions"])
+async def test_rasa_training_loads_the_trained_model(tmp_path, monkeypatch, pack):
+    monkeypatch.setattr(service.settings, "ROLE_PACKS_DIR", str(REPO))
+    monkeypatch.setattr(service.settings, "RETRAINING_INTERNAL_TOKEN", "test-only-token")
+    calls = _client(
+        monkeypatch,
+        lambda request: httpx.Response(200, headers={"filename": "20261104-new.tar.gz"}, content=b"model"),
+    )
+
+    await service.train(pack, [FAQ])
+
+    train_call, load_call = calls
+    assert (train_call.method, train_call.url.path) == ("POST", "/model/train")
+    assert train_call.headers["content-type"] == "application/x-yaml"
+    assert train_call.url.params["save_to_default_model_directory"] == "true"
+    assert train_call.url.params["token"] == "test-only-token"
+    assert "ask_parking_policy" in yaml.safe_load(train_call.content)["intents"]
+    assert (load_call.method, load_call.url.path) == ("PUT", "/model")
+    assert load_call.url.params["token"] == "test-only-token"
+    assert json.loads(load_call.read()) == {"model_file": "models/20261104-new.tar.gz"}
+
+
+@pytest.mark.asyncio
+async def test_rasa_training_fails_if_model_load_fails(monkeypatch):
+    monkeypatch.setattr(service.settings, "ROLE_PACKS_DIR", str(REPO))
+    calls = _client(
+        monkeypatch,
+        lambda request: httpx.Response(500) if request.method == "PUT"
+        else httpx.Response(200, headers={"filename": "m.tar.gz"}),
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await service.train("hr", [FAQ])
+
+    assert [call.method for call in calls] == ["POST", "PUT"]
+    assert "token" not in calls[0].url.params
+
+
+@pytest.mark.asyncio
+async def test_rasa_training_fails_without_a_model_filename(monkeypatch):
+    monkeypatch.setattr(service.settings, "ROLE_PACKS_DIR", str(REPO))
+    calls = _client(monkeypatch, lambda request: httpx.Response(200))
+
+    with pytest.raises(RuntimeError, match="filename"):
+        await service.train("hr", [FAQ])
+
+    assert [call.method for call in calls] == ["POST"]

@@ -1,11 +1,13 @@
-# Endpoints configuration for Rasa HR (ADR-006)
+# Endpoints configuration for Rasa HR (ADR-006).
+# Rasa only expands plain, unquoted ${VAR} references — no ${VAR:-default} and
+# no quotes. Docker Compose supplies every value; for native runs, export them.
 action_endpoint:
-  url: ${RASA_ACTION_ENDPOINT_URL:-http://localhost:5055/webhook}
+  url: ${ACTION_ENDPOINT_URL}
 
 tracker_store:
   type: vario_rasa.tracker_store.RedactingSQLTrackerStore
   dialect: postgresql
-  url: ${POSTGRES_HOST:-postgres}
-  db: ${RASA_HR_DB:-rasa_hr}
-  username: ${POSTGRES_USER:-postgres}
-  password: ${POSTGRES_PASSWORD:-postgres}
+  url: ${POSTGRES_HOST}
+  db: ${POSTGRES_DB}
+  username: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}

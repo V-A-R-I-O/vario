@@ -124,3 +124,75 @@ rules:
       - action: utter_unsupported_policy
       - action: leave_request_form
       - active_loop: leave_request_form
+
+  # --- Policy topics (M4b): one intent and one answer per topic --------------
+
+  - rule: Maternity policy question
+    steps:
+      - intent: ask_maternity_policy
+      - action: utter_ask_maternity_policy
+
+  - rule: Maternity policy question during the leave form
+    condition:
+      - active_loop: leave_request_form
+    steps:
+      - intent: ask_maternity_policy
+      - action: utter_ask_maternity_policy
+      - action: leave_request_form
+      - active_loop: leave_request_form
+
+  - rule: Paternity policy question
+    steps:
+      - intent: ask_paternity_policy
+      - action: utter_ask_paternity_policy
+
+  - rule: Paternity policy question during the leave form
+    condition:
+      - active_loop: leave_request_form
+    steps:
+      - intent: ask_paternity_policy
+      - action: utter_ask_paternity_policy
+      - action: leave_request_form
+      - active_loop: leave_request_form
+
+  - rule: Sick policy question
+    steps:
+      - intent: ask_sick_policy
+      - action: utter_ask_sick_policy
+
+  - rule: Sick policy question during the leave form
+    condition:
+      - active_loop: leave_request_form
+    steps:
+      - intent: ask_sick_policy
+      - action: utter_ask_sick_policy
+      - action: leave_request_form
+      - active_loop: leave_request_form
+
+  - rule: Bereavement policy question
+    steps:
+      - intent: ask_bereavement_policy
+      - action: utter_ask_bereavement_policy
+
+  - rule: Bereavement policy question during the leave form
+    condition:
+      - active_loop: leave_request_form
+    steps:
+      - intent: ask_bereavement_policy
+      - action: utter_ask_bereavement_policy
+      - action: leave_request_form
+      - active_loop: leave_request_form
+
+  - rule: Carry forward policy question
+    steps:
+      - intent: ask_carry_forward_policy
+      - action: utter_ask_carry_forward_policy
+
+  - rule: Carry forward policy question during the leave form
+    condition:
+      - active_loop: leave_request_form
+    steps:
+      - intent: ask_carry_forward_policy
+      - action: utter_ask_carry_forward_policy
+      - action: leave_request_form
+      - active_loop: leave_request_form

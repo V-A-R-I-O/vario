@@ -171,6 +171,32 @@ def test_an_unsupported_policy_gets_an_honest_answer(stack):
     assert "HR portal" in r["response_text"]
 
 
+@pytest.mark.parametrize("question, template_key, expected", [
+    ("what is the maternity policy?", "ask_maternity_policy_response", "26 weeks"),
+    ("how many days of paternity leave do I get?", "ask_paternity_policy_response", "2 weeks"),
+    ("tell me about the bereavement leave guidelines", "ask_bereavement_policy_response", "5 consecutive"),
+    ("can I carry forward unused leaves to next year?", "ask_carry_forward_policy_response", "carry forward up to 5"),
+    ("do I need a medical certificate for sick leave?", "ask_sick_policy_response", "medical certificate"),
+])
+def test_each_policy_topic_gets_its_own_answer(stack, question, template_key, expected):
+    r = Chat(stack).say(question)  # M4b
+    assert r["template_key"] == template_key
+    assert expected in r["response_text"]
+
+
+def test_the_general_leave_policy_question_still_gets_the_overview(stack):
+    r = Chat(stack).say("what is the company leave policy?")
+    assert r["template_key"] == "ask_policy_faq_response"
+
+
+def test_a_topic_question_mid_form_is_answered_and_the_form_resumes(stack):
+    chat = Chat(stack)
+    chat.say("I want to apply for leave")
+    r = chat.say("what is the maternity policy?")
+    assert r["template_key"] == "ask_maternity_policy_response"
+    assert (r["current_form"], r["current_step"]) == ("leave_request_form", "leave_type")
+
+
 def test_greeting_and_goodbye(stack):
     chat = Chat(stack)
     assert "HR Assistant" in chat.say("hi")["response_text"]  # M5a
