@@ -1,11 +1,18 @@
 import pytest
 import time
+from datetime import date, timedelta
 from fastapi.testclient import TestClient
 
 from app.main import app
 from app.seed_data import reset_seed_data
 
 client = TestClient(app)
+
+
+def _day(offset):
+    """An ISO date `offset` days from today: the mock rejects past dates, so fixed
+    calendar dates turn these tests red as soon as they pass (A2-09)."""
+    return (date.today() + timedelta(days=offset)).isoformat()
 
 
 @pytest.fixture(autouse=True)
@@ -100,8 +107,8 @@ def test_submit_leave_success():
     payload = {
         "employee_id": "EMP-1042",
         "leave_type": "casual",
-        "start_date": "2026-11-01",
-        "end_date": "2026-11-02",
+        "start_date": _day(30),
+        "end_date": _day(31),
         "reason": "Family obligation",
     }
     res = client.post("/leave/submit", json=payload)
@@ -126,8 +133,8 @@ def test_submit_leave_invalid_dates():
     payload = {
         "employee_id": "EMP-1042",
         "leave_type": "sick",
-        "start_date": "2026-11-05",
-        "end_date": "2026-11-01",
+        "start_date": _day(34),
+        "end_date": _day(30),
         "reason": "Invalid range",
     }
     res = client.post("/leave/submit", json=payload)
@@ -144,8 +151,8 @@ def test_submit_leave_invalid_type():
     payload = {
         "employee_id": "EMP-1042",
         "leave_type": "unsupported_type",
-        "start_date": "2026-11-01",
-        "end_date": "2026-11-02",
+        "start_date": _day(30),
+        "end_date": _day(31),
         "reason": "Test",
     }
     res = client.post("/leave/submit", json=payload)
@@ -157,8 +164,8 @@ def test_submit_leave_unknown_employee():
     payload = {
         "employee_id": "EMP-9999",
         "leave_type": "casual",
-        "start_date": "2026-11-01",
-        "end_date": "2026-11-02",
+        "start_date": _day(30),
+        "end_date": _day(31),
         "reason": "Test",
     }
     res = client.post("/leave/submit", json=payload)
@@ -222,8 +229,8 @@ def test_n6_reset_restores_balances_and_reference_counter():
     payload = {
         "employee_id": "EMP-1001",
         "leave_type": "casual",
-        "start_date": "2026-11-10",
-        "end_date": "2026-11-11",
+        "start_date": _day(39),
+        "end_date": _day(40),
         "reason": "Doctor appointment",
     }
     submit1 = client.post("/leave/submit", json=payload)
@@ -274,8 +281,8 @@ def test_n7_reject_invalid_leave_requests():
     exceed_payload = {
         "employee_id": "EMP-1001",
         "leave_type": "casual",
-        "start_date": "2026-11-01",
-        "end_date": "2026-11-10",  # 10 days, but only 6 casual days available
+        "start_date": _day(30),
+        "end_date": _day(39),  # 10 days, but only 6 casual days available
         "reason": "Exceeding casual quota",
     }
     res_exceed = client.post("/leave/submit", json=exceed_payload)
@@ -286,8 +293,8 @@ def test_n7_reject_invalid_leave_requests():
     end_before_start = {
         "employee_id": "EMP-1001",
         "leave_type": "sick",
-        "start_date": "2026-11-20",
-        "end_date": "2026-11-15",
+        "start_date": _day(49),
+        "end_date": _day(44),
         "reason": "Backward dates",
     }
     res_range = client.post("/leave/submit", json=end_before_start)
