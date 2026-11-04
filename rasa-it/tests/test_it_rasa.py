@@ -197,6 +197,24 @@ def test_status_intent_examples_cover_ambiguous_status_requests():
     assert "status of the ticket I submitted" in examples
 
 
+def test_cancel_phrases_belong_only_to_the_cancel_intent():
+    # "cancel it" under deny split the score between deny and cancel, so whichever
+    # won depended on training; the form then re-asked instead of cancelling (A2-21).
+    root = Path(__file__).resolve().parents[1]
+    nlu = yaml.safe_load((root / "data" / "nlu.yml").read_text(encoding="utf-8"))
+    examples = {item["intent"]: item["examples"] for item in nlu["nlu"] if "intent" in item}
+    assert "- cancel\n" in examples["cancel"] and "- cancel it\n" in examples["cancel"]
+    leaks = [intent for intent, text in examples.items() if intent != "cancel" and "cancel" in text.lower()]
+    assert leaks == []
+
+
+def test_rasa_configuration_trains_repeatably():
+    root = Path(__file__).resolve().parents[1]
+    config = yaml.safe_load((root / "config.yml").read_text(encoding="utf-8"))
+    seeded = {item["name"]: item.get("random_seed") for item in config["pipeline"] + config["policies"]}
+    assert seeded["DIETClassifier"] == 42 and seeded["TEDPolicy"] == 42
+
+
 def test_rasa_runtime_versions_are_pinned_to_supported_python_contract():
     root = Path(__file__).resolve().parents[1]
     requirements = (root / "requirements.txt").read_text(encoding="utf-8")
