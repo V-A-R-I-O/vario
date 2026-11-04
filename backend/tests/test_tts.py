@@ -11,11 +11,14 @@ from unittest.mock import patch
 from app.config import settings
 from app.services import tts_service
 
+# Any existing file stands in for the key: the Google call itself is patched.
+KEY_FILE = __file__
+
 
 @pytest.mark.asyncio
 async def test_synthesize_returns_audio_when_available():
     """Credentials present + a successful call → available with base64 audio."""
-    with patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", "/fake/sa.json"), patch(
+    with patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", KEY_FILE), patch(
         "app.services.tts_service._synthesize_bytes", return_value=b"RAW-AUDIO-BYTES"
     ):
         result = await tts_service.synthesize("You have 12 days of leave remaining.")
@@ -40,9 +43,21 @@ async def test_synthesize_degrades_when_credentials_missing():
 
 
 @pytest.mark.asyncio
+async def test_synthesize_degrades_when_the_key_file_is_absent():
+    """Compose always sets the path; with no key in ./secrets, degrade without calling Google."""
+    with patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", "/run/secrets/vario/missing.json"), patch(
+        "app.services.tts_service._synthesize_bytes"
+    ) as seam:
+        result = await tts_service.synthesize("hello")
+
+    assert result.available is False
+    seam.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_synthesize_degrades_on_api_failure():
     """A failing/credit-exhausted API call degrades instead of raising."""
-    with patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", "/fake/sa.json"), patch(
+    with patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", KEY_FILE), patch(
         "app.services.tts_service._synthesize_bytes",
         side_effect=RuntimeError("quota exceeded"),
     ):

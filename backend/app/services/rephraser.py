@@ -89,7 +89,7 @@ class GeminiRephraser:
         return (
             self._model
             or os.getenv("GEMINI_MODEL")
-            or getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+            or getattr(settings, "GEMINI_MODEL", "gemini-3.8-flash")
         )
 
     def _get_url(self) -> str:
