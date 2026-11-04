@@ -187,8 +187,8 @@ ACTUAL: The default model name is from the Gemini 1.5 generation, which Google h
 EXPECTED: A current default model, overridable via GEMINI_MODEL in .env.example.
 
 WHERE: backend/app/config.py GEMINI_MODEL"
-"217","SCRUM-41","Bug","[A2-19] rasa-shared tests are not run in CI","slice-34","Sprint 4","Medium","Mohammed Tahir Siddique","Platform — Tahir","audit-2","slice-34-local-demo-stack","relates-scrum-44","owner-d","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-19)
-SEVERITY: Minor    FIXED BY: slice-34-local-demo-stack (SCRUM-44) — link this bug to SCRUM-44 with 'Relates'
+"217","SCRUM-41","Bug","[A2-19] rasa-shared tests are not run in CI","slice-38","Sprint 4","Medium","Rohith G.S","IT — Rohith","audit-2","slice-38-it-data-and-ci","relates-scrum-48","owner-b","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-19)
+SEVERITY: Minor    FIXED BY: slice-38-it-data-and-ci (SCRUM-48) — link this bug to SCRUM-48 with 'Relates'
 
 STEPS TO REPRODUCE:
 # Read .github/workflows/ci.yml.

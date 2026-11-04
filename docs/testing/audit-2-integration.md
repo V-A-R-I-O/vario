@@ -43,7 +43,7 @@ SCRUM-60 (B1), SCRUM-61 (B3), SCRUM-62 (B4), SCRUM-63 (N3), SCRUM-64 (N4) — sl
 | A2-16 | Major | Retraining does not work on real Rasa for any pack | slice-10-retraining (SCRUM-31) |
 | A2-17 | Minor | Compose never passes Gemini, TTS or retraining settings to the gateway | slice-34-local-demo-stack (SCRUM-44) |
 | A2-18 | Trivial | Rephraser defaults to the retired gemini-1.5-flash model | slice-34-local-demo-stack (SCRUM-44) |
-| A2-19 | Minor | rasa-shared tests are not run in CI | slice-34-local-demo-stack (SCRUM-44) |
+| A2-19 | Minor | rasa-shared tests are not run in CI | slice-38-it-data-and-ci (SCRUM-48) |
 | A2-20 | Minor | Form answers report the intent of the message that started the form | slice-32-rasa-contract-v2 (SCRUM-42) |
 | A2-21 | Major | 'cancel' cannot end IT ticket creation or password reset | slice-37-it-real-rasa (SCRUM-47) |
 
@@ -239,7 +239,7 @@ Steps:
 
 ### A2-19 — rasa-shared tests are not run in CI
 
-Minor · fixed by `slice-34-local-demo-stack`
+Minor · fixed by `slice-38-it-data-and-ci`
 
 Steps:
 1. Read .github/workflows/ci.yml.
