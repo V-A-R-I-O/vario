@@ -1,8 +1,7 @@
 """Role-pack scoped retraining jobs (Slice 10)."""
-import io
 import logging
+import re
 import uuid
-import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +15,7 @@ from sqlalchemy.future import select
 from app.config import settings
 from app.database import AsyncSessionLocal
 from app.models.intent import Intent
+from app.models.response_template import ResponseTemplate
 from app.models.retraining_job import RetrainingJob
 from app.models.training_phrase import TrainingPhrase
 
@@ -33,6 +33,7 @@ def now():
 
 
 async def load_rows(pack):
+    """Every intent of the pack with its phrases; static FAQs also carry their answer text."""
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Intent).where(Intent.role_pack == pack).order_by(Intent.name)
@@ -47,76 +48,107 @@ async def load_rows(pack):
                 .order_by(TrainingPhrase.created_at)
             )
             phrases = [row[0].strip() for row in result.all() if row[0] and row[0].strip()]
-            rows.append({"name": intent.name, "examples": phrases})
+            answer = None
+            if intent.intent_type == "static_faq":
+                answer = (await db.execute(
+                    select(ResponseTemplate.base_text).where(
+                        ResponseTemplate.template_key == f"{intent.name}_response",
+                        ResponseTemplate.role_pack == pack,
+                    )
+                )).scalar_one_or_none()
+            rows.append({"name": intent.name, "examples": phrases, "answer": answer})
             if intent.needs_retrain:
                 dirty.append(intent.intent_id)
         return rows, dirty
 
 
-def _prepare_assets(pack, rows):
-    root = Path(settings.ROLE_PACKS_DIR) / pack
-    config_path, domain_path = root / "config.yml", root / "domain.yml"
-    if not config_path.is_file() or not domain_path.is_file():
+_ANNOTATION = re.compile(r"\[([^\]]+)\]\([^)]+\)|\[([^\]]+)\]\{[^}]*\}")
+
+
+def _plain(example: str) -> str:
+    """`check my [casual](leave_type) balance` -> `check my casual balance` (for de-duplication)."""
+    text = _ANNOTATION.sub(lambda m: m.group(1) or m.group(2), example)
+    return " ".join(text.split()).casefold()
+
+
+def _read_yaml(path: Path, default: Any) -> Any:
+    return (yaml.safe_load(path.read_text(encoding="utf-8")) or default) if path.is_file() else default
+
+
+def build_training_yaml(pack, rows) -> str:
+    """One Rasa training document: the pack's own config, domain, NLU, rules and stories,
+    plus the admin console's intents and phrases.
+
+    Existing examples are kept (they carry entity annotations the forms rely on); new
+    phrases are appended. A static FAQ the pack doesn't know yet gets an intent, an
+    `utter_<name>` response whose template_key lets the gateway render the editable
+    template, and a rule.
+    """
+    base = Path(settings.ROLE_PACKS_DIR)
+    # Compose mounts packs as /rolepacks/<pack>; a native run points at the repo (rasa-<pack>).
+    root = base / pack if (base / pack).is_dir() else base / f"rasa-{pack}"
+    config = _read_yaml(root / "config.yml", None)
+    domain = _read_yaml(root / "domain.yml", None)
+    if not config or not domain:
         raise RuntimeError(f"Training assets unavailable for {pack}; check role-pack mounts.")
+    nlu = _read_yaml(root / "data" / "nlu.yml", {}).get("nlu", [])
+    rules = _read_yaml(root / "data" / "rules.yml", {}).get("rules", [])
+    stories = _read_yaml(root / "data" / "stories.yml", {}).get("stories", [])
 
-    config = config_path.read_text(encoding="utf-8")
-    domain = yaml.safe_load(domain_path.read_text(encoding="utf-8")) or {}
     intents = domain.setdefault("intents", [])
-    names = {item if isinstance(item, str) else next(iter(item), "") for item in intents}
+    known = {item if isinstance(item, str) else next(iter(item)) for item in intents}
+    responses = domain.setdefault("responses", {})
+    by_intent = {item["intent"]: item for item in nlu if "intent" in item}
+
     for row in rows:
-        if row["examples"] and row["name"] not in names:
-            intents.append(row["name"])
+        name, phrases = row["name"], row["examples"]
+        if not phrases:
+            continue
+        if name not in known and not row.get("answer"):
+            log.warning("Skipping intent %s: not in the %s domain and has no answer", name, pack)
+            continue
+        item = by_intent.get(name)
+        if item is None:
+            item = {"intent": name, "examples": ""}
+            nlu.append(item)
+            by_intent[name] = item
+        lines = [line for line in str(item.get("examples", "")).splitlines() if line.strip()]
+        seen = {_plain(line.lstrip("- ").strip()) for line in lines}
+        lines += [f"- {p}" for p in phrases if _plain(p) not in seen]
+        item["examples"] = "\n".join(lines) + "\n"
 
-    files = {}
-    data_dir = root / "data"
-    if data_dir.is_dir():
-        for path in data_dir.rglob("*"):
-            if path.is_file() and path.suffix in (".yml", ".yaml"):
-                files[path.relative_to(root).as_posix()] = path.read_text(encoding="utf-8")
+        if name not in known and row.get("answer"):
+            intents.append(name)
+            known.add(name)
+            responses[f"utter_{name}"] = [{
+                "text": row["answer"],
+                "custom": {"vario": {"template_key": f"{name}_response"}},
+            }]
+            rules.append({"rule": f"Answer {name}", "steps": [{"intent": name}, {"action": f"utter_{name}"}]})
 
-    nlu = yaml.safe_load(files.get("data/nlu.yml", 'version: "3.1"\nnlu: []')) or {}
-    nlu.setdefault("version", "3.1")
-    replace_names = {row["name"] for row in rows}
-    items = [item for item in nlu.setdefault("nlu", []) if item.get("intent") not in replace_names]
-    for row in rows:
-        if row["examples"]:
-            items.append({
-                "intent": row["name"],
-                "examples": "\n".join("- " + phrase for phrase in row["examples"]),
-            })
-    nlu["nlu"] = items
-    files["data/nlu.yml"] = yaml.safe_dump(nlu, sort_keys=False, allow_unicode=True)
-
-    archive = io.BytesIO()
-    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as archive_file:
-        for name, value in files.items():
-            archive_file.writestr(name, value)
-    return config, yaml.safe_dump(domain, sort_keys=False, allow_unicode=True), archive.getvalue()
+    document = {**config, **domain, "version": "3.1", "nlu": nlu, "rules": rules, "stories": stories}
+    return yaml.safe_dump(document, sort_keys=False, allow_unicode=True)
 
 
 async def train(pack, rows):
-    async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=5)) as client:
-        if pack == "it":
-            if not settings.RETRAINING_INTERNAL_TOKEN:
-                raise RuntimeError("RETRAINING_INTERNAL_TOKEN must be configured before IT retraining.")
-            response = await client.post(
-                URLS[pack].rstrip() + "/internal/retrain",
-                json={"examples_by_intent": {
-                    row["name"]: row["examples"] for row in rows if row["examples"]
-                }},
-                headers={"X-Vario-Internal-Token": settings.RETRAINING_INTERNAL_TOKEN},
-            )
+    """Train through Rasa's own API and load the result: POST /model/train, then PUT /model."""
+    base = URLS[pack].rstrip("/")
+    params = {"token": settings.RETRAINING_INTERNAL_TOKEN} if settings.RETRAINING_INTERNAL_TOKEN else {}
+    async with httpx.AsyncClient(timeout=httpx.Timeout(900, connect=5)) as client:
+        # Rasa replies with the model archive itself; only the filename header is needed.
+        async with client.stream(
+            "POST",
+            f"{base}/model/train",
+            params={**params, "save_to_default_model_directory": "true"},
+            content=build_training_yaml(pack, rows).encode("utf-8"),
+            headers={"Content-Type": "application/x-yaml"},
+        ) as response:
             response.raise_for_status()
-            return
-
-        config, domain, archive = _prepare_assets(pack, rows)
-        response = await client.post(
-            URLS[pack].rstrip() + "/model/train",
-            data={"config": config, "domain": domain, "save_to_default_model_directory": "true"},
-            files={"training_files": ("training-data.zip", archive, "application/zip")},
-        )
-        response.raise_for_status()
-        response = await client.post(URLS[pack].rstrip() + "/model/reload")
+            filename = response.headers.get("filename")
+        if not filename:
+            raise RuntimeError("Rasa trained a model but did not report its filename")
+        # Saved under the server's default model directory, relative to its working dir.
+        response = await client.put(f"{base}/model", params=params, json={"model_file": f"models/{filename}"})
         response.raise_for_status()
 
 
