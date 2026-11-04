@@ -1,5 +1,10 @@
 version: "3.1"
 
+# The two lookups always go through their form: if the ID / program is already
+# in the message the form fills it and completes at once, otherwise it asks.
+# Stories must not predict the lookup actions directly — that contradicts these
+# activation rules and makes `rasa train` fail.
+
 rules:
   - rule: Activate application status form
     steps:
@@ -52,3 +57,77 @@ rules:
     steps:
       - intent: nlu_fallback
       - action: utter_default_fallback
+
+  # --- Interruptions: a different question while a form is waiting (M3c) ----
+
+  - rule: Fee question interrupts the application status form
+    condition:
+      - active_loop: application_status_form
+    steps:
+      - intent: ask_fee_deadline
+      - action: action_deactivate_loop
+      - active_loop: null
+      - action: action_ask_fee_deadline
+
+  - rule: Fee question interrupts the checklist form
+    condition:
+      - active_loop: checklist_form
+    steps:
+      - intent: ask_fee_deadline
+      - action: action_deactivate_loop
+      - active_loop: null
+      - action: action_ask_fee_deadline
+
+  - rule: Checklist question interrupts the application status form
+    condition:
+      - active_loop: application_status_form
+    steps:
+      - intent: get_document_checklist
+      - action: action_deactivate_loop
+      - active_loop: null
+      - action: checklist_form
+      - active_loop: checklist_form
+
+  - rule: Status question interrupts the checklist form
+    condition:
+      - active_loop: checklist_form
+    steps:
+      - intent: check_application_status
+      - action: action_deactivate_loop
+      - active_loop: null
+      - action: application_status_form
+      - active_loop: application_status_form
+
+  - rule: Goodbye ends the application status form
+    condition:
+      - active_loop: application_status_form
+    steps:
+      - intent: goodbye
+      - action: action_deactivate_loop
+      - active_loop: null
+      - action: utter_goodbye
+
+  - rule: Goodbye ends the checklist form
+    condition:
+      - active_loop: checklist_form
+    steps:
+      - intent: goodbye
+      - action: action_deactivate_loop
+      - active_loop: null
+      - action: utter_goodbye
+
+  - rule: Unclear reply re-asks for the application ID
+    condition:
+      - active_loop: application_status_form
+    steps:
+      - intent: nlu_fallback
+      - action: application_status_form
+      - active_loop: application_status_form
+
+  - rule: Unclear reply re-asks for the program
+    condition:
+      - active_loop: checklist_form
+    steps:
+      - intent: nlu_fallback
+      - action: checklist_form
+      - active_loop: checklist_form
