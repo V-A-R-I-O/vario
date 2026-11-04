@@ -8,7 +8,7 @@
 - `AGENTS.md`
 - `docs/api-contract.md` § Admin — Intents (`POST` FAQ create → `static_faq`)
 - `docs/ui-reference.md` § 4 → **FAQ answer** bot message type, § 7 → Mode B (Create Static FAQ)
-- `docs/vario-overview.md` § 6 (FR-7), § 8 — US-6
+- `docs/overview.md` § 6 (FR-7), § 8 — US-6
 - Depends on: `slice-05-chat-core`, `slice-08-admin-intent-crud` (console), `slice-12-hr-rasa`
 
 ## What to build

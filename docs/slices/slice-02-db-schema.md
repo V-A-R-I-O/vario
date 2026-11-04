@@ -7,7 +7,7 @@
 ## References — read these first
 - `AGENTS.md` (human review required for schema; secrets policy)
 - `docs/ADD.md` § Data model (the 9 entities and their relationships — authoritative)
-- `docs/vario-overview.md` § 12 (data model summary)
+- `docs/overview.md` § 12 (data model summary)
 - `docs/api-contract.md` (field shapes that must round-trip: `entities`, `slots`, `details`, `available_variables`, enums)
 - `.env.example` (`DATABASE_URL`)
 
@@ -46,7 +46,7 @@ No UI surface.
 ## Out of scope for this slice
 - Seeding role-pack intents / phrases / templates (each role owner does this in their own slice).
 - Business logic, CRUD endpoints, ORM query helpers beyond what the migration needs.
-- Provisioning the local PostgreSQL instance itself (that's `slice-30-vercel-neon`) — this slice consumes the `DATABASE_URL` it provides.
+- Provisioning the local PostgreSQL instance itself (that's `slice-30-vercel-neon`, retired by ADR-007) — this slice consumes the `DATABASE_URL` it provides.
 
 ## Human review required?
 **Yes** — schema / data-model change. Coordinate the `DATABASE_URL` with `slice-30`.

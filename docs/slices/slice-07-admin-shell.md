@@ -9,7 +9,7 @@
 - `docs/api-contract.md` § Admin — Audit Log (`GET /api/admin/audit-log` — filters, pagination, envelope) + § top (roles: `hr_admin`, `it_admin`, `admissions_admin`)
 - `docs/ADD.md` → `audit-log` module + § Security (admin endpoints scoped by role claim; an HR admin cannot access IT data)
 - `docs/ui-reference.md` § Admin Console (shared layout + nav), § 6 (Intent List framework), § 9 (Audit Log)
-- `docs/vario-overview.md` § 6 (FR-19, audit portion)
+- `docs/overview.md` § 6 (FR-19, audit portion)
 
 ## What to build
 The admin console frame that every admin page hangs off, the authorization that scopes an admin to their own role pack, and the audit-log sink + viewer. Intent CRUD itself is `slice-08`; this slice ships the shell + the Intent List **table framework** + audit log.

@@ -7,7 +7,7 @@
 ## References — read these first
 - `AGENTS.md`
 - `docs/ADD.md` → `integration-adapters` module (common interface; the only code that knows it's a mock; swappable later) + § Reliability (graceful degradation if a mock is down)
-- `docs/vario-overview.md` § 6 (FR-6, FR-8, FR-9) and § 7 (Reliability)
+- `docs/overview.md` § 6 (FR-6, FR-8, FR-9) and § 7 (Reliability)
 - `.env.example` (`MOCK_HRMS_URL`)
 
 ## What to build

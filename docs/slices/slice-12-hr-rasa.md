@@ -7,7 +7,7 @@
 ## References — read these first
 - `AGENTS.md`
 - `docs/ADD.md` → `role-pack-runtime` module (each Rasa instance owns classification, entities, slot filling, actions)
-- `docs/vario-overview.md` § 6 (FR-6…FR-9) and § 12 (`intents`, `training_phrases`, `response_templates` — the seed data shape)
+- `docs/overview.md` § 6 (FR-6…FR-9) and § 12 (`intents`, `training_phrases`, `response_templates` — the seed data shape)
 - `docs/api-contract.md` § Admin — Intents (the intent/phrase/template structures the DB seed must match)
 - `.env.example` (`RASA_HR_URL`)
 

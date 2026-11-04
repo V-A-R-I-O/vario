@@ -11,7 +11,7 @@
 - `docs/api-contract.md` § Chat (`POST /api/chat`, chat-mode request/response, `session` object, error codes)
 - `docs/ADD.md` → `session-manager`, `dialogue-router`, `response-renderer` modules + chat-mode flow diagram
 - `docs/ui-reference.md` § 4 (Chat View layout, the 9 **bot message types**, states)
-- `docs/vario-overview.md` § 6 (FR-1, FR-2, FR-4, FR-5)
+- `docs/overview.md` § 6 (FR-1, FR-2, FR-4, FR-5)
 
 ## What to build
 The conversation engine and the chat surface: load session state, route a message to the right Rasa instance, render the response from a stored variant, persist everything, and display it. Talk mode is a **later** slice — build chat mode only, but leave the `mode` field in place.

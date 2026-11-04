@@ -9,7 +9,7 @@
 - `docs/api-contract.md` § Admin — Intents (`GET`/`POST`/`PUT`/`DELETE`), § Admin — Response Templates (`GET`/`PUT`), § Admin — Response Variants (`PUT`/`DELETE`) — read the notes on `static_faq` vs `dynamic_workflow`, immutable names, placeholder validation, and the 5-variants rule
 - `docs/ADD.md` → `admin-crud` module
 - `docs/ui-reference.md` § 7 (Create/Edit Intent — Mode A dynamic workflow, Mode B static FAQ, shared elements)
-- `docs/vario-overview.md` § 6 (FR-18)
+- `docs/overview.md` § 6 (FR-18)
 - Depends on: `slice-07-admin-shell` (authorization + Intent List shell)
 
 ## What to build

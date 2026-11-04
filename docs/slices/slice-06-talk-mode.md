@@ -9,7 +9,7 @@
 - `docs/api-contract.md` § Chat → **talk mode** response (`audio_base64`, `audio_content_type`, `tts_available`, degrade behaviour)
 - `docs/ADD.md` → `tts-service` module + talk-mode flow diagram
 - `docs/ui-reference.md` § 5 (Talk Mode overlay: mic states, auto-play, hands-free loop, unavailable banner)
-- `docs/vario-overview.md` § 7 (Usability: voice + text, text fallback when no Web Speech API)
+- `docs/overview.md` § 7 (Usability: voice + text, text fallback when no Web Speech API)
 - `.env.example` (`GOOGLE_APPLICATION_CREDENTIALS`)
 
 ## What to build

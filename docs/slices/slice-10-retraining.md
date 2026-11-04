@@ -9,7 +9,7 @@
 - `docs/api-contract.md` § Admin — Retraining (`POST /api/admin/retrain` — role from JWT, `202` + job id; `GET /api/admin/retrain/:job_id` — states)
 - `docs/ADD.md` → `retraining-service` module + admin flow diagram
 - `docs/ui-reference.md` § 8 (Retraining page)
-- `docs/vario-overview.md` § 6 (FR-3: new/updated intents live via config, no redeploy)
+- `docs/overview.md` § 6 (FR-3: new/updated intents live via config, no redeploy)
 - Depends on: `slice-07-admin-shell` (authz), `slice-08-admin-intent-crud` (the intent/phrase data), `slice-12/17/22` (the Rasa instances)
 
 ## What to build

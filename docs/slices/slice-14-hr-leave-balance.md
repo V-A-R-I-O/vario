@@ -8,7 +8,7 @@
 - `AGENTS.md`
 - `docs/api-contract.md` § Chat (`POST /api/chat` response shape)
 - `docs/ui-reference.md` § 4 → the **Data card** bot message type
-- `docs/vario-overview.md` § 6 (FR-6), § 8 (UC-1)
+- `docs/overview.md` § 6 (FR-6), § 8 (UC-1)
 - Depends on: `slice-05-chat-core` (component library), `slice-12-hr-rasa`, `slice-13-hrms-adapter`
 
 ## What to build

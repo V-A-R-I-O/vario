@@ -9,7 +9,7 @@
 - `docs/api-contract.md` § Admin — Conversation Logs (`GET /api/admin/conversations`, `GET /api/admin/conversations/:id/messages` — scoping, filters, transcript shape, error codes)
 - `docs/ADD.md` → `conversation-store` module + § Security (role scoping)
 - `docs/ui-reference.md` § 10 (Conversation Logs page)
-- `docs/vario-overview.md` § 6 (FR-19)
+- `docs/overview.md` § 6 (FR-19)
 - Depends on: `slice-04-conversation-store` (data), `slice-07-admin-shell` (admin authz + nav)
 
 ## What to build
