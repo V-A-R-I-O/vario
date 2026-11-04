@@ -123,7 +123,20 @@ responses:
   utter_ask_ticket_status_form_ticket_id:
     - text: "Please provide your ticket ID (for example, IT-1001) so I can check its status."
   utter_ask_raise_ticket_form_category:
-    - text: "What category best describes the issue? Choose hardware, software, network, access, email, or other."
+    - text: "What category best describes the issue?"
+      buttons:
+        - title: "Hardware"
+          payload: "hardware"
+        - title: "Software"
+          payload: "software"
+        - title: "Network"
+          payload: "network"
+        - title: "Access"
+          payload: "access"
+        - title: "Email"
+          payload: "email"
+        - title: "Other"
+          payload: "other"
   utter_ask_raise_ticket_form_description:
     - text: "Please describe the issue. Include what happened and any useful error message, but do not include passwords or other secrets."
   utter_ask_raise_ticket_form_confirmation:
@@ -134,7 +147,7 @@ responses:
         - title: Cancel
           payload: /deny
   utter_ask_reset_password_form_employee_id:
-    - text: "Please enter the employee ID for the account you need to recover (for example, EMP-1001)."
+    - text: "Please confirm your employee ID (for example, EMP-1001). I can only reset the password for your signed-in account."
   utter_default_fallback:
     - text: "I'm sorry, I didn't understand that. You can check a ticket status, raise a support ticket, or get password-reset help."
 actions:
@@ -142,6 +155,7 @@ actions:
   - action_check_ticket_status
   - validate_raise_ticket_form
   - action_submit_raise_ticket
+  - action_ask_raise_ticket_form_confirmation
   - validate_reset_password_form
   - action_ask_reset_password_form_security_answer
   - action_submit_reset_password
