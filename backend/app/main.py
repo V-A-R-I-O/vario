@@ -17,9 +17,12 @@ from app.exceptions import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # For dev/test, just create tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # SQLite (tests, quick local runs): just create tables. Anything else is owned
+    # by Alembic — the container entrypoint runs `alembic upgrade head` first, and
+    # create_all here would leave a schema Alembic can no longer upgrade.
+    if engine.dialect.name == "sqlite":
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
     await recover_stale_jobs()
     yield
 
