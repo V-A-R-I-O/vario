@@ -30,6 +30,8 @@ slots:
     influence_conversation: true
     mappings:
       - type: from_text
+        # Let cancel/goodbye/greet reach their rules instead of filling the slot.
+        not_intent: [cancel, goodbye, greet]
         conditions:
           - active_loop: raise_ticket_form
             requested_slot: category
@@ -38,6 +40,8 @@ slots:
     influence_conversation: true
     mappings:
       - type: from_text
+        # Let cancel/goodbye/greet reach their rules instead of filling the slot.
+        not_intent: [cancel, goodbye, greet]
         conditions:
           - active_loop: raise_ticket_form
             requested_slot: description
@@ -62,6 +66,8 @@ slots:
     influence_conversation: true
     mappings:
       - type: from_text
+        # Let cancel/goodbye/greet reach their rules instead of filling the slot.
+        not_intent: [cancel, goodbye, greet]
         conditions:
           - active_loop: reset_password_form
             requested_slot: employee_id
@@ -75,6 +81,8 @@ slots:
     influence_conversation: false
     mappings:
       - type: from_text
+        # Let cancel/goodbye/greet reach their rules instead of filling the slot.
+        not_intent: [cancel, goodbye, greet]
         conditions:
           - active_loop: reset_password_form
             requested_slot: security_answer

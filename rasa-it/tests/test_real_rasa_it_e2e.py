@@ -111,6 +111,22 @@ def test_status_lookup_and_cancel(stack):
     assert r["card"]["type"] == "data_card"
 
 
+@pytest.mark.parametrize("opening, steps", [
+    ("my laptop screen is broken, I want to raise a ticket", []),
+    ("my laptop screen is broken, I want to raise a ticket", ["hardware"]),
+    ("I forgot my password", []),
+])
+def test_cancel_ends_ticket_creation_and_password_reset(stack, opening, steps):
+    chat = Chat(stack, "EMP-1012")
+    chat.say(opening)
+    for step in steps:
+        chat.say(step)
+    r = chat.say("cancel")
+    assert r["intent"] == "cancel"
+    assert r["current_form"] is None and r["current_step"] is None
+    assert r["card"] is None or r["card"]["type"] != "confirmation"
+
+
 def test_unknown_ticket_is_a_not_found_card(stack):
     r = Chat(stack).say("status of ticket IT-9999")
     assert r["card"]["type"] == "not_found"
