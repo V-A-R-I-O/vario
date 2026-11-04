@@ -135,3 +135,28 @@ async def test_seed_hr_data_is_idempotent(db_session):
     )
     wfh_tmpls = (await db_session.execute(stmt_wfh_tmpl)).scalars().all()
     assert len(wfh_tmpls) == 1
+
+
+@pytest.mark.asyncio
+async def test_seed_hr_data_creates_an_editable_template_per_policy_topic(db_session):
+    """slice-36 (M4b): every policy topic is a static FAQ with its own template, so an
+    admin edit to e.g. the maternity answer changes what the chat replies."""
+    from scripts.seed import HR_POLICY_TOPICS
+
+    await seed_hr_data(db_session)
+    await db_session.commit()
+
+    for intent_name, template_key, base_text, phrases in HR_POLICY_TOPICS:
+        intent = (await db_session.execute(select(Intent).where(Intent.name == intent_name))).scalar_one()
+        assert (intent.role_pack, intent.intent_type) == ("hr", "static_faq")
+        stored = (await db_session.execute(
+            select(TrainingPhrase.phrase_text).where(TrainingPhrase.intent_id == intent.intent_id))).scalars().all()
+        assert set(phrases) <= set(stored)
+        template = (await db_session.execute(
+            select(ResponseTemplate).where(ResponseTemplate.template_key == template_key))).scalar_one()
+        assert template.base_text == base_text
+        variants = (await db_session.execute(
+            select(ResponseVariant).where(ResponseVariant.template_id == template.template_id)
+            .order_by(ResponseVariant.position))).scalars().all()
+        assert variants[0].variant_text == base_text
+        assert [v.position for v in variants] == list(range(len(variants)))  # M9b: extras deletable

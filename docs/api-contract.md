@@ -664,7 +664,7 @@ Generated phrases are NOT automatically saved. The frontend presents them to the
 
 ### `POST /api/admin/retrain`
 
-Trigger manual retraining for the admin's role pack. Reads all intents and training phrases from the DB, converts to Rasa YAML, trains, and reloads the model. This is a long-running operation (~30–120 seconds depending on training data size).
+Trigger manual retraining for the admin's role pack. Reads all intents and training phrases from the DB, merges them into the pack's own Rasa training data, trains on the pack's Rasa server (`POST /model/train`), and loads the new model (`PUT /model`). Chat keeps working while it trains. This is a long-running operation (~1–3 minutes depending on the pack and machine); see ADR-009.
 
 The role pack is **derived from the JWT role claim**, never from the request — an admin can only retrain their own pack. No request body is required (an empty `{}` is fine).
 

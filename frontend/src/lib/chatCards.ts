@@ -46,11 +46,30 @@ export interface BotReply {
   session?: SessionSnapshot | null;
 }
 
+// Fields each card type needs to render; must match rasa-shared/contract/card-fields.json.
+export const CARD_REQUIRED_FIELDS: Record<(typeof CARD_TYPES)[number], string[]> = {
+  plain_text: ['text'],
+  faq_answer: ['text'],
+  error: ['text'],
+  not_found: ['text'],
+  result: ['text'],
+  data_card: ['rows'],
+  confirmation: ['rows'],
+  slot_prompt: ['text', 'options'],
+  list: ['items'],
+};
+
+const filled = (v: unknown) => (Array.isArray(v) ? v.length > 0 : Boolean(v));
+
+// A card the UI can render, or null — a malformed card falls back to the reply text
+// instead of crashing the page.
 export function asCard(card: unknown): BotMessageData | null {
-  if (card && typeof card === 'object' && (CARD_TYPES as readonly string[]).includes((card as any).type)) {
-    return card as BotMessageData;
-  }
-  return null;
+  if (!card || typeof card !== 'object') return null;
+  const c = card as Record<string, unknown>;
+  const type = c.type as (typeof CARD_TYPES)[number];
+  if (!(CARD_TYPES as readonly string[]).includes(type)) return null;
+  if (!CARD_REQUIRED_FIELDS[type].every((field) => filled(c[field]))) return null;
+  return card as BotMessageData;
 }
 
 export function isFaqIntent(intent?: string | null): boolean {

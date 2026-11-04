@@ -17,7 +17,7 @@ import type {
 function KeyValueRows({ rows }: { rows: { label: string; value: string }[] }) {
   return (
     <div className="card-body">
-      {rows.map((row, i) => (
+      {(rows ?? []).map((row, i) => (
         <div className="kv-row" key={i}>
           <span className="k">{row.label}</span>
           <span className="v">{row.value}</span>
@@ -45,7 +45,7 @@ export function SlotPrompt({ text, options, onSelect, disabled }: Omit<SlotPromp
     <div className="card-msg">
       <div className="card-body" style={{ paddingTop: 14 }}>{text}</div>
       <div className="opt-row">
-        {options.map((opt, i) => (
+        {(options ?? []).map((opt, i) => (
           <button
             className="opt-btn"
             key={i}
@@ -132,7 +132,7 @@ export function ListCard({ title, ordered = true, items }: Omit<ListMessage, 'ty
     <div className="list-card">
       {title && <div style={{ fontSize: 13.5, fontWeight: 700 }}>{title}</div>}
       <ListTag>
-        {items.map((item, i) => (
+        {(items ?? []).map((item, i) => (
           <li key={i}>{item}</li>
         ))}
       </ListTag>
