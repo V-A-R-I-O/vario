@@ -12,17 +12,31 @@ NLU and dialogue orchestration engine for the HR Role Pack. Runs at `RASA_HR_URL
 - **VARIO Converse Contract:** Implements `POST /webhooks/vario/converse` per `docs/decisions/ADR-002-rasa-chat-contract.md`.
 - **Custom Actions:** Provides `action_check_leave_balance` skeleton returning `template_key` + slots shape.
 
-## Runtime Architecture: Live Rasa vs. Development Mock
+## Runtime
 
-1. **Full Rasa Open Source Engine (Docker / OCI — Slice 27 / Slice 29):**
-   - Built via `Dockerfile` and orchestrated with `docker-compose.yml` using `rasa/rasa:3.6.20-full`.
-   - Uses `config.yml`, `domain.yml`, and `data/nlu.yml` to train and serve DIETClassifier and FallbackClassifier.
-   - Connects custom channel `channels.vario.VarioInputChannel` to expose `POST /webhooks/vario/converse`.
+HR runs on **real Rasa Open Source 3.6.20** (ADR-006):
 
-2. **Scoped Development Mock & Proxy (`server.py`):**
-   - Lightweight FastAPI service running at `RASA_HR_URL` implementing the ADR-002 converse webhook contract.
-   - When `RASA_NLU_URL` is set, dynamically proxies classification requests to the upstream live Rasa `/model/parse` endpoint.
-   - When running standalone without the heavy 4GB Rasa Docker container, operates as a deterministic rule-based mock for fast local development and unit tests.
+- **Rasa server:** the shared `vario_rasa.channel.VarioInputChannel` serves `POST /webhooks/vario/converse`; dialogue state lives in the redacting SQL tracker store (`endpoints.yml`).
+- **Action server:** `rasa run actions` runs `actions/actions.py`, which calls mock-hrms through `actions/hrms_adapter.py` (`MOCK_HRMS_URL`). The signed-in employee comes from `metadata.auth_context`, never from chat text.
+- **Leave form:** each slot is filled only while it is being asked for, so a later answer can't overwrite an earlier one. "cancel" leaves the form at any step, and a balance, status or policy question is answered before the form resumes.
+- **Docker:** `docker build -f rasa-hr/Dockerfile .` from the repo root trains the model at build time; the same image runs the action server.
+
+Run natively (Python 3.10):
+
+```bash
+pip install -r requirements-rasa.txt
+export PYTHONPATH=../rasa-shared:.
+rasa train
+MOCK_HRMS_URL=http://localhost:9002 rasa run actions --actions actions --port 5055 &
+ACTION_ENDPOINT_URL=http://localhost:5055/webhook POSTGRES_HOST=localhost POSTGRES_DB=rasa_hr \
+  POSTGRES_USER=vario POSTGRES_PASSWORD=vario rasa run --enable-api --port 5005
+```
+
+Tests:
+
+- `tests/test_real_rasa_hr_e2e.py` (Python 3.10, `requirements-rasa.txt`) trains the model and drives the HR flows end to end against the real mock service.
+- `tests/test_real_rasa_hr.py` validates the data and NLU metrics.
+- `tests/test_hr_rasa.py` covers the legacy keyword `server.py` (Python 3.11, `requirements.txt`). `server.py` is no longer the runtime and is kept only for those tests.
 
 ## Directory Structure
 
@@ -32,15 +46,13 @@ rasa-hr/
 ├── domain.yml           # Intents, entities, slots, and actions
 ├── credentials.yml      # Custom channel connector setup
 ├── endpoints.yml        # Action server endpoint
-├── server.py            # FastAPI server running ADR-002 converse webhook & upstream proxy
+├── server.py            # Legacy keyword runtime, kept only for tests/test_hr_rasa.py
 ├── data/
 │   ├── nlu.yml          # Training phrases with entity annotations
 │   ├── rules.yml        # Dialogue rules
 │   └── stories.yml      # Multi-turn stories
 ├── actions/
 │   └── actions.py       # Custom action implementations (action_check_leave_balance)
-├── channels/
-│   └── vario.py         # ADR-002 converse webhook implementation
 └── tests/
     └── test_hr_rasa.py  # Unit and regression tests for HR Rasa service
 ```

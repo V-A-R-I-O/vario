@@ -77,6 +77,21 @@ def _extract_employee_id(tracker: Tracker) -> Optional[str]:
     return None
 
 
+
+def confirmation_card(leave_type: Any, start_date: Any, end_date: Any, reason: Any) -> Dict[str, Any]:
+    """ADR-006 confirmation card; the UI adds the Confirm/Cancel buttons itself."""
+    return {
+        "type": "confirmation",
+        "title": "Confirm leave request",
+        "rows": [
+            {"label": "Leave type", "value": str(leave_type)},
+            {"label": "Start date", "value": str(start_date)},
+            {"label": "End date", "value": str(end_date)},
+            {"label": "Reason", "value": str(reason)},
+        ],
+    }
+
+
 class ActionCheckLeaveBalance(Action):
     """
     Checks leave balance for the authenticated employee via HRMSAdapter.
@@ -308,15 +323,7 @@ class ActionAskLeaveConfirm(Action):
             f"Please confirm your leave request: {leave_type} leave from "
             f"{start_date} to {end_date}. Reason: {reason}."
         )
-        card = {
-            "type": "confirmation",
-            "title": "Confirm leave request",
-            "text": summary_text,
-            "options": [
-                {"label": "Confirm", "value": "confirm"},
-                {"label": "Cancel", "value": "cancel"},
-            ],
-        }
+        card = confirmation_card(leave_type, start_date, end_date, reason)
         dispatcher.utter_message(
             text=summary_text,
             buttons=[
@@ -411,10 +418,6 @@ class ValidateLeaveRequestForm(FormValidationAction):
                 text=error or "Please provide a valid start date (e.g. 'YYYY-MM-DD' or 'tomorrow').",
                 json_message=vario_payload(
                     template_key="submit_leave_slot_prompt",
-                    card={
-                        "type": "slot_prompt",
-                        "text": error or "Please provide a valid start date (e.g. 'YYYY-MM-DD' or 'tomorrow').",
-                    },
                 ),
             )
             return {"start_date": None}
@@ -448,10 +451,6 @@ class ValidateLeaveRequestForm(FormValidationAction):
                 text=error or "Please provide a valid end date (e.g. 'YYYY-MM-DD' or 'next friday').",
                 json_message=vario_payload(
                     template_key="submit_leave_slot_prompt",
-                    card={
-                        "type": "slot_prompt",
-                        "text": error or "Please provide a valid end date (e.g. 'YYYY-MM-DD' or 'next friday').",
-                    },
                 ),
             )
             return {"end_date": None}
@@ -470,10 +469,6 @@ class ValidateLeaveRequestForm(FormValidationAction):
                 text="Please provide a brief reason for your leave request.",
                 json_message=vario_payload(
                     template_key="submit_leave_slot_prompt",
-                    card={
-                        "type": "slot_prompt",
-                        "text": "Please provide a brief reason for your leave request.",
-                    },
                 ),
             )
             return {"reason": None}
@@ -516,15 +511,7 @@ class ValidateLeaveRequestForm(FormValidationAction):
             f"{start_date} to {end_date}. Reason: {reason}.\n"
             "Please reply 'confirm' to submit or 'cancel' to exit."
         )
-        card = {
-            "type": "confirmation",
-            "title": "Confirm leave request",
-            "text": summary_text,
-            "options": [
-                {"label": "Confirm", "value": "confirm"},
-                {"label": "Cancel", "value": "cancel"},
-            ],
-        }
+        card = confirmation_card(leave_type, start_date, end_date, reason)
         dispatcher.utter_message(
             text=summary_text,
             buttons=[
@@ -662,7 +649,7 @@ class ActionSubmitLeave(Action):
             "type": "result",
             "title": "Leave request submitted",
             "text": result_text,
-            "status": "success",
+            "referenceId": ref_id,
         }
         audit_event = {
             "action_type": "leave_submitted",

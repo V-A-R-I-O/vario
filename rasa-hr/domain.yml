@@ -27,6 +27,7 @@ intents:
   - cancel
   - greet
   - goodbye
+  - ask_unsupported_policy
   - nlu_fallback
 
 entities:
@@ -46,6 +47,9 @@ slots:
       - type: from_entity
         entity: reference_id
 
+  # Form slots are taken only while that slot is being asked for (or from the
+  # opening request), so an answer can't overwrite an earlier slot (A2-06), and
+  # free text skips intents that should interrupt the form instead (M3a).
   leave_type:
     type: text
     influence_conversation: true
@@ -57,7 +61,10 @@ slots:
         entity: leave_type
         conditions:
           - active_loop: leave_request_form
+            requested_slot: leave_type
       - type: from_text
+        not_intent: [cancel, check_leave_balance, ask_leave_status, ask_policy_faq,
+                     ask_wfh_policy, ask_unsupported_policy, goodbye]
         conditions:
           - active_loop: leave_request_form
             requested_slot: leave_type
@@ -68,9 +75,15 @@ slots:
     mappings:
       - type: from_entity
         entity: start_date
+        intent: submit_leave_request
+      - type: from_entity
+        entity: start_date
         conditions:
           - active_loop: leave_request_form
+            requested_slot: start_date
       - type: from_text
+        not_intent: [cancel, check_leave_balance, ask_leave_status, ask_policy_faq,
+                     ask_wfh_policy, ask_unsupported_policy, goodbye]
         conditions:
           - active_loop: leave_request_form
             requested_slot: start_date
@@ -81,9 +94,15 @@ slots:
     mappings:
       - type: from_entity
         entity: end_date
+        intent: submit_leave_request
+      - type: from_entity
+        entity: end_date
         conditions:
           - active_loop: leave_request_form
+            requested_slot: end_date
       - type: from_text
+        not_intent: [cancel, check_leave_balance, ask_leave_status, ask_policy_faq,
+                     ask_wfh_policy, ask_unsupported_policy, goodbye]
         conditions:
           - active_loop: leave_request_form
             requested_slot: end_date
@@ -93,6 +112,8 @@ slots:
     influence_conversation: true
     mappings:
       - type: from_text
+        not_intent: [cancel, check_leave_balance, ask_leave_status, ask_policy_faq,
+                     ask_wfh_policy, ask_unsupported_policy, goodbye]
         conditions:
           - active_loop: leave_request_form
             requested_slot: reason
@@ -120,6 +141,8 @@ slots:
           - active_loop: leave_request_form
             requested_slot: leave_confirm
       - type: from_text
+        not_intent: [cancel, check_leave_balance, ask_leave_status, ask_policy_faq,
+                     ask_wfh_policy, ask_unsupported_policy, goodbye]
         conditions:
           - active_loop: leave_request_form
             requested_slot: leave_confirm
@@ -151,48 +174,15 @@ responses:
           payload: "earned"
         - title: "Annual"
           payload: "annual"
-      custom:
-        vario:
-          template_key: submit_leave_slot_prompt
-          card:
-            type: slot_prompt
-            text: "What type of leave would you like to request?"
-            options:
-              - label: "Casual"
-                value: "casual"
-              - label: "Sick"
-                value: "sick"
-              - label: "Earned"
-                value: "earned"
-              - label: "Annual"
-                value: "annual"
 
   utter_ask_start_date:
     - text: "What is the start date for your leave (YYYY-MM-DD or e.g. 'tomorrow')?"
-      custom:
-        vario:
-          template_key: submit_leave_slot_prompt
-          card:
-            type: slot_prompt
-            text: "What is the start date for your leave (YYYY-MM-DD or e.g. 'tomorrow')?"
 
   utter_ask_end_date:
     - text: "What is the end date for your leave (YYYY-MM-DD)?"
-      custom:
-        vario:
-          template_key: submit_leave_slot_prompt
-          card:
-            type: slot_prompt
-            text: "What is the end date for your leave (YYYY-MM-DD)?"
 
   utter_ask_reason:
     - text: "Please provide a reason for your leave request."
-      custom:
-        vario:
-          template_key: submit_leave_slot_prompt
-          card:
-            type: slot_prompt
-            text: "Please provide a reason for your leave request."
 
   utter_ask_leave_confirm:
     - text: "Please confirm your leave request: {leave_type} leave from {start_date} to {end_date}. Reason: {reason}."
@@ -201,18 +191,6 @@ responses:
           payload: "confirm"
         - title: "Cancel"
           payload: "cancel"
-      custom:
-        vario:
-          template_key: submit_leave_confirmation
-          card:
-            type: confirmation
-            title: "Confirm leave request"
-            text: "Please confirm your leave request."
-            options:
-              - label: "Confirm"
-                value: "confirm"
-              - label: "Cancel"
-                value: "cancel"
 
   utter_ask_policy_faq:
     - text: "Employees are entitled to 8 casual days, 10 sick days, and 15 earned days annually. Unused earned leaves can be carried forward up to 5 days."
@@ -283,6 +261,9 @@ responses:
             type: faq_answer
             title: "Work From Home Policy"
             text: "Employees may work remotely up to 2 days per week with line manager alignment. Core collaborative working hours are 10:00 AM to 4:00 PM."
+
+  utter_unsupported_policy:
+    - text: "I can answer leave and work-from-home policy questions. For other policies, such as travel or dress code, please check the HR portal or email hr@org.example.com."
 
   utter_default_fallback:
     - text: "I can help with leave balances, leave requests, and leave or WFH policies. For travel or expense policies, please check the employee portal or contact HR."
