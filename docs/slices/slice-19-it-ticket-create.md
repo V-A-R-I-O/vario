@@ -8,7 +8,7 @@
 - `AGENTS.md`
 - `docs/api-contract.md` § Chat (session / slots)
 - `docs/ui-reference.md` § 4 → **Slot prompt**, **Confirmation**, **Result** bot message types
-- `docs/vario-overview.md` § 6 (FR-10, FR-13), § 7 (Safety: confirmation + audit), § 8 (UC-3)
+- `docs/overview.md` § 6 (FR-10, FR-13), § 7 (Safety: confirmation + audit), § 8 (UC-3)
 - Depends on: `slice-05-chat-core`, `slice-18-itsm-adapter` (`create_ticket`), `slice-20-it-ticket-status`
 
 ## What to build

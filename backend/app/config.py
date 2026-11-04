@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # Rephraser service (variant + phrase generation, slice-09)
     REPHRASER_PROVIDER: str = "gemini"
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_MODEL: str = "gemini-3.8-flash"
 
     class Config:
         env_file = ".env"

@@ -8,7 +8,7 @@
 - `AGENTS.md`
 - `docs/api-contract.md` § Chat
 - `docs/ui-reference.md` § 4 → **FAQ answer** / **Data card** bot message types
-- `docs/vario-overview.md` § 6 (FR-16), § 8 — US-4
+- `docs/overview.md` § 6 (FR-16), § 8 — US-4
 - Depends on: `slice-05-chat-core`, `slice-22-adm-rasa`, `slice-23-adm-adapter` (`get_calendar`)
 
 ## What to build

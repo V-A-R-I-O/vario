@@ -12,6 +12,7 @@ the dependency installed or credentials present.
 """
 import base64
 import logging
+import os
 from dataclasses import dataclass
 from typing import Optional
 
@@ -59,7 +60,9 @@ def _synthesize_bytes(text: str) -> bytes:
 
 async def synthesize(text: str) -> TtsResult:
     """Synthesize `text` to audio. Never raises — returns a degrade flag instead."""
-    if not settings.GOOGLE_APPLICATION_CREDENTIALS:
+    key_file = settings.GOOGLE_APPLICATION_CREDENTIALS
+    # Compose always sets the path; the key file itself is optional (./secrets).
+    if not key_file or not os.path.isfile(key_file):
         logger.warning("TTS credentials not configured; talk mode degrading to text-only")
         return TtsResult(available=False)
 

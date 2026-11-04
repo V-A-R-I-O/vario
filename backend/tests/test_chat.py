@@ -272,7 +272,7 @@ async def test_talk_mode_returns_audio_when_tts_available():
         with patch(
             "app.services.dialogue_router._post_to_rasa",
             new=AsyncMock(return_value=rasa_payload()),
-        ), patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", "/fake/sa.json"), patch(
+        ), patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", __file__), patch(
             "app.services.tts_service._synthesize_bytes", return_value=b"SPOKEN-AUDIO"
         ):
             res = await client.post(
@@ -302,7 +302,7 @@ async def test_talk_mode_degrades_to_text_when_tts_fails():
         with patch(
             "app.services.dialogue_router._post_to_rasa",
             new=AsyncMock(return_value=rasa_payload()),
-        ), patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", "/fake/sa.json"), patch(
+        ), patch.object(settings, "GOOGLE_APPLICATION_CREDENTIALS", __file__), patch(
             "app.services.tts_service._synthesize_bytes",
             side_effect=RuntimeError("credits exhausted"),
         ):

@@ -1,4 +1,5 @@
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api';
+// Same-origin by default: next.config.mjs proxies /api to the gateway.
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 export async function loginUser(email: string, password: string) {
   const res = await fetch(`${API_BASE_URL}/auth/login`, {

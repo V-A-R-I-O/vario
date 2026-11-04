@@ -7,7 +7,7 @@
 ## References — read these first
 - `AGENTS.md`
 - `docs/PRD.md` § Open questions (resolved: identity check = employee ID + security question against Mock ITSM)
-- `docs/vario-overview.md` § 6 (FR-12), § 7 (Safety), § 8 — US-3
+- `docs/overview.md` § 6 (FR-12), § 7 (Safety), § 8 — US-3
 - `docs/ui-reference.md` § 4 → **Slot prompt**, **Result**, **Error** bot message types
 - Depends on: `slice-05-chat-core`, `slice-18-itsm-adapter` (`verify_identity`, `reset_password`)
 

@@ -8,7 +8,7 @@
 - `AGENTS.md`
 - `docs/api-contract.md` § Chat (response shape)
 - `docs/ui-reference.md` § 4 → **Data card** and **Not found** bot message types
-- `docs/vario-overview.md` § 6 (FR-11), § 8 (UC-4)
+- `docs/overview.md` § 6 (FR-11), § 8 (UC-4)
 - Depends on: `slice-05-chat-core`, `slice-17-it-rasa`, `slice-18-itsm-adapter`
 
 ## What to build

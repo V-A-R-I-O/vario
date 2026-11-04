@@ -7,7 +7,7 @@
 ## References — read these first
 - `AGENTS.md`
 - `docs/ADD.md` → `integration-adapters` module + § Reliability
-- `docs/vario-overview.md` § 6 (FR-10…FR-13, note FR-12 mock identity verification = employee ID + security question), § 7 (Reliability)
+- `docs/overview.md` § 6 (FR-10…FR-13, note FR-12 mock identity verification = employee ID + security question), § 7 (Reliability)
 - `docs/PRD.md` § Open questions (resolved: password-reset identity check)
 - `.env.example` (`MOCK_ITSM_URL`)
 

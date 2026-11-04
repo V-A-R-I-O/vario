@@ -6,7 +6,7 @@
 
 ## References — read these first
 - `AGENTS.md`
-- `docs/vario-overview.md` § 3 (success criteria) + § 7 (NFRs: Performance, Reliability, Security, Usability)
+- `docs/overview.md` § 3 (success criteria) + § 7 (NFRs: Performance, Reliability, Security, Usability)
 - `docs/PRD.md` § Success criteria (2s p95, 20 concurrent sessions)
 - `docs/ADD.md` § Constraints (expected scale, performance budget, graceful degradation)
 

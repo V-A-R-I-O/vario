@@ -9,7 +9,7 @@
 - `docs/api-contract.md` § Admin — Intents (`POST` returns original + 4 variants), § Response Templates (`PUT` regenerates 4), § Training Phrase Generation (`POST /api/admin/intents/:id/generate-phrases`)
 - `docs/ADD.md` → `rephraser-service` module (provider-agnostic; the two functions; placeholder preservation/validation) + admin flow diagram
 - `docs/ui-reference.md` § 7 → "Generate Similar" (accept/edit/reject/accept-all) + variant section
-- `docs/vario-overview.md` § 6 — US-8, US-9
+- `docs/overview.md` § 6 — US-8, US-9
 - `slice-08-admin-intent-crud` (the `RephraserClient` seam this replaces)
 - `.env.example` (`REPHRASER_PROVIDER`, `GEMINI_API_KEY`)
 

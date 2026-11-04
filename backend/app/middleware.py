@@ -9,6 +9,7 @@ logger = logging.getLogger("vario.gateway")
 
 PUBLIC_PATHS = {"/api/auth/login", "/health", "/docs", "/openapi.json"}
 
+
 async def gateway_middleware(request: Request, call_next):
     path = request.url.path
     
@@ -40,7 +41,10 @@ async def gateway_middleware(request: Request, call_next):
     identifier = request.client.host if request.client else "127.0.0.1"
 
     if path.startswith("/api/auth/"):
-        group, limit, window = "auth", 10, 60
+        # Flood guard per address only. Behind the demo's /api proxy (and Docker
+        # Desktop's port forwarding) every laptop arrives from the same address, so
+        # the brute-force limit is per account, in routers/auth.py.
+        group, limit, window = "auth", 60, 60
     elif path == "/api/chat":
         group, limit, window = "chat", 30, 60
         identifier = getattr(request.state, "user_id", identifier)

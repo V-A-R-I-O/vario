@@ -1,5 +1,7 @@
 # Sprint 1 — Deployed Walking Skeleton & CD Pipeline (Week 1)
 
+> **Superseded (2026-10-29):** the cloud deployment work in this plan (OCI, Cloudflare Tunnel, Vercel, Neon) was retired. VARIO runs and is demonstrated locally; see `docs/decisions/ADR-007-local-first-runtime.md` and `docs/demo/local-demo.md`.
+
 ## Goal
 Build and verify a minimal VARIO application locally: public landing page, login, authenticated shell, local PostgreSQL and a reliable pull-request CI pipeline. Docker Compose is the supported runtime. GitHub Actions validates changes; it does not deploy to cloud hosting.
 

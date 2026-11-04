@@ -9,11 +9,27 @@ from app.services.auth_adapter import AuthAdapter
 from app.services.jwt_service import issue_token
 from app.models.user import User
 from app.utils.envelope import success_response, error_response
+from app.utils.rate_limit import limiter
+
+LOGIN_ATTEMPTS_PER_MINUTE = 10
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/login")
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+    # 0. Brute-force guard per account (N3): presenters on different laptops share one
+    #    address behind the proxy, but each uses their own login.
+    allowed, limit, remaining, reset = limiter.is_allowed(
+        "login", req.email.strip().casefold(), LOGIN_ATTEMPTS_PER_MINUTE, 60
+    )
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content=error_response(f"Rate limit exceeded. Try again in {reset} seconds."),
+            headers={"X-RateLimit-Limit": str(limit), "X-RateLimit-Remaining": str(remaining),
+                     "X-RateLimit-Reset": str(reset)},
+        )
+
     # 1. Authenticate via Mock Auth Adapter
     try:
         auth_data = await AuthAdapter.authenticate(req.email, req.password)

@@ -7,7 +7,7 @@
 ## References — read these first
 - `AGENTS.md`
 - `docs/ADD.md` → `integration-adapters` module + § Reliability
-- `docs/vario-overview.md` § 6 (FR-14…FR-17) and § 7 (Reliability)
+- `docs/overview.md` § 6 (FR-14…FR-17) and § 7 (Reliability)
 - `.env.example` (`MOCK_ADMISSIONS_URL`)
 
 ## What to build

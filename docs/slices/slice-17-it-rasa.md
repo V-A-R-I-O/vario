@@ -7,7 +7,7 @@
 ## References — read these first
 - `AGENTS.md`
 - `docs/ADD.md` → `role-pack-runtime` module
-- `docs/vario-overview.md` § 6 (FR-10…FR-13) and § 12 (seed-data shape)
+- `docs/overview.md` § 6 (FR-10…FR-13) and § 12 (seed-data shape)
 - `docs/api-contract.md` § Admin — Intents (intent/phrase/template structures)
 - `.env.example` (`RASA_IT_URL`)
 

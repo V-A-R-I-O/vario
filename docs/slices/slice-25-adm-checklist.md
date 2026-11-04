@@ -8,7 +8,7 @@
 - `AGENTS.md`
 - `docs/api-contract.md` § Chat (session / slots)
 - `docs/ui-reference.md` § 4 → **List** and **Slot prompt** bot message types
-- `docs/vario-overview.md` § 6 (FR-15)
+- `docs/overview.md` § 6 (FR-15)
 - Depends on: `slice-05-chat-core`, `slice-22-adm-rasa`, `slice-23-adm-adapter` (`get_document_checklist`)
 
 ## What to build

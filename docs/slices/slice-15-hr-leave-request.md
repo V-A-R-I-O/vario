@@ -8,7 +8,7 @@
 - `AGENTS.md`
 - `docs/api-contract.md` § Chat (session / slots / multi-turn)
 - `docs/ui-reference.md` § 4 → **Slot prompt**, **Confirmation**, **Result** bot message types
-- `docs/vario-overview.md` § 6 (FR-8, FR-9), § 7 (Safety: no record-affecting action without explicit confirmation + audit), § 8 (UC-2)
+- `docs/overview.md` § 6 (FR-8, FR-9), § 7 (Safety: no record-affecting action without explicit confirmation + audit), § 8 (UC-2)
 - Depends on: `slice-05-chat-core`, `slice-13-hrms-adapter` (`submit_leave`), `slice-14-hr-leave-balance`
 
 ## What to build

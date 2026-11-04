@@ -12,3 +12,8 @@
 **/node_modules
 **/.next
 **/coverage
+# Images train their own models; never ship local models, caches or key files.
+rasa-*/models
+rasa-*/.rasa
+rasa-*/results
+secrets
