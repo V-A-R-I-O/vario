@@ -59,3 +59,14 @@ async def test_retraining_job_not_found_returns_404(monkeypatch):
             "/api/admin/retrain/00000000-0000-0000-0000-000000000000", headers=HR
         )
     assert response.status_code == 404
+
+
+def test_job_timestamps_are_naive_utc():
+    """PostgreSQL TIMESTAMP WITHOUT TIME ZONE columns reject aware datetimes (asyncpg
+    DataError), which crashed gateway startup in recover_stale_jobs()."""
+    from datetime import datetime, timedelta
+    from app.services import retraining_service
+
+    stamp = retraining_service.now()
+    assert stamp.tzinfo is None
+    assert abs(stamp - datetime.utcnow()) < timedelta(seconds=5)

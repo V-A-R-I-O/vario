@@ -1130,7 +1130,8 @@ async def seed_admissions_data(session: AsyncSession):
             existing_var_fee.position = idx
 
 async def main():
-    logger.info(f"Connecting to database at {settings.DATABASE_URL}")
+    # Never log the full URL: it contains the database password.
+    logger.info("Seeding database...")
     async with AsyncSessionLocal() as session:
         # Run role-pack seeders
         await seed_hr_data(session)

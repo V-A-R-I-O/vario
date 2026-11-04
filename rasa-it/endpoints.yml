@@ -1,5 +1,6 @@
+# Rasa only expands plain, unquoted ${VAR} references — a quoted value is sent literally.
 action_endpoint:
-  url: "${ACTION_ENDPOINT_URL}"
+  url: ${ACTION_ENDPOINT_URL}
 tracker_store:
   type: vario_rasa.tracker_store.RedactingSQLTrackerStore
   dialect: postgresql
