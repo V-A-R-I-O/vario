@@ -1,0 +1,223 @@
+"Issue ID","Parent","Issue Type","Summary","Slice ID","Sprint","Priority","Assignee","Team","Labels","Labels","Labels","Labels","Description"
+"200","SCRUM-41","Bug","[A2-01] Gateway crashes at startup on PostgreSQL","slice-34","Sprint 4","Highest","Mohammed Tahir Siddique","Platform — Tahir","audit-2","slice-34-local-demo-stack","relates-scrum-44","owner-d","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-01)
+SEVERITY: Blocker    FIXED BY: slice-34-local-demo-stack (SCRUM-44) — link this bug to SCRUM-44 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Start the gateway against PostgreSQL (DATABASE_URL=postgresql+asyncpg://...).
+
+ACTUAL: Application startup fails: recover_stale_jobs() binds a timezone-aware datetime to a TIMESTAMP WITHOUT TIME ZONE column and asyncpg raises DataError. Tests use SQLite, which accepts it, so CI is green.
+
+EXPECTED: The gateway starts on PostgreSQL; retraining timestamps are naive UTC like every other column.
+
+WHERE: backend/app/services/retraining_service.py:31-32"
+"201","SCRUM-41","Bug","[A2-02] rasa-hr cannot start: endpoints.yml uses unsupported ${VAR:-default} syntax","slice-34","Sprint 4","Highest","Mohammed Tahir Siddique","Platform — Tahir","audit-2","slice-34-local-demo-stack","relates-scrum-44","owner-d","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-02)
+SEVERITY: Blocker    FIXED BY: slice-34-local-demo-stack (SCRUM-44) — link this bug to SCRUM-44 with 'Relates'
+
+STEPS TO REPRODUCE:
+# rasa run --endpoints rasa-hr/endpoints.yml (with RASA_ACTION_ENDPOINT_URL set).
+
+ACTUAL: RasaException: Error when trying to expand the environment variables in '$RASA_ACTION_ENDPOINT_URL:-http://localhost:5055/webhook'. Rasa only supports $VAR.
+
+EXPECTED: Plain $VAR references, with the values supplied by docker compose.
+
+WHERE: rasa-hr/endpoints.yml:3, 8-11"
+"202","SCRUM-41","Bug","[A2-03] Every IT custom action fails: quoted action endpoint is never expanded","slice-34","Sprint 4","Highest","Mohammed Tahir Siddique","Platform — Tahir","audit-2","slice-34-local-demo-stack","relates-scrum-44","owner-d","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-03)
+SEVERITY: Blocker    FIXED BY: slice-34-local-demo-stack (SCRUM-44) — link this bug to SCRUM-44 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Start rasa-it with ACTION_ENDPOINT_URL set.
+# Ask ""check my ticket status"".
+
+ACTUAL: Rasa calls the literal URL $ACTION_ENDPOINT_URL (quoted YAML strings are not expanded), so every custom action errors and the gateway replies 'Sorry, I couldn't put together a response'. Only 'hi' works.
+
+EXPECTED: The action endpoint resolves and IT flows work.
+
+WHERE: rasa-it/endpoints.yml:2"
+"203","SCRUM-41","Bug","[A2-05] Admissions Rasa model fails to train; runtime is still the keyword server.py","slice-39","Sprint 4","Highest","Mitesh","Admissions — Mitesh","audit-2","slice-39-adm-real-rasa","relates-scrum-49","owner-c","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-05)
+SEVERITY: Blocker    FIXED BY: slice-39-adm-real-rasa (SCRUM-49) — link this bug to SCRUM-49 with 'Relates'
+
+STEPS TO REPRODUCE:
+# cd rasa-admissions && rasa train
+
+ACTUAL: InvalidRule: 5 contradictions between stories and the form-activation rules (application_status_form, checklist_form). `rasa data validate` passes and CI never trains, so CI is green. The Dockerfile still runs server.py, and endpoints.yml has no tracker store.
+
+EXPECTED: The model trains; Admissions runs on real Rasa with an action server and the redacting tracker store, like HR and IT.
+
+WHERE: rasa-admissions/data/stories.yml, data/rules.yml, Dockerfile, endpoints.yml"
+"204","SCRUM-41","Bug","[A2-06] Leave start date is overwritten by the end date","slice-35","Sprint 4","Highest","PAVAN KISHOR M","HR — Kishor","audit-2","slice-35-hr-real-rasa","relates-scrum-45","owner-a","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-06)
+SEVERITY: Blocker    FIXED BY: slice-35-hr-real-rasa (SCRUM-45) — link this bug to SCRUM-45 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Apply for annual leave: start 2026-11-20, end 2026-11-21, any reason, confirm.
+
+ACTUAL: Confirmation shows '2026-11-21 to 2026-11-21' and mock-HRMS stores start 2026-11-21: the end-date answer is extracted as a start_date entity and refills start_date.
+
+EXPECTED: Dates are stored exactly as entered.
+
+WHERE: rasa-hr/domain.yml start_date / end_date slot mappings"
+"205","SCRUM-41","Bug","[A2-07] HR cards without options/rows crash the chat page","slice-35","Sprint 4","Highest","PAVAN KISHOR M","HR — Kishor","audit-2","slice-35-hr-real-rasa","relates-scrum-45","owner-a","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-07)
+SEVERITY: Blocker    FIXED BY: slice-35-hr-real-rasa (SCRUM-45) — link this bug to SCRUM-45 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Start a leave request in the browser; reach the start-date prompt or the confirmation.
+
+ACTUAL: HR sends slot_prompt cards with no `options` and a confirmation with no `rows`; the UI throws 'Cannot read properties of undefined (reading map)' and the page crashes.
+
+EXPECTED: Every HR card matches the ADR-006 BotMessageData shape; the confirmation lists the request details.
+
+WHERE: rasa-hr/actions/actions.py (vario_payload cards)"
+"206","SCRUM-41","Bug","[A2-08] HR image still runs the FastAPI server.py, not Rasa","slice-35","Sprint 4","High","PAVAN KISHOR M","HR — Kishor","audit-2","slice-35-hr-real-rasa","relates-scrum-45","owner-a","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-08)
+SEVERITY: Major    FIXED BY: slice-35-hr-real-rasa (SCRUM-45) — link this bug to SCRUM-45 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Build rasa-hr/Dockerfile.
+
+ACTUAL: The image runs uvicorn server:app (keyword runtime); there is no Rasa server/action-server image, so compose cannot run HR on real Rasa.
+
+EXPECTED: A real-Rasa HR image (server + action server) like IT's.
+
+WHERE: rasa-hr/Dockerfile"
+"207","SCRUM-41","Bug","[A2-09] mock-hrms tests hard-code November 2026 dates and now fail","slice-36","Sprint 4","Medium","PAVAN KISHOR M","HR — Kishor","audit-2","slice-36-hr-data-fixes","relates-scrum-46","owner-a","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-09)
+SEVERITY: Minor    FIXED BY: slice-36-hr-data-fixes (SCRUM-46) — link this bug to SCRUM-46 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Run mock-hrms-service tests after 2026-11-01.
+
+ACTUAL: 2 tests fail: the mock correctly rejects start_date 2026-11-01 as past. The next PR's CI goes red.
+
+EXPECTED: Tests compute dates relative to today.
+
+WHERE: mock-hrms-service/tests/test_mock_hrms.py:103-147"
+"208","SCRUM-41","Bug","[A2-10] IT ticket and password-reset audit entries are blank ('unknown')","slice-37","Sprint 4","High","Rohith G.S","IT — Rohith","audit-2","slice-37-it-real-rasa","relates-scrum-47","owner-b","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-10)
+SEVERITY: Major    FIXED BY: slice-37-it-real-rasa (SCRUM-47) — link this bug to SCRUM-47 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Create a ticket or complete a password reset; open the IT audit log.
+
+ACTUAL: Entries have action_type 'unknown', no reference and no details: IT sends audit_event type, ticket_id, ... instead of ADR-006 action_type, reference_id, details.
+
+EXPECTED: ticket_created / password_reset_initiated entries with the ticket or employee as reference.
+
+WHERE: rasa-it/actions/actions.py:165, 262"
+"209","SCRUM-41","Bug","[A2-11] IT 'ticket created' and 'reset initiated' cards render empty","slice-37","Sprint 4","High","Rohith G.S","IT — Rohith","audit-2","slice-37-it-real-rasa","relates-scrum-47","owner-b","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-11)
+SEVERITY: Major    FIXED BY: slice-37-it-real-rasa (SCRUM-47) — link this bug to SCRUM-47 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Create a ticket in the browser.
+
+ACTUAL: IT result cards carry `message`/`ticket_id` instead of `text`/`referenceId`, so the UI shows an empty success card and the ticket ID is invisible.
+
+EXPECTED: Result cards use the ADR-006 shape: text plus referenceId.
+
+WHERE: rasa-it/actions/actions.py result cards"
+"210","SCRUM-41","Bug","[A2-12] IT confirmation shows no ticket details","slice-37","Sprint 4","Medium","Rohith G.S","IT — Rohith","audit-2","slice-37-it-real-rasa","relates-scrum-47","owner-b","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-12)
+SEVERITY: Minor    FIXED BY: slice-37-it-real-rasa (SCRUM-47) — link this bug to SCRUM-47 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Raise a ticket and reach the confirmation step.
+
+ACTUAL: The reply says 'Please review your request' but the card is a slot_prompt with only Confirm/Cancel — nothing to review.
+
+EXPECTED: A confirmation card listing category, description and reporter.
+
+WHERE: rasa-it/actions/actions.py"
+"211","SCRUM-41","Bug","[A2-13] Password reset loops forever after entering another employee's ID","slice-37","Sprint 4","Medium","Rohith G.S","IT — Rohith","audit-2","slice-37-it-real-rasa","relates-scrum-47","owner-b","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-13)
+SEVERITY: Minor    FIXED BY: slice-37-it-real-rasa (SCRUM-47) — link this bug to SCRUM-47 with 'Relates'
+
+STEPS TO REPRODUCE:
+# As EMP-1012, start a reset and enter EMP-1001, then type anything.
+
+ACTUAL: Every reply repeats 'only available for your signed-in employee account' and re-asks; even restarting the request loops.
+
+EXPECTED: Explain once and offer to reset the signed-in account, or exit the flow; cancel works.
+
+WHERE: rasa-it/actions/actions.py validate_employee_id"
+"212","SCRUM-41","Bug","[A2-14] Gateway accepts cards with missing required fields","slice-32","Sprint 4","High","Mohammed Tahir Siddique","Platform — Tahir","audit-2","slice-32-rasa-contract-v2","relates-scrum-42","owner-d","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-14)
+SEVERITY: Major    FIXED BY: slice-32-rasa-contract-v2 (SCRUM-42) — link this bug to SCRUM-42 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Have a role pack return ""type"": ""confirmation"" with no rows.
+
+ACTUAL: The gateway only checks `type`, passes the card through, and the UI crashes on it.
+
+EXPECTED: Cards missing required fields are dropped (text reply used) and logged.
+
+WHERE: backend/app/services/dialogue_router.py \_valid_card"
+"213","SCRUM-41","Bug","[A2-15] One malformed card crashes the whole chat page","slice-33","Sprint 4","High","Mohammed Tahir Siddique","Platform — Tahir","audit-2","slice-33-chat-ui-hardening","relates-scrum-43","owner-d","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-15)
+SEVERITY: Major    FIXED BY: slice-33-chat-ui-hardening (SCRUM-43) — link this bug to SCRUM-43 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Render a slot_prompt card without options (or a data card without rows).
+
+ACTUAL: TypeError during render unmounts the page.
+
+EXPECTED: A malformed card falls back to the reply text; the page keeps working.
+
+WHERE: frontend/src/lib/chatCards.ts, src/components/chat/messages.tsx"
+"214","SCRUM-41","Bug","[A2-16] Retraining does not work on real Rasa for any pack","slice-10","Sprint 4","High","Rohith G.S","IT — Rohith","audit-2","slice-10-retraining","relates-scrum-31","owner-b","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-16)
+SEVERITY: Major    FIXED BY: slice-10-retraining (SCRUM-31) — link this bug to SCRUM-31 with 'Relates'
+
+STEPS TO REPRODUCE:
+# As it_admin (with RETRAINING_INTERNAL_TOKEN set), POST /api/admin/retrain and poll the job.
+
+ACTUAL: IT calls /internal/retrain, which only the old server.py had (404 on Rasa). HR/Admissions POST multipart files to /model/train (Rasa 3.6 accepts a YAML body) and call /model/reload, which doesn't exist. Admin-created FAQs therefore never get answered.
+
+EXPECTED: Retraining posts Rasa YAML to /model/train and loads the new model with PUT /model; a new FAQ is answered afterwards.
+
+WHERE: backend/app/services/retraining_service.py:97-120"
+"215","SCRUM-41","Bug","[A2-17] Compose never passes Gemini, TTS or retraining settings to the gateway","slice-34","Sprint 4","Medium","Mohammed Tahir Siddique","Platform — Tahir","audit-2","slice-34-local-demo-stack","relates-scrum-44","owner-d","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-17)
+SEVERITY: Minor    FIXED BY: slice-34-local-demo-stack (SCRUM-44) — link this bug to SCRUM-44 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Fill GEMINI_API_KEY / GOOGLE_APPLICATION_CREDENTIALS in .env; docker compose up.
+
+ACTUAL: The gateway service lists neither variable, so the rephraser and talk-mode audio stay off; no secrets mount exists for the TTS key file.
+
+EXPECTED: Optional settings flow from .env into the gateway; a read-only secrets mount for the TTS key.
+
+WHERE: docker-compose.yml gateway environment"
+"216","SCRUM-41","Bug","[A2-18] Rephraser defaults to the retired gemini-1.5-flash model","slice-34","Sprint 4","Low","Mohammed Tahir Siddique","Platform — Tahir","audit-2","slice-34-local-demo-stack","relates-scrum-44","owner-d","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-18)
+SEVERITY: Trivial    FIXED BY: slice-34-local-demo-stack (SCRUM-44) — link this bug to SCRUM-44 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Configure GEMINI_API_KEY without GEMINI_MODEL.
+
+ACTUAL: The default model name is from the Gemini 1.5 generation, which Google has retired; generation would fail and fall back to the original text.
+
+EXPECTED: A current default model, overridable via GEMINI_MODEL in .env.example.
+
+WHERE: backend/app/config.py GEMINI_MODEL"
+"217","SCRUM-41","Bug","[A2-19] rasa-shared tests are not run in CI","slice-38","Sprint 4","Medium","Rohith G.S","IT — Rohith","audit-2","slice-38-it-data-and-ci","relates-scrum-48","owner-b","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-19)
+SEVERITY: Minor    FIXED BY: slice-38-it-data-and-ci (SCRUM-48) — link this bug to SCRUM-48 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Read .github/workflows/ci.yml.
+
+ACTUAL: The shared channel, tracker-store redaction and contract tests (31) only run locally.
+
+EXPECTED: CI runs rasa-shared tests on Python 3.10.
+
+WHERE: .github/workflows/ci.yml"
+"218","SCRUM-41","Bug","[A2-20] Form answers report the intent of the message that started the form","slice-32","Sprint 4","Medium","Mohammed Tahir Siddique","Platform — Tahir","audit-2","slice-32-rasa-contract-v2","relates-scrum-42","owner-d","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-20)
+SEVERITY: Minor    FIXED BY: slice-32-rasa-contract-v2 (SCRUM-42) — link this bug to SCRUM-42 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Run a pack with Rasa's in-memory tracker store (no tracker_store, or Postgres unreachable when Rasa starts).
+# Say ""my laptop screen is broken"", then ""cancel"", then ""hardware"".
+
+ACTUAL: Every reply reports raise_ticket 0.97: the channel reads tracker.latest_message from a tracker rebuilt from applied events, and Rasa folds happy-path form turns out of those. The gateway stores and logs the wrong intent, confidence and entities for each form answer.
+
+EXPECTED: The reply describes the message just handled (cancel 0.76, then inform 1.0).
+
+WHERE: rasa-shared/vario_rasa/channel.py (tracker.latest_message)"
+"219","SCRUM-41","Bug","[A2-21] 'cancel' cannot end IT ticket creation or password reset","slice-37","Sprint 4","High","Rohith G.S","IT — Rohith","audit-2","slice-37-it-real-rasa","relates-scrum-47","owner-b","FOUND IN: Integration audit 2 (2026-11-04, main @ daaee87), docs/testing/audit-2-integration.md (defect A2-21)
+SEVERITY: Major    FIXED BY: slice-37-it-real-rasa (SCRUM-47) — link this bug to SCRUM-47 with 'Relates'
+
+STEPS TO REPRODUCE:
+# Say ""my laptop screen is broken"", then ""cancel"".
+
+ACTUAL: The category slot takes 'cancel' as its value, validation re-asks 'Choose hardware, software, ...', and the cancel/goodbye/greet rules never run. The same happens at the description, employee-ID and security-answer steps.
+
+EXPECTED: Cancel, goodbye and greet end the form at any step.
+
+WHERE: rasa-it/domain.yml from_text slot mappings"

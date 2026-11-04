@@ -11,6 +11,8 @@ import logging
 from typing import Any, Awaitable, Callable, Text
 
 from rasa.core.channels.channel import CollectingOutputChannel, InputChannel, UserMessage
+from rasa.shared.core.events import UserUttered
+from rasa.shared.core.trackers import DialogueStateTracker
 from sanic import Blueprint, response
 from sanic.request import Request
 from sanic.response import HTTPResponse
@@ -18,6 +20,19 @@ from sanic.response import HTTPResponse
 from vario_rasa.contract import build_converse_response, validate_converse_request
 
 logger = logging.getLogger(__name__)
+
+
+def _this_turn(tracker: DialogueStateTracker) -> UserUttered:
+    """The user message just handled.
+
+    Not `tracker.latest_message`: a tracker loaded from the store replays only its
+    "applied" events, and Rasa folds each happy-path form turn into the previous form
+    run, so `latest_message` would still be the message that started the form.
+    """
+    for event in reversed(tracker.events):
+        if isinstance(event, UserUttered):
+            return event
+    return UserUttered.empty()
 
 
 class VarioInputChannel(InputChannel):
@@ -55,7 +70,7 @@ class VarioInputChannel(InputChannel):
 
             tracker = await request.app.ctx.agent.tracker_store.retrieve(sender)
             payload = build_converse_response(
-                parse_data=tracker.latest_message.parse_data,
+                parse_data=_this_turn(tracker).parse_data,
                 active_loop=tracker.active_loop_name,
                 requested_slot=tracker.get_slot("requested_slot"),
                 bot_messages=collector.messages,

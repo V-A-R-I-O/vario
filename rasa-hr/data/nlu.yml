@@ -101,10 +101,10 @@ nlu:
       - [sick](leave_type)
       - [annual](leave_type)
       - [earned](leave_type)
-      - [2026-11-10](start_date)
-      - [2026-11-15](start_date)
-      - [2026-11-20](end_date)
-      - [2026-11-25](end_date)
+      - 2026-11-10
+      - 2026-11-15
+      - 2026-11-20
+      - 2026-11-25
       - tomorrow
       - next monday
       - next friday
@@ -117,6 +117,22 @@ nlu:
       - attending wedding
       - unwell with fever
       - doctor consultation
+
+  # Policies HR doesn't cover here — answer honestly instead of with the leave policy (M4a).
+  - intent: ask_unsupported_policy
+    examples: |
+      - what is the travel reimbursement policy?
+      - travel policy
+      - how do I claim travel expenses?
+      - what is the dress code policy?
+      - dress code
+      - what is the expense claim policy?
+      - what is the overtime policy?
+      - parking policy
+      - what is the policy on gifts?
+      - what is the referral bonus policy?
+      - what is the relocation policy?
+      - what is the notice period policy?
 
   - intent: affirm
     examples: |
@@ -193,15 +209,69 @@ nlu:
     examples: |
       - what is the company leave policy?
       - how many annual leaves are granted per year?
-      - what is the policy for maternity leave?
-      - can I carry forward unused leaves to next year?
-      - what are the rules for taking sick leave?
-      - how many days of paternity leave do I get?
-      - tell me about the bereavement leave guidelines
-      - what is the leave carry forward policy?
-      - how does maternity leave work?
       - company leave policy and rules
       - employee leave policy guidelines
+      - what is the leave policy?
+      - how many leaves do we get in a year?
+      - tell me about the leave policy
+      - what are the leave entitlements?
+
+  # One intent per policy topic so each answer is its own admin-editable template (M4b).
+  - intent: ask_maternity_policy
+    examples: |
+      - what is the maternity policy?
+      - what is the policy for maternity leave?
+      - how does maternity leave work?
+      - how many weeks of maternity leave do I get?
+      - maternity leave policy
+      - tell me about maternity benefits
+      - adoption leave policy
+      - how long is maternity leave?
+      - am I eligible for maternity leave?
+
+  - intent: ask_paternity_policy
+    examples: |
+      - what is the paternity policy?
+      - how many days of paternity leave do I get?
+      - paternity leave policy
+      - how long is paternity leave?
+      - tell me about paternity leave
+      - leave for new fathers
+      - can I take paternity leave?
+      - paternity benefits
+
+  - intent: ask_sick_policy
+    examples: |
+      - what are the rules for taking sick leave?
+      - sick leave policy
+      - do I need a medical certificate for sick leave?
+      - how many sick days do I get per year?
+      - what is the sick leave policy?
+      - rules for medical leave
+      - tell me about sick leave guidelines
+      - when do I need a doctor's note?
+
+  - intent: ask_bereavement_policy
+    examples: |
+      - tell me about the bereavement leave guidelines
+      - bereavement leave policy
+      - what is the bereavement policy?
+      - how many days off for a death in the family?
+      - compassionate leave policy
+      - leave for a family bereavement
+      - funeral leave policy
+      - what is compassionate leave?
+
+  - intent: ask_carry_forward_policy
+    examples: |
+      - can I carry forward unused leaves to next year?
+      - what is the leave carry forward policy?
+      - carry forward policy
+      - can unused leave roll over?
+      - how many days can I carry forward?
+      - do unused leaves expire?
+      - leave rollover policy
+      - what happens to my unused leave at year end?
 
   - intent: greet
     examples: |

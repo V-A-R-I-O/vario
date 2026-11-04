@@ -71,6 +71,42 @@ HR_LEAVE_BALANCE_PHRASES = [
     "how many days off do I have available?",
 ]
 
+# Policy topics (slice-36, M4b): each is its own static FAQ, so its answer is an
+# admin-editable template. Text matches rasa-hr/domain.yml and mock-hrms /policies.
+HR_POLICY_TOPICS = [
+    (
+        'ask_maternity_policy',
+        'ask_maternity_policy_response',
+        'Primary caregivers receive 26 weeks of paid maternity and adoption leave.',
+        ['what is the maternity policy?', 'what is the policy for maternity leave?', 'how does maternity leave work?', 'how many weeks of maternity leave do I get?', 'maternity leave policy', 'tell me about maternity benefits', 'adoption leave policy', 'how long is maternity leave?', 'am I eligible for maternity leave?'],
+    ),
+    (
+        'ask_paternity_policy',
+        'ask_paternity_policy_response',
+        "Secondary caregivers receive 2 weeks of paid paternity leave within the child's first 6 months.",
+        ['what is the paternity policy?', 'how many days of paternity leave do I get?', 'paternity leave policy', 'how long is paternity leave?', 'tell me about paternity leave', 'leave for new fathers', 'can I take paternity leave?', 'paternity benefits'],
+    ),
+    (
+        'ask_sick_policy',
+        'ask_sick_policy_response',
+        'Employees are entitled to 10 paid sick days per year. Sick leave exceeding 3 consecutive days requires a medical certificate.',
+        ['what are the rules for taking sick leave?', 'sick leave policy', 'do I need a medical certificate for sick leave?', 'how many sick days do I get per year?', 'what is the sick leave policy?', 'rules for medical leave', 'tell me about sick leave guidelines', "when do I need a doctor's note?"],
+    ),
+    (
+        'ask_bereavement_policy',
+        'ask_bereavement_policy_response',
+        'Employees are entitled to 5 consecutive business days of paid compassionate leave upon the loss of an immediate family member.',
+        ['tell me about the bereavement leave guidelines', 'bereavement leave policy', 'what is the bereavement policy?', 'how many days off for a death in the family?', 'compassionate leave policy', 'leave for a family bereavement', 'funeral leave policy', 'what is compassionate leave?'],
+    ),
+    (
+        'ask_carry_forward_policy',
+        'ask_carry_forward_policy_response',
+        'Employees may carry forward up to 5 days of unused earned leave into the following calendar year.',
+        ['can I carry forward unused leaves to next year?', 'what is the leave carry forward policy?', 'carry forward policy', 'can unused leave roll over?', 'how many days can I carry forward?', 'do unused leaves expire?', 'leave rollover policy', 'what happens to my unused leave at year end?'],
+    ),
+]
+
+
 async def seed_hr_data(session: AsyncSession):
     """Seed HR role-pack intents, training phrases, and response templates (slice-12)."""
     logger.info("Seeding HR role-pack data...")
@@ -253,6 +289,21 @@ async def seed_hr_data(session: AsyncSession):
         existing = await session.execute(phrase_stmt)
         if not existing.scalar_one_or_none():
             session.add(TrainingPhrase(intent_id=wfh_intent.intent_id, phrase_text=phrase_text))
+
+    # 4c. Policy topic FAQs (slice-36): intent and training phrases. Their templates
+    # (ask_<topic>_policy_response) are seeded with variants in step 13.
+    for intent_name, _template_key, _base_text, phrases in HR_POLICY_TOPICS:
+        topic_intent = (await session.execute(select(Intent).where(Intent.name == intent_name))).scalar_one_or_none()
+        if not topic_intent:
+            topic_intent = Intent(role_pack="hr", name=intent_name, intent_type="static_faq", needs_retrain=False)
+            session.add(topic_intent)
+            await session.flush()
+            logger.info(f"Created intent: {intent_name}")
+        for phrase_text in phrases:
+            existing = await session.execute(select(TrainingPhrase).where(
+                TrainingPhrase.intent_id == topic_intent.intent_id, TrainingPhrase.phrase_text == phrase_text))
+            if not existing.scalar_one_or_none():
+                session.add(TrainingPhrase(intent_id=topic_intent.intent_id, phrase_text=phrase_text))
 
     # 5. Response Template: check_leave_balance_response
     stmt_tmpl = select(ResponseTemplate).where(
@@ -562,14 +613,17 @@ async def seed_hr_data(session: AsyncSession):
         else:
             t_obj.base_text = base_text
 
-        for v_text in variants:
+        # Position 0 is the original; the rest must be deletable (M9b).
+        for idx, v_text in enumerate(variants):
             v_stmt = select(ResponseVariant).where(
                 ResponseVariant.template_id == t_obj.template_id,
                 ResponseVariant.variant_text == v_text,
             )
-            existing_v = await session.execute(v_stmt)
-            if not existing_v.scalar_one_or_none():
-                session.add(ResponseVariant(template_id=t_obj.template_id, variant_text=v_text))
+            existing_v = (await session.execute(v_stmt)).scalar_one_or_none()
+            if not existing_v:
+                session.add(ResponseVariant(template_id=t_obj.template_id, variant_text=v_text, position=idx))
+            else:
+                existing_v.position = idx
 
     # 14. Response Templates for Leave Request Status (FR-6 / slice-36)
     stmt_status_tmpl = select(ResponseTemplate).where(
@@ -1130,7 +1184,8 @@ async def seed_admissions_data(session: AsyncSession):
             existing_var_fee.position = idx
 
 async def main():
-    logger.info(f"Connecting to database at {settings.DATABASE_URL}")
+    # Never log the full URL: it contains the database password.
+    logger.info("Seeding database...")
     async with AsyncSessionLocal() as session:
         # Run role-pack seeders
         await seed_hr_data(session)
