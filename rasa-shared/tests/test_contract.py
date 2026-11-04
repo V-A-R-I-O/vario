@@ -5,6 +5,7 @@ import pytest
 
 from tests.conftest import CONTRACT_DIR
 from vario_rasa.contract import (
+    CARD_REQUIRED_FIELDS,
     CARD_TYPES,
     build_converse_response,
     entities_to_dict,
@@ -49,7 +50,8 @@ def test_text_and_vario_payload_combine_into_one_response():
         requested_slot=None,
         bot_messages=[
             {"text": "Here is your balance."},
-            {"custom": vario_payload(template_key="k", slots={"total": 2}, card={"type": "data_card", "rows": []})},
+            {"custom": vario_payload(template_key="k", slots={"total": 2},
+                                       card={"type": "data_card", "rows": [{"label": "Total", "value": "2"}]})},
         ],
     )
     assert result["response_text"] == "Here is your balance."
@@ -151,3 +153,24 @@ def test_response_fixtures_follow_the_contract(name):
     payload = _fixture(name)
     assert set(payload) == set(_fixture("converse-response-card-turn.json"))
     assert payload["card"] is None or is_valid_card(payload["card"])
+
+
+def test_required_fields_match_the_shared_fixture():
+    expected = _fixture("card-fields.json")
+    assert {k: list(v) for k, v in CARD_REQUIRED_FIELDS.items()} == expected
+    assert set(expected) == CARD_TYPES
+
+
+@pytest.mark.parametrize("card", [
+    {"type": "confirmation", "title": "Confirm", "text": "ok?", "options": [{"label": "Confirm"}]},  # no rows
+    {"type": "slot_prompt", "text": "Start date?"},                                              # no options
+    {"type": "result", "message": "Ticket created", "ticket_id": "IT-1"},                       # text missing
+    {"type": "data_card", "rows": [{"name": "Status"}]},                                         # row shape
+])
+def test_cards_the_ui_cannot_render_are_rejected(card):
+    assert not is_valid_card(card)
+    with pytest.raises(ValueError):
+        vario_payload(card=card)
+    reply = build_converse_response(parse_data=_parse(), active_loop=None, requested_slot=None,
+                                    bot_messages=[{"text": "fallback text"}, {"custom": {"vario": {"card": card}}}])
+    assert reply["card"] is None and reply["response_text"] == "fallback text"

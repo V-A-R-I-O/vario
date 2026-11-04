@@ -88,6 +88,14 @@ Every Rasa server serves this through the shared custom input channel `vario_ras
 | `card` | One UI card for this turn, or `null`. Its shape is **exactly the frontend `BotMessageData`** from `frontend/src/components/chat/types.ts` (ui-reference §4), minus the callbacks. Allowed types: `plain_text`, `data_card`, `slot_prompt`, `confirmation`, `result`, `not_found`, `faq_answer`, `error`, `list`. The canonical list is `rasa-shared/contract/card-types.json`. A card with any other type is dropped by both the channel and the gateway. |
 | `sensitive_next_input` | `true` when this reply asks for a secret (§6). |
 
+**Required fields** (`rasa-shared/contract/card-fields.json`). A card is valid only if these fields are present and non-empty:
+- `text` for `plain_text`, `faq_answer`, `error`, `not_found` and `result`;
+- `rows` of `{label, value}` for `data_card` and `confirmation`;
+- `text` and `options` of `{label, value?}` for `slot_prompt`;
+- `items` for `list`.
+
+`vario_payload()` rejects a malformed card in the action. The channel and the gateway drop one, so the text reply shows instead of a broken card.
+
 Packs compose the generic UI types (e.g. a leave balance is a `data_card`), so a new role pack needs no frontend code (FR-3).
 
 **What the UI sends back** (slice-33): a `slot_prompt` option sends its `value` (or its `label` when there is no value) as the next user message. A `confirmation` sends `confirm` or `cancel`, so packs must classify those two words as their affirm/deny intents. Only the latest reply's buttons are clickable, and only while no message is in flight.

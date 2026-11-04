@@ -233,3 +233,24 @@ async def test_expired_session_starts_fresh():
         _, mock = await _say(client, "u1", conv_id, "hello", reply(intent="greet", card=None))
 
     assert mock.await_args.args[1]["session"] == {"current_form": None, "current_step": None, "slots": {}}
+
+
+def test_card_required_fields_match_the_shared_contract():
+    assert {k: list(v) for k, v in dialogue_router.CARD_REQUIRED_FIELDS.items()} == contract("card-fields.json")
+
+
+@pytest.mark.parametrize("card", [
+    {"type": "confirmation", "title": "Confirm leave request", "text": "ok?", "options": [{"label": "Confirm"}]},
+    {"type": "slot_prompt", "text": "What is the start date?"},
+    {"type": "result", "title": "Ticket created", "message": "Created", "ticket_id": "IT-1004"},
+])
+@pytest.mark.asyncio
+async def test_cards_the_ui_cannot_render_are_dropped(card):
+    async with _client() as client:
+        conv_id = await _conversation(client, "u1")
+        res, _ = await _say(client, "u1", conv_id, "hello", reply(card=card, response_text="Plain reply."))
+
+    data = res.json()["data"]
+    assert res.status_code == 200
+    assert data["card"] is None
+    assert data["response_text"]

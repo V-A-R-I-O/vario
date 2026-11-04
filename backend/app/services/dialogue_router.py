@@ -41,6 +41,20 @@ CARD_TYPES = frozenset(
 )
 
 
+# Fields the UI needs to render each card type; must match rasa-shared/contract/card-fields.json.
+CARD_REQUIRED_FIELDS = {
+    "plain_text": ("text",),
+    "faq_answer": ("text",),
+    "error": ("text",),
+    "not_found": ("text",),
+    "result": ("text",),
+    "data_card": ("rows",),
+    "confirmation": ("rows",),
+    "slot_prompt": ("text", "options"),
+    "list": ("items",),
+}
+
+
 class RolePackUnavailableError(Exception):
     """The role pack could not be reached or returned an unusable reply."""
 
@@ -85,12 +99,32 @@ async def _post_to_rasa(url: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         return resp.json()
 
 
+def _card_problem(card: Any) -> Optional[str]:
+    if not isinstance(card, dict) or card.get("type") not in CARD_TYPES:
+        return "unknown type"
+    kind = card["type"]
+    missing = [f for f in CARD_REQUIRED_FIELDS[kind] if not card.get(f)]
+    if missing:
+        return f"{kind} missing {', '.join(missing)}"
+    if kind in ("data_card", "confirmation") and not all(
+        isinstance(r, dict) and "label" in r and "value" in r for r in card["rows"]
+    ):
+        return f"{kind} rows need label and value"
+    if kind == "slot_prompt" and not all(isinstance(o, dict) and o.get("label") for o in card["options"]):
+        return "slot_prompt options need a label"
+    if kind == "list" and not isinstance(card["items"], list):
+        return "list items must be a list"
+    return None
+
+
 def _valid_card(card: Any, role_pack: str) -> Optional[Dict[str, Any]]:
+    """Return the card if the UI can render it; otherwise drop it so the text reply shows."""
     if card is None:
         return None
-    if isinstance(card, dict) and card.get("type") in CARD_TYPES:
+    problem = _card_problem(card)
+    if problem is None:
         return card
-    logger.warning("dropping card with unknown type from role_pack=%s", role_pack)
+    logger.warning("dropping card from role_pack=%s: %s", role_pack, problem)
     return None
 
 
