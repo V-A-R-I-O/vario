@@ -16,6 +16,11 @@ intents:
       use_entities:
         - policy_topic
   - ask_wfh_policy
+  - ask_maternity_policy
+  - ask_paternity_policy
+  - ask_sick_policy
+  - ask_bereavement_policy
+  - ask_carry_forward_policy
   - inform:
       use_entities:
         - leave_type
@@ -64,7 +69,8 @@ slots:
             requested_slot: leave_type
       - type: from_text
         not_intent: [cancel, check_leave_balance, ask_leave_status, ask_policy_faq,
-                     ask_wfh_policy, ask_unsupported_policy, goodbye]
+                     ask_wfh_policy, ask_unsupported_policy, goodbye,
+                     ask_maternity_policy, ask_paternity_policy, ask_sick_policy, ask_bereavement_policy, ask_carry_forward_policy]
         conditions:
           - active_loop: leave_request_form
             requested_slot: leave_type
@@ -83,7 +89,8 @@ slots:
             requested_slot: start_date
       - type: from_text
         not_intent: [cancel, check_leave_balance, ask_leave_status, ask_policy_faq,
-                     ask_wfh_policy, ask_unsupported_policy, goodbye]
+                     ask_wfh_policy, ask_unsupported_policy, goodbye,
+                     ask_maternity_policy, ask_paternity_policy, ask_sick_policy, ask_bereavement_policy, ask_carry_forward_policy]
         conditions:
           - active_loop: leave_request_form
             requested_slot: start_date
@@ -102,7 +109,8 @@ slots:
             requested_slot: end_date
       - type: from_text
         not_intent: [cancel, check_leave_balance, ask_leave_status, ask_policy_faq,
-                     ask_wfh_policy, ask_unsupported_policy, goodbye]
+                     ask_wfh_policy, ask_unsupported_policy, goodbye,
+                     ask_maternity_policy, ask_paternity_policy, ask_sick_policy, ask_bereavement_policy, ask_carry_forward_policy]
         conditions:
           - active_loop: leave_request_form
             requested_slot: end_date
@@ -113,7 +121,8 @@ slots:
     mappings:
       - type: from_text
         not_intent: [cancel, check_leave_balance, ask_leave_status, ask_policy_faq,
-                     ask_wfh_policy, ask_unsupported_policy, goodbye]
+                     ask_wfh_policy, ask_unsupported_policy, goodbye,
+                     ask_maternity_policy, ask_paternity_policy, ask_sick_policy, ask_bereavement_policy, ask_carry_forward_policy]
         conditions:
           - active_loop: leave_request_form
             requested_slot: reason
@@ -142,7 +151,8 @@ slots:
             requested_slot: leave_confirm
       - type: from_text
         not_intent: [cancel, check_leave_balance, ask_leave_status, ask_policy_faq,
-                     ask_wfh_policy, ask_unsupported_policy, goodbye]
+                     ask_wfh_policy, ask_unsupported_policy, goodbye,
+                     ask_maternity_policy, ask_paternity_policy, ask_sick_policy, ask_bereavement_policy, ask_carry_forward_policy]
         conditions:
           - active_loop: leave_request_form
             requested_slot: leave_confirm
