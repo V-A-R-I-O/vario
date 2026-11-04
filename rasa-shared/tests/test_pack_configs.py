@@ -12,7 +12,7 @@ from rasa.core.utils import AvailableEndpoints
 from tests.conftest import RASA_SHARED
 
 REPO = RASA_SHARED.parent
-PACKS = ["rasa-hr", "rasa-it"]
+PACKS = ["rasa-hr", "rasa-it", "rasa-admissions"]
 ENV = {
     "ACTION_ENDPOINT_URL": "http://actions.test:5055/webhook",
     "POSTGRES_HOST": "postgres.test",

@@ -1,11 +1,28 @@
-# V.A.R.I.O. — Local Development Stack (Docker Compose)
+# V.A.R.I.O. — local demo stack (Docker Compose). Runbook: docs/demo/local-demo.md
 #
-# Quick start:
-#   cp .env.example .env        # fill in real values
-#   docker compose up            # core stack (postgres, gateway, frontend, mock-auth)
-#   docker compose --profile full up   # all services including stubs
+#   cp .env.example .env     # then set JWT_SECRET and RETRAINING_INTERNAL_TOKEN
+#   docker compose build     # builds every image and trains the three Rasa models
+#   docker compose up -d     # starts everything; open http://localhost:3000
 #
-# See README.md → "Local Development" for full details.
+# Only the frontend (port 3000) is reachable from other laptops; it proxies /api
+# to the gateway. Every other port is published on 127.0.0.1 for debugging only.
+
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 5
+
+x-rasa-env: &rasa-env
+  POSTGRES_HOST: postgres
+  POSTGRES_USER: ${POSTGRES_USER:-vario}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}
+  RASA_AUTH_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-}
+  RASA_TELEMETRY_ENABLED: "false"
+
+x-rasa-server-healthcheck: &rasa-server-healthcheck
+  <<: *healthcheck
+  retries: 12
+  start_period: 120s
 
 services:
   # ── Database ──────────────────────────────────────────────────────────────
@@ -14,172 +31,192 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-vario}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vario}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}
       POSTGRES_DB: ${POSTGRES_DB:-vario}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./scripts/postgres/init-rasa-databases.sql:/docker-entrypoint-initdb.d/10-rasa-databases.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vario}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      <<: *healthcheck
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vario} -d ${POSTGRES_DB:-vario}"]
 
-  # ── Backend (FastAPI Gateway) ─────────────────────────────────────────────
+  # ── Gateway (FastAPI) — migrates and seeds on start ───────────────────────
   gateway:
     build:
       context: ./backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     volumes:
+      # Pack training data for admin retraining (ADR-009).
       - ./rasa-hr:/rolepacks/hr:ro
       - ./rasa-it:/rolepacks/it:ro
       - ./rasa-admissions:/rolepacks/admissions:ro
-    restart: unless-stopped
-    ports:
-      - "${API_PORT:-8000}:8000"
+      # Optional Text-to-Speech key: put it at ./secrets/gcp-tts-sa.json.
+      - ./secrets:/run/secrets/vario:ro
     environment:
-      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-vario}:${POSTGRES_PASSWORD:-vario}@postgres:5432/${POSTGRES_DB:-vario}"
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-vario}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (copy .env.example)}@postgres:5432/${POSTGRES_DB:-vario}"
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env (copy .env.example)}
       JWT_EXPIRY_MINUTES: ${JWT_EXPIRY_MINUTES:-60}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.4}
+      SESSION_TTL_MINUTES: ${SESSION_TTL_MINUTES:-60}
       RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-}
       ROLE_PACKS_DIR: /rolepacks
       MOCK_AUTH_URL: http://mock-auth:9001
-      RASA_HR_URL: http://rasa-hr:5005
-      RASA_IT_URL: http://rasa-it:5006
-      RASA_ADMISSIONS_URL: http://rasa-admissions:5005
       MOCK_HRMS_URL: http://mock-hrms:9002
       MOCK_ITSM_URL: http://mock-itsm:9003
       MOCK_ADMISSIONS_URL: http://mock-admissions:9004
+      RASA_HR_URL: http://rasa-hr:5005
+      RASA_IT_URL: http://rasa-it:5006
+      RASA_ADMISSIONS_URL: http://rasa-admissions:5005
+      # Optional services; each degrades gracefully when unset.
+      REPHRASER_PROVIDER: ${REPHRASER_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.8-flash}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/vario/gcp-tts-sa.json
     depends_on:
       postgres:
         condition: service_healthy
+      mock-auth:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      start_period: 30s
 
-  # ── Frontend (Next.js) ───────────────────────────────────────────────────
+  # ── Frontend (Next.js) — the only service other laptops need ──────────────
   frontend:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api}
+        # The browser calls the same origin; Next.js forwards /api to the gateway.
+        NEXT_PUBLIC_API_BASE_URL: /api
+        API_PROXY_TARGET: http://gateway:8000
     restart: unless-stopped
     ports:
-      - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api}
+      - "${FRONTEND_PORT:-3000}:3000"
     depends_on:
       gateway:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
+      <<: *healthcheck
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/login"]
+      start_period: 20s
 
-  # ── Mock Services ────────────────────────────────────────────────────────
+  # ── Mock internal systems ─────────────────────────────────────────────────
   mock-auth:
     build:
       context: ./mock-auth-service
     restart: unless-stopped
     ports:
-      - "${MOCK_AUTH_PORT:-9001}:9001"
+      - "127.0.0.1:${MOCK_AUTH_PORT:-9001}:9001"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9001/docs')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9001/docs')"]
 
-  # Stub — replace build context when mock-hrms-service is implemented
   mock-hrms:
-    image: busybox:1.36
-    profiles: [full]
-    command: ["sh", "-c", "echo 'mock-hrms stub — replace with real service'; httpd -f -p 9002 -h /tmp"]
+    build:
+      context: ./mock-hrms-service
+    restart: unless-stopped
     ports:
-      - "${MOCK_HRMS_PORT:-9002}:9002"
+      - "127.0.0.1:${MOCK_HRMS_PORT:-9002}:9002"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9002/health')"]
 
-  # Mock ITSM backend (tickets + demo identity verification)
   mock-itsm:
     build:
       context: ./mock-itsm-service
-    profiles: [full]
     restart: unless-stopped
     environment:
       IDENTITY_ATTEMPTS_PATH: /data/identity-attempts.json
     volumes:
       - itsmdata:/data
     ports:
-      - "${MOCK_ITSM_PORT:-9003}:9003"
+      - "127.0.0.1:${MOCK_ITSM_PORT:-9003}:9003"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9003/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9003/health')"]
 
-  # Stub — replace build context when mock-admissions-service is implemented
   mock-admissions:
-    image: busybox:1.36
-    profiles: [full]
-    command: ["sh", "-c", "echo 'mock-admissions stub — replace with real service'; httpd -f -p 9004 -h /tmp"]
-    ports:
-      - "${MOCK_ADMISSIONS_PORT:-9004}:9004"
-
-  # ── Rasa NLU Instances ───────────────────────────────────────────────────
-  # Stubs — replace with trained models when role-pack slices land
-
-  rasa-hr:
-    image: rasa/rasa:3.6.20-full
-    profiles: [full]
-    ports:
-      - "5005:5005"
-    volumes:
-      - ./rasa-hr:/app
-    command: ["run", "--enable-api", "--port", "5005"]
-
-  rasa-it:
     build:
+      context: ./mock-admissions-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MOCK_ADMISSIONS_PORT:-9004}:9004"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9004/health')"]
+
+  # ── Role packs: real Rasa 3.6.20 + action server per pack ─────────────────
+  # Each pair shares one image (built from the repo root, trains at build time).
+  # Server models live in a volume so admin retraining survives recreation.
+  rasa-hr:
+    build: &rasa-hr-build
       context: .
-      dockerfile: rasa-it/Dockerfile
-    profiles: [full]
+      dockerfile: rasa-hr/Dockerfile
+    image: vario-rasa-hr:local
     restart: unless-stopped
     environment:
-      MOCK_ITSM_URL: http://mock-itsm:9003
-      ACTION_ENDPOINT_URL: http://rasa-it-actions:5055/webhook
-      POSTGRES_HOST: postgres
-      POSTGRES_DB: ${POSTGRES_DB:-vario}
-      POSTGRES_USER: ${POSTGRES_USER:-vario}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vario}
-      RETRAINING_INTERNAL_TOKEN: ${RETRAINING_INTERNAL_TOKEN:-}
-      RETRAINING_DATA_PATH: /var/lib/vario/training_examples.json
+      <<: *rasa-env
+      POSTGRES_DB: rasa_hr
+      ACTION_ENDPOINT_URL: http://rasa-hr-actions:5055/webhook
     volumes:
-      - rasa-it-data:/var/lib/vario
+      - rasa-hr-data:/var/lib/vario
+    ports:
+      - "127.0.0.1:5005:5005"
     depends_on:
       postgres:
         condition: service_healthy
-      mock-itsm:
+      rasa-hr-actions:
+        condition: service_healthy
+    healthcheck:
+      <<: *rasa-server-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5005/webhooks/vario/')"]
+
+  rasa-hr-actions:
+    build: *rasa-hr-build
+    image: vario-rasa-hr:local
+    restart: unless-stopped
+    command: ["run", "actions", "--actions", "actions", "--port", "5055"]
+    environment:
+      MOCK_HRMS_URL: http://mock-hrms:9002
+    depends_on:
+      mock-hrms:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5055/health')"]
+      start_period: 20s
+
+  rasa-it:
+    build: &rasa-it-build
+      context: .
+      dockerfile: rasa-it/Dockerfile
+    image: vario-rasa-it:local
+    restart: unless-stopped
+    environment:
+      <<: *rasa-env
+      POSTGRES_DB: rasa_it
+      ACTION_ENDPOINT_URL: http://rasa-it-actions:5055/webhook
+    volumes:
+      - rasa-it-data:/var/lib/vario
+    ports:
+      - "127.0.0.1:5006:5006"
+    depends_on:
+      postgres:
         condition: service_healthy
       rasa-it-actions:
         condition: service_healthy
-    ports:
-      - "5006:5006"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5006/status')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+      <<: *rasa-server-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5006/webhooks/vario/')"]
 
   rasa-it-actions:
-    build:
-      context: .
-      dockerfile: rasa-it/Dockerfile
-    profiles: [full]
+    build: *rasa-it-build
+    image: vario-rasa-it:local
     restart: unless-stopped
     command: ["run", "actions", "--actions", "actions", "--port", "5055"]
     environment:
@@ -188,22 +225,51 @@ services:
       mock-itsm:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5055/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5055/health')"]
+      start_period: 20s
 
   rasa-admissions:
-    image: rasa/rasa:3.6.20-full
-    profiles: [full]
-    ports:
-      - "5007:5005"
+    build: &rasa-admissions-build
+      context: .
+      dockerfile: rasa-admissions/Dockerfile
+    image: vario-rasa-admissions:local
+    restart: unless-stopped
+    environment:
+      <<: *rasa-env
+      POSTGRES_DB: rasa_admissions
+      ACTION_ENDPOINT_URL: http://rasa-admissions-actions:5055/webhook
     volumes:
-      - ./rasa-admissions:/app
-    command: ["run", "--enable-api", "--port", "5005"]
+      - rasa-admissions-data:/var/lib/vario
+    ports:
+      - "127.0.0.1:5007:5005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rasa-admissions-actions:
+        condition: service_healthy
+    healthcheck:
+      <<: *rasa-server-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5005/webhooks/vario/')"]
+
+  rasa-admissions-actions:
+    build: *rasa-admissions-build
+    image: vario-rasa-admissions:local
+    restart: unless-stopped
+    command: ["run", "actions", "--actions", "actions", "--port", "5055"]
+    environment:
+      MOCK_ADMISSIONS_URL: http://mock-admissions:9004
+    depends_on:
+      mock-admissions:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5055/health')"]
+      start_period: 20s
 
 volumes:
   pgdata:
   itsmdata:
+  rasa-hr-data:
   rasa-it-data:
+  rasa-admissions-data:

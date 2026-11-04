@@ -85,3 +85,7 @@ coverage.xml
 *.njsproj
 *.sln
 *.swp
+
+# Local key files (e.g. the optional TTS service account); only the README is tracked.
+secrets/*
+!secrets/README.md
