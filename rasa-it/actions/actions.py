@@ -56,12 +56,11 @@ class ActionCheckTicketStatus(Action):
         except BackendUnavailableError:
             return {"text": "I can't reach the IT ticket system right now. Please try again shortly.",
                     "template_key": None, "slots": {"ticket_id": clean_id},
-                    "card": {"type": "error", "title": "IT system unavailable", "message": "Please try again shortly."}}
+                    "card": {"type": "error", "text": "I can't reach the IT ticket system right now. Please try again shortly."}}
         if not ticket.get("found"):
             return {"text": f"I couldn't find ticket {clean_id}. Please check the ID and try again.",
                     "template_key": None, "slots": {"ticket_id": clean_id, "found": False},
-                    "card": {"type": "not_found", "title": "Ticket not found",
-                             "message": f"No ticket was found for {clean_id}.", "ticket_id": clean_id}}
+                    "card": {"type": "not_found", "text": f"No ticket was found for {clean_id}. Please check the ID and try again."}}
         slots = {"ticket_id": str(ticket.get("ticket_id") or clean_id).upper(),
                  "status": str(ticket.get("status") or "Unknown"), "found": True}
         for key in ("category", "description", "updated_at"):
@@ -138,8 +137,8 @@ class ActionSubmitRaiseTicket(Action):
                 text=f"That request was already submitted as ticket {ticket_id}; I haven't created a duplicate.",
                 json_message=vario_payload(template_key="raise_ticket_result",
                     slots={"ticket_id": ticket_id, "deduplicated": True},
-                    card={"type": "result", "title": "Existing ticket", "ticket_id": ticket_id,
-                          "message": "This identical request was already submitted."}))
+                    card={"type": "result", "text": "This identical request was already submitted as ticket",
+                          "referenceId": ticket_id}))
             return reset
         try:
             ticket = await ITSMAdapter.create_ticket(category, description, reporter)
@@ -160,10 +159,31 @@ class ActionSubmitRaiseTicket(Action):
             text=f"Your support ticket {ticket_id} has been created.",
             json_message=vario_payload(template_key="raise_ticket_result",
                 slots={"ticket_id": ticket_id, "status": ticket.get("status", "Open")},
-                card={"type": "result", "title": "Ticket created", "ticket_id": ticket_id,
-                      "message": f"Your support ticket {ticket_id} has been created."},
-                audit_event={"type": "ticket_created", "ticket_id": ticket_id, "reporter": reporter}))
+                card={"type": "result", "text": "Your support ticket has been created:", "referenceId": ticket_id},
+                # ADR-006 audit shape — the gateway logs `action_type`, `reference_id`, `details` (A2-10).
+                audit_event={"action_type": "ticket_created", "reference_id": ticket_id,
+                             "details": {"category": category, "reporter": reporter}}))
         return reset + [SlotSet("last_ticket_signature", signature), SlotSet("last_ticket_id", ticket_id)]
+
+
+class ActionAskRaiseTicketFormConfirmation(Action):
+    """Ask to confirm the ticket with its details (Rasa calls this for the confirmation slot)."""
+
+    def name(self) -> Text:
+        return "action_ask_raise_ticket_form_confirmation"
+
+    async def run(self, dispatcher: CollectingDispatcher, tracker: Tracker,
+                  domain: Dict[Text, Any]) -> List[Dict[Text, Any]]:
+        reporter = str(_auth_context(tracker).get("employee_id") or "you").strip().upper()
+        rows = [
+            {"label": "Category", "value": str(tracker.get_slot("category") or "")},
+            {"label": "Description", "value": str(tracker.get_slot("description") or "")},
+            {"label": "Reporter", "value": reporter},
+        ]
+        dispatcher.utter_message(
+            text="Please review your request. Reply Confirm to create the ticket or Cancel to stop.",
+            json_message=vario_payload(card={"type": "confirmation", "title": "Confirm IT support ticket", "rows": rows}))
+        return []
 
 
 class ValidateResetPasswordForm(FormValidationAction):
@@ -178,9 +198,11 @@ class ValidateResetPasswordForm(FormValidationAction):
         if not EMPLOYEE_ID_REGEX.fullmatch(employee_id):
             dispatcher.utter_message(text="Please enter a valid employee ID such as EMP-1001.")
             return {"employee_id": None}
-        if trusted and typed and trusted != typed:
-            dispatcher.utter_message(text="For your security, password reset is only available for your signed-in employee account.")
-            return {"employee_id": None}
+        if trusted and typed != trusted:
+            # Only the signed-in account can be reset. Say so once and carry on with it,
+            # instead of rejecting every reply (which looped forever — A2-13).
+            dispatcher.utter_message(
+                text=f"For your security, I can only reset the password for your signed-in account, {trusted}.")
         try:
             question = await ITSMAdapter.get_security_question(employee_id)
         except BackendUnavailableError:
@@ -257,9 +279,10 @@ class ActionSubmitResetPassword(Action):
                     text=f"Password reset has been initiated for {employee_id}.",
                     json_message=vario_payload(template_key="reset_password_result",
                         slots={"employee_id": employee_id, "success": bool(result.get("success"))},
-                        card={"type": "result", "title": "Password reset initiated",
-                              "message": "Identity verified. Follow your organization's normal sign-in recovery steps."},
-                        audit_event={"type": "password_reset_initiated", "employee_id": employee_id}))
+                        card={"type": "result", "referenceId": employee_id,
+                              "text": "Identity verified. Password reset initiated for"},
+                        audit_event={"action_type": "password_reset_initiated", "reference_id": employee_id,
+                                     "details": {"verification": "mock_identity_verified"}}))
         return _clear("employee_id", "security_question", "security_answer", "identity_verified",
                       "reset_attempts", "reset_error")
 

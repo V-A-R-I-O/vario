@@ -103,10 +103,17 @@ nlu:
   - intent: cancel
     examples: |
       - cancel
+      - cancel it
+      - cancel that
+      - cancel this request
+      - please cancel
+      - I want to cancel
+      - cancel the ticket
       - stop
+      - stop this
+      - abort
       - never mind
       - forget it
-      - cancel this request
   - intent: affirm
     examples: |
       - yes
@@ -118,8 +125,9 @@ nlu:
     examples: |
       - no
       - no thanks
-      - cancel it
+      - nope
       - don't submit
+      - don't create it
   - intent: inform
     examples: |
       - hardware
